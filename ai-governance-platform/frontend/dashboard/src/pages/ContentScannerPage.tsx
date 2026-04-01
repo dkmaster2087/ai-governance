@@ -54,9 +54,15 @@ export function ContentScannerPage() {
   const [expandedScan, setExpandedScan] = useState<string | null>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
 
+  const [uploadProgress, setUploadProgress] = useState<number | null>(null);
+
   const fileMutation = useMutation({
-    mutationFn: () => scanFiles(selectedFiles),
-    onSuccess: (data) => setScanResult(data),
+    mutationFn: () => {
+      setUploadProgress(0);
+      return scanFiles(selectedFiles, (pct) => setUploadProgress(pct));
+    },
+    onSuccess: (data) => { setScanResult(data); setUploadProgress(null); },
+    onError: () => setUploadProgress(null),
   });
 
   const textMutation = useMutation({
@@ -120,7 +126,7 @@ export function ContentScannerPage() {
             <Upload className={clsx('w-10 h-10 mx-auto mb-3', t.muted)} />
             <p className={clsx('font-medium mb-1', t.heading)}>Drop files here or click to browse</p>
             <p className={clsx('text-sm', t.muted)}>
-              PDF, DOCX, XLSX, TXT, CSV, PNG, JPG, GIF, WEBP — up to 50MB each
+              PDF, DOCX, XLSX, TXT, CSV, PNG, JPG, GIF, WEBP — up to 500MB each
             </p>
             <input
               ref={fileInputRef}
@@ -158,8 +164,17 @@ export function ContentScannerPage() {
             className="flex items-center gap-2 px-6 py-3 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white font-medium transition-colors"
           >
             <ScanLine className={clsx('w-4 h-4', isScanning && 'animate-pulse')} />
-            {isScanning ? 'Scanning...' : `Scan ${selectedFiles.length} file${selectedFiles.length !== 1 ? 's' : ''}`}
+            {uploadProgress !== null
+              ? `Uploading... ${uploadProgress}%`
+              : isScanning
+                ? 'Scanning...'
+                : `Scan ${selectedFiles.length} file${selectedFiles.length !== 1 ? 's' : ''}`}
           </button>
+          {uploadProgress !== null && (
+            <div className={clsx('h-1.5 rounded-full overflow-hidden', t.track)}>
+              <div className="h-full bg-brand-500 rounded-full transition-all duration-300" style={{ width: `${uploadProgress}%` }} />
+            </div>
+          )}
         </div>
       ) : (
         <div className="space-y-4">

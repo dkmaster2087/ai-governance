@@ -15,8 +15,8 @@ async function main() {
   await app.register(cors);
   await app.register(multipart, {
     limits: {
-      fileSize: 50 * 1024 * 1024, // 50MB max per file
-      files: 10,                   // Max 10 files per request
+      fileSize: 500 * 1024 * 1024, // 500MB max per file
+      files: 10,                    // Max 10 files per request
     },
   });
 
