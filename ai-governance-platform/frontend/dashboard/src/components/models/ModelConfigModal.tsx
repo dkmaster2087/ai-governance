@@ -118,6 +118,8 @@ export function ModelConfigModal({ model, onClose, onSaved }: Props) {
   const contextExceeded = limits && form.maxContextTokens > limits.contextWindow;
   const hasValidationError = maxTokensExceeded || contextExceeded;
 
+  const [saveError, setSaveError] = useState<string | null>(null);
+
   const mutation = useMutation({
     mutationFn: () => {
       const payload = {
@@ -132,9 +134,9 @@ export function ModelConfigModal({ model, onClose, onSaved }: Props) {
         : createModelConfig(payload);
     },
     onSuccess: onSaved,
-    onError: (err) => {
-      console.warn('Model save failed, simulating success for demo', err);
-      onSaved();
+    onError: (err: any) => {
+      const msg = err?.response?.data?.message || err?.message || 'Save failed';
+      setSaveError(msg);
     },
   });
 
@@ -312,15 +314,22 @@ export function ModelConfigModal({ model, onClose, onSaved }: Props) {
           )}
         </div>
 
-        <div className={clsx('px-6 py-4 border-t flex gap-3', t.border)}>
+        <div className={clsx('px-6 py-4 border-t flex flex-col gap-3', t.border)}>
+          {saveError && (
+            <div className="flex items-center gap-2 text-sm text-red-400 bg-red-500/10 border border-red-500/20 rounded-lg px-3 py-2">
+              <AlertTriangle className="w-4 h-4 flex-shrink-0" />{saveError}
+            </div>
+          )}
+          <div className="flex gap-3">
           <button onClick={onClose} className={clsx('flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors', t.btnSecondary)}>Cancel</button>
           <button
-            onClick={() => mutation.mutate()}
+            onClick={() => { setSaveError(null); mutation.mutate(); }}
             disabled={!form.name || !form.modelId || mutation.isPending || !!hasValidationError}
             className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white text-sm font-medium transition-colors"
           >
             {mutation.isPending ? 'Saving...' : isEdit ? 'Save Changes' : 'Add Model'}
           </button>
+          </div>
         </div>
       </div>
     </div>

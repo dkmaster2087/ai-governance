@@ -1,9 +1,12 @@
 import { useState } from 'react';
-import { Plus, Trash2, GripVertical, ChevronDown, ChevronUp } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { Plus, Trash2, GripVertical, ChevronDown, ChevronUp, Cpu } from 'lucide-react';
 import clsx from 'clsx';
 import { Toggle } from '../ui/Toggle';
 import { useTheme } from '../../lib/theme';
 import { themeClasses } from '../../lib/theme-classes';
+import { fetchModelConfigs } from '../../lib/api';
+import { mockModelConfigs } from '../../lib/mock-data';
 
 export type RuleType =
   | 'keyword_block'
@@ -79,6 +82,97 @@ function newRule(priority: number): PolicyRule {
     description: '',
     config: { keywords: [] },
   };
+}
+
+// ── Model restriction config with live model list ─────────────────────────
+function ModelRestrictionConfig({ allowedModels, onChange }: { allowedModels: string[]; onChange: (models: string[]) => void }) {
+  const { isDark } = useTheme();
+  const t = themeClasses(isDark);
+
+  const { data } = useQuery({
+    queryKey: ['model-configs'],
+    queryFn: fetchModelConfigs,
+    placeholderData: mockModelConfigs,
+  });
+
+  const models: typeof mockModelConfigs = Array.isArray(data) && data.length ? data : mockModelConfigs;
+
+  const toggleModel = (modelId: string) => {
+    if (allowedModels.includes(modelId)) {
+      onChange(allowedModels.filter((m) => m !== modelId));
+    } else {
+      onChange([...allowedModels, modelId]);
+    }
+  };
+
+  const selectAllActive = () => {
+    const activeIds = models.filter((m) => m.status === 'active').map((m) => m.modelId);
+    onChange(activeIds);
+  };
+
+  const statusColor: Record<string, string> = {
+    active: 'text-accent-400',
+    inactive: isDark ? 'text-slate-500' : 'text-gray-400',
+    testing: 'text-yellow-400',
+  };
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-2">
+        <p className={clsx('text-xs', t.muted)}>Select which configured models are allowed</p>
+        <button onClick={selectAllActive} className="text-xs text-brand-400 hover:text-brand-300 transition-colors">
+          Select all active
+        </button>
+      </div>
+
+      {models.length === 0 ? (
+        <p className={clsx('text-xs py-3', t.faint)}>No models configured. Go to Models page to add some.</p>
+      ) : (
+        <div className="space-y-1.5">
+          {models.map((model) => {
+            const checked = allowedModels.includes(model.modelId);
+            const isActive = model.status === 'active';
+            return (
+              <label
+                key={model.modelConfigId}
+                className={clsx(
+                  'flex items-center gap-3 rounded-lg px-3 py-2.5 cursor-pointer transition-colors border',
+                  checked ? (isDark ? 'bg-brand-600/10 border-brand-500/30' : 'bg-brand-50 border-brand-200') : clsx(t.cardInner, t.border, 'hover:border-brand-500/20'),
+                  !isActive && 'opacity-60'
+                )}
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleModel(model.modelId)}
+                  className="w-3.5 h-3.5 rounded border-gray-400 text-brand-600 focus:ring-brand-500 flex-shrink-0"
+                />
+                <Cpu className={clsx('w-3.5 h-3.5 flex-shrink-0', statusColor[model.status] ?? t.muted)} />
+                <div className="flex-1 min-w-0">
+                  <div className="flex items-center gap-2">
+                    <span className={clsx('text-sm font-medium truncate', t.heading)}>{model.name}</span>
+                    <span className={clsx('text-xs px-1.5 py-0.5 rounded-full', statusColor[model.status] ?? t.muted, isActive ? 'bg-accent-500/10' : (isDark ? 'bg-slate-700' : 'bg-gray-200'))}>
+                      {model.status}
+                    </span>
+                  </div>
+                  <p className={clsx('text-xs font-mono truncate', t.muted)}>{model.modelId}</p>
+                </div>
+              </label>
+            );
+          })}
+        </div>
+      )}
+
+      {allowedModels.length > 0 && (
+        <p className={clsx('text-xs mt-2', t.sub)}>
+          {allowedModels.length} model{allowedModels.length !== 1 ? 's' : ''} allowed
+        </p>
+      )}
+      {allowedModels.length === 0 && models.length > 0 && (
+        <p className="text-xs mt-2 text-red-400">No models selected — all requests will be blocked</p>
+      )}
+    </div>
+  );
 }
 
 // ── Individual rule row ───────────────────────────────────────────────────────
@@ -236,30 +330,10 @@ function RuleRow({
           )}
 
           {rule.type === 'model_restriction' && (
-            <div>
-              <p className={clsx('text-xs mb-2', t.muted)}>Allowed models (one per line — empty = all blocked)</p>
-              <textarea
-                rows={4}
-                value={((rule.config.allowedModels as string[]) ?? []).join('\n')}
-                onChange={(e) => setConfig('allowedModels', e.target.value.split('\n').map((s) => s.trim()).filter(Boolean))}
-                className={clsx('w-full border rounded-lg px-3 py-2 text-xs font-mono focus:outline-none focus:border-brand-500 resize-none', t.card, t.border, t.heading)}
-                placeholder={BEDROCK_MODELS.slice(0, 3).join('\n')}
-              />
-              <div className="flex flex-wrap gap-1 mt-2">
-                {BEDROCK_MODELS.map((m) => (
-                  <button
-                    key={m}
-                    onClick={() => {
-                      const current = (rule.config.allowedModels as string[]) ?? [];
-                      if (!current.includes(m)) setConfig('allowedModels', [...current, m]);
-                    }}
-                    className={clsx('text-xs hover:bg-brand-600/20 hover:text-brand-400 px-2 py-0.5 rounded-full transition-colors', t.cardInner, t.muted)}
-                  >
-                    + {m.split('.')[1]?.split('-')[0] ?? m}
-                  </button>
-                ))}
-              </div>
-            </div>
+            <ModelRestrictionConfig
+              allowedModels={(rule.config.allowedModels as string[]) ?? []}
+              onChange={(models) => setConfig('allowedModels', models)}
+            />
           )}
 
           {rule.type === 'data_classification' && (

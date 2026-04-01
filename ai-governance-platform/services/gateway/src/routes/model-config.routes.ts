@@ -8,7 +8,7 @@ const modelSchema = z.object({
   modelId: z.string().min(1),
   status: z.enum(['active', 'inactive', 'testing']).default('active'),
   isDefault: z.boolean().default(false),
-  endpoint: z.string().url().optional(),
+  endpoint: z.string().url().optional().or(z.literal('')),
   region: z.string().optional(),
   apiKey: z.string().optional(),          // Received but stored in Secrets Manager, never persisted raw
   deploymentName: z.string().optional(),
