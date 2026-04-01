@@ -1,6 +1,6 @@
 import { useState } from 'react';
-import { useMutation } from '@tanstack/react-query';
-import { X, BadgeCheck, ArrowRight } from 'lucide-react';
+import { useMutation, useQueryClient } from '@tanstack/react-query';
+import { X, BadgeCheck, ArrowRight, AlertTriangle, CheckCircle } from 'lucide-react';
 import clsx from 'clsx';
 import { createPolicy, updatePolicy } from '../../lib/api';
 import { PolicyRuleEditor, PolicyRule } from './PolicyRuleEditor';
@@ -24,18 +24,22 @@ interface Props {
 export function PolicyModal({ policy, onClose, onSaved }: Props) {
   const { isDark } = useTheme();
   const t = themeClasses(isDark);
+  const queryClient = useQueryClient();
   const isEdit = !!policy;
+  const isFrameworkLinked = !!policy?.sourceFramework;
   const [name, setName] = useState(policy?.name ?? '');
   const [description, setDescription] = useState(policy?.description ?? '');
   const [enabled, setEnabled] = useState(policy?.enabled ?? true);
   const [rules, setRules] = useState<PolicyRule[]>(
     (policy?.rules ?? []) as PolicyRule[]
   );
+  const [toast, setToast] = useState<string | null>(null);
 
   const mutation = useMutation({
     mutationFn: () => {
+      const tenantId = (() => { try { return JSON.parse(localStorage.getItem('aegis_auth_user') || '{}').tenantId || 'tenant_demo'; } catch { return 'tenant_demo'; } })();
       const payload = {
-        tenantId: 'tenant_demo',
+        tenantId,
         name,
         description,
         enabled,
@@ -44,7 +48,21 @@ export function PolicyModal({ policy, onClose, onSaved }: Props) {
       };
       return isEdit ? updatePolicy(policy!.policyId, payload) : createPolicy(payload);
     },
-    onSuccess: onSaved,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: ['compliance-status'] });
+      if (isFrameworkLinked) {
+        const fw = policy!.sourceFramework!;
+        if (enabled !== policy!.enabled) {
+          const msg = enabled
+            ? `Policy enabled — ${fw} compliance framework has been re-enabled.`
+            : `Policy disabled — ${fw} compliance framework has been disabled.`;
+          setToast(msg);
+          setTimeout(() => { setToast(null); onSaved(); }, 2500);
+          return;
+        }
+      }
+      onSaved();
+    },
   });
 
   return (
@@ -72,6 +90,20 @@ export function PolicyModal({ policy, onClose, onSaved }: Props) {
 
         {/* Body */}
         <div className="flex-1 overflow-y-auto scrollbar-thin px-6 py-5 space-y-5">
+          {/* Framework-linked warning banner */}
+          {policy?.sourceFramework && (
+            <div className={clsx(
+              'flex items-start gap-2.5 text-sm rounded-lg px-4 py-3 border',
+              isDark
+                ? 'bg-yellow-500/10 border-yellow-500/20 text-yellow-300'
+                : 'bg-yellow-50 border-yellow-200 text-yellow-800'
+            )}>
+              <AlertTriangle className="w-4 h-4 flex-shrink-0 mt-0.5" />
+              <span>
+                This policy is linked to the {policy.sourceFramework} compliance framework. Changes may affect compliance status.
+              </span>
+            </div>
+          )}
           {/* Name & description */}
           <div className="grid grid-cols-2 gap-4">
             <div className="col-span-2">
@@ -131,7 +163,14 @@ export function PolicyModal({ policy, onClose, onSaved }: Props) {
         </div>
 
         {/* Footer */}
-        <div className={clsx('px-6 py-4 border-t flex gap-3', t.border)}>
+        <div className={clsx('px-6 py-4 border-t flex flex-col gap-3', t.border)}>
+          {toast && (
+            <div className={clsx('flex items-center gap-2 text-sm rounded-lg px-4 py-3', enabled ? 'bg-accent-500/10 text-accent-400' : 'bg-yellow-500/10 text-yellow-400')}>
+              <CheckCircle className="w-4 h-4 flex-shrink-0" />
+              {toast}
+            </div>
+          )}
+          <div className="flex gap-3">
           <button onClick={onClose} className={clsx('flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors', t.btnSecondary)}>
             Cancel
           </button>
@@ -142,6 +181,7 @@ export function PolicyModal({ policy, onClose, onSaved }: Props) {
           >
             {mutation.isPending ? 'Saving...' : `${isEdit ? 'Save' : 'Create'} Policy (${rules.length} rule${rules.length !== 1 ? 's' : ''})`}
           </button>
+          </div>
         </div>
       </div>
     </div>

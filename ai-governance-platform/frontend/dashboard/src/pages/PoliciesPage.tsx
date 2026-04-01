@@ -2,14 +2,15 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Pencil, Trash2, ShieldCheck, ShieldOff,
-  ChevronDown, ChevronRight, BadgeCheck, ArrowRight,
+  ChevronDown, ChevronRight, BadgeCheck, ArrowRight, AlertTriangle, X,
 } from 'lucide-react';
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
-import { fetchPolicies, deletePolicy } from '../lib/api';
+import { fetchPolicies, deletePolicy, updatePolicyEnabled } from '../lib/api';
 import { mockPolicies } from '../lib/mock-data';
 import { Badge } from '../components/ui/Badge';
 import { PolicyModal } from '../components/policies/PolicyModal';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
 
@@ -30,7 +31,12 @@ export function PoliciesPage() {
   const [expanded, setExpanded] = useState<string | null>(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editTarget, setEditTarget] = useState<any>(null);
+  const [confirmDelete, setConfirmDelete] = useState<{ policyId: string; name: string; sourceFramework?: string } | null>(null);
+  const [confirmToggle, setConfirmToggle] = useState<{ policyId: string; name: string; sourceFramework: string; currentEnabled: boolean } | null>(null);
+  const [toast, setToast] = useState<string | null>(null);
   const queryClient = useQueryClient();
+
+  const showToast = (msg: string) => { setToast(msg); setTimeout(() => setToast(null), 6000); };
 
   const { data } = useQuery({
     queryKey: ['policies'],
@@ -41,9 +47,49 @@ export function PoliciesPage() {
   const policies: typeof mockPolicies = Array.isArray(data) && data.length ? data : mockPolicies;
 
   const deleteMutation = useMutation({
-    mutationFn: (policyId: string) => deletePolicy(policyId, 'tenant_demo'),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['policies'] }),
+    mutationFn: (policyId: string) => deletePolicy(policyId),
+    onSuccess: (_data, _policyId) => {
+      queryClient.invalidateQueries({ queryKey: ['policies'] });
+      queryClient.invalidateQueries({ queryKey: ['compliance-status'] });
+      if (confirmDelete?.sourceFramework) {
+        showToast(`Policy deleted — ${confirmDelete.sourceFramework} compliance framework has been disabled.`);
+      }
+    },
   });
+
+  const toggleEnabledMutation = useMutation({
+    mutationFn: ({ policyId, enabled }: { policyId: string; enabled: boolean }) =>
+      updatePolicyEnabled(policyId, enabled),
+    onSuccess: (_data, vars) => {
+      queryClient.invalidateQueries({ queryKey: ['policies'] });
+      queryClient.invalidateQueries({ queryKey: ['compliance-status'] });
+      if (!vars.enabled && confirmToggle?.sourceFramework) {
+        showToast(`Policy disabled — ${confirmToggle.sourceFramework} compliance framework has been disabled.`);
+      }
+    },
+  });
+
+  const handleDeleteClick = (policy: any) => {
+    setConfirmDelete({
+      policyId: policy.policyId,
+      name: policy.name,
+      sourceFramework: policy.sourceFramework,
+    });
+  };
+
+  const handleToggleEnabled = (policy: any) => {
+    if (policy.sourceFramework && policy.enabled) {
+      // Disabling a framework-linked policy — show confirmation
+      setConfirmToggle({
+        policyId: policy.policyId,
+        name: policy.name,
+        sourceFramework: policy.sourceFramework,
+        currentEnabled: policy.enabled,
+      });
+    } else {
+      toggleEnabledMutation.mutate({ policyId: policy.policyId, enabled: !policy.enabled });
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -77,15 +123,21 @@ export function PoliciesPage() {
               className={clsx('flex items-center gap-4 px-5 py-4 cursor-pointer transition-colors', t.hoverRow)}
               onClick={() => setExpanded(expanded === policy.policyId ? null : policy.policyId)}
             >
-              <div className={clsx(
-                'w-8 h-8 rounded-lg flex items-center justify-center flex-shrink-0',
-                policy.enabled ? 'bg-accent-500/20' : (isDark ? 'bg-slate-700' : 'bg-gray-200')
-              )}>
-                {policy.enabled
-                  ? <ShieldCheck className="w-4 h-4 text-accent-400" />
-                  : <ShieldOff className={clsx('w-4 h-4', t.muted)} />
-                }
-              </div>
+              <button
+                className="flex-shrink-0"
+                onClick={(e) => { e.stopPropagation(); handleToggleEnabled(policy); }}
+                title={policy.enabled ? 'Disable policy' : 'Enable policy'}
+              >
+                <div className={clsx(
+                  'w-8 h-8 rounded-lg flex items-center justify-center transition-colors',
+                  policy.enabled ? 'bg-accent-500/20 hover:bg-accent-500/30' : (isDark ? 'bg-slate-700 hover:bg-slate-600' : 'bg-gray-200 hover:bg-gray-300')
+                )}>
+                  {policy.enabled
+                    ? <ShieldCheck className="w-4 h-4 text-accent-400" />
+                    : <ShieldOff className={clsx('w-4 h-4', t.muted)} />
+                  }
+                </div>
+              </button>
 
               <div className="flex-1 min-w-0">
                 <div className="flex items-center gap-2 flex-wrap">
@@ -117,7 +169,7 @@ export function PoliciesPage() {
                   <Pencil className="w-3.5 h-3.5" />
                 </button>
                 <button
-                  onClick={(e) => { e.stopPropagation(); deleteMutation.mutate(policy.policyId); }}
+                  onClick={(e) => { e.stopPropagation(); handleDeleteClick(policy); }}
                   className={clsx('p-1.5 rounded-lg hover:text-red-400 hover:bg-red-500/10 transition-colors', t.muted)}
                   aria-label="Delete policy"
                 >
@@ -197,6 +249,43 @@ export function PoliciesPage() {
             queryClient.invalidateQueries({ queryKey: ['policies'] });
           }}
         />
+      )}
+
+      <ConfirmDialog
+        open={!!confirmDelete}
+        title={confirmDelete?.sourceFramework ? 'Delete framework-linked policy?' : 'Delete policy?'}
+        message={
+          confirmDelete?.sourceFramework
+            ? `'${confirmDelete.name}' is linked to the ${confirmDelete.sourceFramework} compliance framework. Deleting it will break the framework link. If you re-enable the framework later, a new policy will be created.`
+            : `Are you sure you want to delete '${confirmDelete?.name ?? 'this policy'}'?`
+        }
+        confirmLabel="Delete"
+        confirmVariant="danger"
+        onConfirm={() => { if (confirmDelete) { deleteMutation.mutate(confirmDelete.policyId); setConfirmDelete(null); } }}
+        onCancel={() => setConfirmDelete(null)}
+      />
+
+      <ConfirmDialog
+        open={!!confirmToggle}
+        title={`${confirmToggle?.currentEnabled ? 'Disable' : 'Enable'} framework-linked policy?`}
+        message={`'${confirmToggle?.name ?? ''}' is linked to the ${confirmToggle?.sourceFramework ?? ''} compliance framework. ${confirmToggle?.currentEnabled ? 'Disabling' : 'Enabling'} it may affect compliance status.`}
+        confirmLabel={confirmToggle?.currentEnabled ? 'Disable' : 'Enable'}
+        confirmVariant={confirmToggle?.currentEnabled ? 'danger' : 'primary'}
+        onConfirm={() => { if (confirmToggle) { toggleEnabledMutation.mutate({ policyId: confirmToggle.policyId, enabled: !confirmToggle.currentEnabled }); setConfirmToggle(null); } }}
+        onCancel={() => setConfirmToggle(null)}
+      />
+
+      {toast && (
+        <div className={clsx(
+          'fixed bottom-6 right-6 z-50 flex items-center gap-3 border rounded-xl px-5 py-4 shadow-2xl max-w-md animate-[slideUp_0.3s_ease-out]',
+          t.card
+        )}>
+          <AlertTriangle className="w-5 h-5 text-yellow-400 flex-shrink-0" />
+          <p className={clsx('text-sm', t.heading)}>{toast}</p>
+          <button onClick={() => setToast(null)} className={clsx('flex-shrink-0 ml-2', t.muted)}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       )}
     </div>
   );

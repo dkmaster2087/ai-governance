@@ -9,9 +9,21 @@ interface ToggleProps {
   label?: string;
 }
 
+/**
+ * sm = 32×16  thumb 12×12
+ * md = 40×20  thumb 16×16
+ */
 export function Toggle({ checked, onChange, size = 'md', disabled = false, label }: ToggleProps) {
   const { isDark } = useTheme();
   const isSm = size === 'sm';
+
+  /* track */
+  const w = isSm ? 32 : 40;
+  const h = isSm ? 16 : 20;
+  /* thumb */
+  const thumb = isSm ? 12 : 16;
+  const pad = 2; // gap between thumb and track edge
+  const onX = w - thumb - pad;
 
   return (
     <button
@@ -21,23 +33,23 @@ export function Toggle({ checked, onChange, size = 'md', disabled = false, label
       aria-label={label}
       disabled={disabled}
       onClick={() => !disabled && onChange(!checked)}
+      style={{ width: w, height: h }}
       className={clsx(
-        'inline-flex items-center rounded-full transition-colors duration-200 flex-shrink-0',
+        'relative rounded-full transition-colors duration-200 flex-shrink-0 cursor-pointer',
         'focus:outline-none focus-visible:ring-2 focus-visible:ring-brand-500 focus-visible:ring-offset-2',
         isDark ? 'focus-visible:ring-offset-slate-900' : 'focus-visible:ring-offset-white',
-        isSm ? 'w-8 h-[18px]' : 'w-10 h-[22px]',
         checked ? 'bg-brand-600' : (isDark ? 'bg-slate-700' : 'bg-gray-300'),
         disabled && 'opacity-40 cursor-not-allowed'
       )}
     >
       <span
-        className={clsx(
-          'inline-block rounded-full bg-white shadow-sm transition-transform duration-200',
-          isSm ? 'w-3.5 h-3.5' : 'w-4 h-4',
-          checked
-            ? (isSm ? 'translate-x-[14px]' : 'translate-x-[20px]')
-            : 'translate-x-[2px]'
-        )}
+        style={{
+          width: thumb,
+          height: thumb,
+          top: (h - thumb) / 2,
+          left: checked ? onX : pad,
+        }}
+        className="absolute rounded-full bg-white shadow-sm transition-[left] duration-200"
       />
     </button>
   );

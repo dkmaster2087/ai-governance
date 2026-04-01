@@ -1,27 +1,45 @@
 import axios from 'axios';
 
-// /compliance proxy → http://localhost:3001/v1/compliance
-const complianceApi = axios.create({ baseURL: '/compliance' });
-const TENANT_ID = 'tenant_demo';
+const complianceApi = axios.create({ baseURL: '/api/compliance' });
 
-export async function fetchComplianceStatus(tenantId = TENANT_ID) {
-  const { data } = await complianceApi.get(`/status/${tenantId}`);
+function getTenantId(): string {
+  try {
+    const stored = localStorage.getItem('aegis_auth_user');
+    if (stored) return JSON.parse(stored).tenantId || 'tenant_demo';
+  } catch {}
+  return 'tenant_demo';
+}
+
+export interface EnableResult {
+  framework: string;
+  status: string;
+  linkedPolicyId?: string;
+  policyCreated?: boolean;
+}
+
+export interface DisableResult {
+  disabledPolicyId?: string;
+}
+
+export async function fetchComplianceStatus() {
+  const { data } = await complianceApi.get(`/status/${getTenantId()}`);
   return data;
 }
 
-export async function enableFramework(framework: string, tenantId = TENANT_ID) {
+export async function enableFramework(framework: string): Promise<EnableResult> {
   const { data } = await complianceApi.post(
-    `/enable/${tenantId}/${framework}`,
+    `/enable/${getTenantId()}/${framework}`,
     { enabledBy: 'admin' }
   );
   return data;
 }
 
-export async function disableFramework(framework: string, tenantId = TENANT_ID) {
-  await complianceApi.delete(`/disable/${tenantId}/${framework}`);
+export async function disableFramework(framework: string): Promise<DisableResult> {
+  const { data } = await complianceApi.delete(`/disable/${getTenantId()}/${framework}`);
+  return data;
 }
 
-export async function assessFramework(framework: string, tenantId = TENANT_ID) {
-  const { data } = await complianceApi.post(`/assess/${tenantId}/${framework}`);
+export async function assessFramework(framework: string) {
+  const { data } = await complianceApi.post(`/assess/${getTenantId()}/${framework}`);
   return data;
 }

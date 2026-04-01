@@ -28,6 +28,7 @@ export interface Policy {
   createdAt: string;
   updatedAt: string;
   createdBy: string;
+  sourceFramework?: string;
 }
 
 export interface PolicyEvaluationResult {

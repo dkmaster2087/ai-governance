@@ -6,7 +6,12 @@
     "rootDir": "src",
     "strict": true,
     "esModuleInterop": true,
-    "skipLibCheck": true
+    "skipLibCheck": true,
+    "paths": {
+      "@ai-governance/types": ["../../shared/types/src/index.ts"],
+      "@ai-governance/utils": ["../../shared/utils/src/index.ts"]
+    },
+    "baseUrl": "."
   },
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]

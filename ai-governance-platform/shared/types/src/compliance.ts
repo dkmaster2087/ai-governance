@@ -35,4 +35,5 @@ export interface TenantComplianceState {
   passedControls: number;
   totalControls: number;
   lastAssessedAt?: string;
+  linkedPolicyId?: string;
 }

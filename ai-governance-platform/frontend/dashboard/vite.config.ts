@@ -6,6 +6,17 @@ export default defineConfig({
   server: {
     port: 5174,
     proxy: {
+      // More specific routes FIRST
+      '/api/compliance': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/compliance/, '/v1/compliance'),
+      },
+      '/api/policies': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        rewrite: (path) => path.replace(/^\/api\/policies/, '/v1/policies'),
+      },
       '/api': {
         target: 'http://localhost:3000',
         changeOrigin: true,
@@ -15,16 +26,6 @@ export default defineConfig({
         target: 'http://localhost:3003',
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/analytics/, ''),
-      },
-      '/policies': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/policies/, '/v1/policies'),
-      },
-      '/compliance': {
-        target: 'http://localhost:3001',
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/compliance/, '/v1/compliance'),
       },
       '/scanner': {
         target: 'http://localhost:3004',

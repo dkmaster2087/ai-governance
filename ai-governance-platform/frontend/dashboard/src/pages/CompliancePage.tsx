@@ -2,13 +2,16 @@ import { useState } from 'react';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   ShieldCheck, ShieldX, AlertTriangle, ChevronDown, ChevronRight,
-  Zap, RefreshCw, Info, Copy, Plus,
+  Zap, RefreshCw, Info, Copy, Plus, CheckCircle, ArrowRight, X,
 } from 'lucide-react';
+import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import { fetchComplianceStatus, enableFramework, disableFramework, assessFramework } from '../lib/compliance-api';
+import { fetchPolicies, updatePolicy } from '../lib/api';
 import { mockCompliancePacks } from '../lib/mock-compliance';
 import { ControlDetailDrawer } from '../components/compliance/ControlDetailDrawer';
 import { CustomPolicyBuilder } from '../components/compliance/CustomPolicyBuilder';
+import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
 
@@ -25,6 +28,7 @@ const categoryColors: Record<string, string> = {
 
 interface Control { controlId: string; title: string; severity: string; automatable: boolean; }
 interface Pack { framework: string; name: string; version: string; description: string; category: string; status: string; passedControls: number; totalControls: number; controls: Control[]; }
+interface PolicyRecord { policyId: string; name: string; enabled: boolean; sourceFramework?: string; [key: string]: unknown; }
 
 export function CompliancePage() {
   const { isDark } = useTheme();
@@ -49,25 +53,63 @@ export function CompliancePage() {
   const [builderOpen, setBuilderOpen] = useState(false);
   const [selectedControls, setSelectedControls] = useState<string[]>([]);
   const [selectionMode, setSelectionMode] = useState<string | null>(null);
+  const [toast, setToast] = useState<{ message: string; framework: string } | null>(null);
+  const [confirmDisable, setConfirmDisable] = useState<{ framework: string; packName: string; linkedPolicyName: string | null } | null>(null);
   const queryClient = useQueryClient();
 
-  const { data } = useQuery({ queryKey: ['compliance-status'], queryFn: fetchComplianceStatus, placeholderData: mockCompliancePacks });
-  const packs = (data?.length ? data : mockCompliancePacks) as Pack[];
+  const { data } = useQuery({ queryKey: ['compliance-status'], queryFn: fetchComplianceStatus, staleTime: 0, gcTime: 0 });
+  const { data: policiesData } = useQuery({ queryKey: ['policies'], queryFn: fetchPolicies });
+
+  const packs = (Array.isArray(data) && data.length ? data : mockCompliancePacks) as Pack[];
+  const policies = (Array.isArray(policiesData) ? policiesData : []) as PolicyRecord[];
+
+  const showToast = (message: string, framework: string) => {
+    setToast({ message, framework });
+    setTimeout(() => setToast(null), 8000);
+  };
 
   const enableMutation = useMutation({
-    mutationFn: (framework: string) => enableFramework(framework),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['compliance-status'] }),
+    mutationFn: async (framework: string) => {
+      const result = await enableFramework(framework);
+      return result;
+    },
+    onSuccess: (result, framework) => {
+      queryClient.invalidateQueries({ queryKey: ['compliance-status'] });
+      queryClient.invalidateQueries({ queryKey: ['policies'] });
+      const pack = packs.find(p => p.framework === framework);
+      const name = pack?.name ?? framework;
+      if (result.policyCreated === false) {
+        showToast(`${name} enabled — existing linked policy re-enabled.`, framework);
+      } else {
+        showToast(`${name} enabled — compliance policy created with required controls.`, framework);
+      }
+    },
     onError: (_err, framework) => {
-      // Backend not available — optimistically update mock data
       queryClient.setQueryData(['compliance-status'], (old: Pack[] | undefined) => {
         if (!old) return old;
         return old.map((p) => p.framework === framework ? { ...p, status: 'enabled' } : p);
       });
+      const pack = packs.find(p => p.framework === framework);
+      showToast(`${pack?.name ?? framework} enabled.`, framework);
     },
   });
+
   const disableMutation = useMutation({
-    mutationFn: (framework: string) => disableFramework(framework),
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['compliance-status'] }),
+    mutationFn: async (framework: string) => {
+      const result = await disableFramework(framework);
+      return result;
+    },
+    onSuccess: (result, framework) => {
+      queryClient.invalidateQueries({ queryKey: ['compliance-status'] });
+      queryClient.invalidateQueries({ queryKey: ['policies'] });
+      const pack = packs.find(p => p.framework === framework);
+      const name = pack?.name ?? framework;
+      if (result.disabledPolicyId) {
+        showToast(`${name} disabled — linked policy has been disabled.`, framework);
+      } else {
+        showToast(`${name} disabled.`, framework);
+      }
+    },
     onError: (_err, framework) => {
       queryClient.setQueryData(['compliance-status'], (old: Pack[] | undefined) => {
         if (!old) return old;
@@ -75,11 +117,28 @@ export function CompliancePage() {
       });
     },
   });
+
   const assessMutation = useMutation({
     mutationFn: (framework: string) => assessFramework(framework),
     onSuccess: () => queryClient.invalidateQueries({ queryKey: ['compliance-status'] }),
-    onError: () => { /* silently ignore — no backend */ },
+    onError: () => {},
   });
+
+  const handleDisableClick = (pack: Pack) => {
+    const linked = policies.find((p) => p.sourceFramework === pack.framework);
+    setConfirmDisable({
+      framework: pack.framework,
+      packName: pack.name,
+      linkedPolicyName: linked?.name ?? null,
+    });
+  };
+
+  const confirmDisableAction = () => {
+    if (confirmDisable) {
+      disableMutation.mutate(confirmDisable.framework);
+      setConfirmDisable(null);
+    }
+  };
 
   const filtered = filter === 'all' ? packs : packs.filter((p) => p.status === filter);
   const summary = { enabled: packs.filter((p) => p.status === 'enabled').length, partial: packs.filter((p) => p.status === 'partial').length, disabled: packs.filter((p) => p.status === 'disabled').length };
@@ -204,7 +263,7 @@ export function CompliancePage() {
                             <Zap className="w-3 h-3" /> Enable
                           </button>
                         ) : (
-                          <button onClick={() => disableMutation.mutate(pack.framework)} className={clsx('px-3 py-1.5 rounded-lg text-xs font-medium transition-colors', t.btnSecondary)}>
+                          <button onClick={() => handleDisableClick(pack)} className={clsx('px-3 py-1.5 rounded-lg text-xs font-medium transition-colors', t.btnSecondary)}>
                             Disable
                           </button>
                         )}
@@ -282,6 +341,43 @@ export function CompliancePage() {
       )}
       {builderOpen && (
         <CustomPolicyBuilder preloadedControlIds={selectedControls} onClose={() => { setBuilderOpen(false); setSelectedControls([]); }} onSaved={() => { setBuilderOpen(false); setSelectedControls([]); queryClient.invalidateQueries({ queryKey: ['policies'] }); }} />
+      )}
+
+      {/* Confirm disable dialog */}
+      <ConfirmDialog
+        open={!!confirmDisable}
+        title={`Disable ${confirmDisable?.packName ?? 'framework'}?`}
+        message={
+          confirmDisable?.linkedPolicyName
+            ? `Disabling ${confirmDisable.packName} will also disable the linked policy '${confirmDisable.linkedPolicyName}'. Are you sure?`
+            : `Disabling ${confirmDisable?.packName ?? 'this framework'} will disable the compliance framework. Are you sure?`
+        }
+        confirmLabel="Disable"
+        confirmVariant="danger"
+        onConfirm={confirmDisableAction}
+        onCancel={() => setConfirmDisable(null)}
+      />
+
+      {/* Toast notification */}
+      {toast && (
+        <div className={clsx(
+          'fixed bottom-6 right-6 z-50 flex items-start gap-3 border rounded-xl px-5 py-4 shadow-2xl max-w-md animate-[slideUp_0.3s_ease-out]',
+          t.card
+        )}>
+          <CheckCircle className="w-5 h-5 text-accent-400 flex-shrink-0 mt-0.5" />
+          <div className="flex-1 min-w-0">
+            <p className={clsx('text-sm font-medium', t.heading)}>{toast.message}</p>
+            <Link
+              to="/policies"
+              className="inline-flex items-center gap-1 mt-2 text-sm text-brand-400 hover:text-brand-300 transition-colors"
+            >
+              View Policy <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+          <button onClick={() => setToast(null)} className={clsx('flex-shrink-0', t.muted, t.hoverText)}>
+            <X className="w-4 h-4" />
+          </button>
+        </div>
       )}
     </div>
   );

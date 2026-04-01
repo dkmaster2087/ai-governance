@@ -166,12 +166,26 @@ export class ComplianceService {
     }
   }
 
-  async enableFramework(tenantId: string, framework: ComplianceFramework, enabledBy: string): Promise<TenantComplianceState> {
+  async enableFramework(tenantId: string, framework: ComplianceFramework, enabledBy: string): Promise<TenantComplianceState & { policyCreated: boolean }> {
     const pack = ALL_PACKS[framework];
     logger.info('Enabling compliance framework', { tenantId, framework });
 
-    // Create the required policy rules for this framework
-    await this.provisionFrameworkPolicies(tenantId, pack, enabledBy);
+    // Check if a linked policy already exists
+    const existingPolicy = await this.policyRepo.findByFramework(tenantId, framework);
+    let linkedPolicyId: string;
+    let policyCreated = false;
+
+    if (existingPolicy) {
+      // Re-enable the existing linked policy
+      await this.policyRepo.setEnabled(existingPolicy.policyId, tenantId, true);
+      linkedPolicyId = existingPolicy.policyId;
+      logger.info('Re-enabled existing framework policy', { tenantId, framework, policyId: linkedPolicyId });
+    } else {
+      // Create a new policy with all required rules
+      const policy = await this.provisionFrameworkPolicies(tenantId, pack, enabledBy);
+      linkedPolicyId = policy.policyId;
+      policyCreated = true;
+    }
 
     const state: TenantComplianceState = {
       tenantId,
@@ -182,6 +196,7 @@ export class ComplianceService {
       passedControls: pack.requiredRules.length,
       totalControls: pack.controls.length,
       lastAssessedAt: new Date().toISOString(),
+      linkedPolicyId,
     };
 
     try {
@@ -192,11 +207,22 @@ export class ComplianceService {
       logger.warn('Could not persist compliance state (table may not exist), continuing', { framework });
     }
 
-    return state;
+    return { ...state, policyCreated };
   }
 
-  async disableFramework(tenantId: string, framework: ComplianceFramework): Promise<void> {
+  async disableFramework(tenantId: string, framework: ComplianceFramework): Promise<{ disabledPolicyId?: string }> {
     logger.info('Disabling compliance framework', { tenantId, framework });
+
+    // Find and disable the linked policy (don't delete it)
+    const linkedPolicy = await this.policyRepo.findByFramework(tenantId, framework);
+    let disabledPolicyId: string | undefined;
+
+    if (linkedPolicy) {
+      await this.policyRepo.setEnabled(linkedPolicy.policyId, tenantId, false);
+      disabledPolicyId = linkedPolicy.policyId;
+      logger.info('Disabled linked policy', { tenantId, framework, policyId: disabledPolicyId });
+    }
+
     try {
       await this.client.send(
         new DeleteCommand({
@@ -207,6 +233,8 @@ export class ComplianceService {
     } catch (err) {
       logger.warn('Could not delete compliance state (table may not exist)', { framework });
     }
+
+    return { disabledPolicyId };
   }
 
   async assessCompliance(tenantId: string, framework: ComplianceFramework): Promise<TenantComplianceState> {
@@ -235,26 +263,28 @@ export class ComplianceService {
     return state;
   }
 
-  private async provisionFrameworkPolicies(tenantId: string, pack: CompliancePack, createdBy: string): Promise<void> {
+  private async provisionFrameworkPolicies(tenantId: string, pack: CompliancePack, createdBy: string): Promise<{ policyId: string }> {
     const requiredRules = pack.requiredRules
       .map((ruleId) => FRAMEWORK_RULES[ruleId])
       .filter(Boolean);
 
-    if (requiredRules.length === 0) return;
-
-    await this.policyRepo.createPolicy({
+    const policy = await this.policyRepo.createPolicy({
       tenantId,
       name: `${pack.name} — Required Controls`,
       description: `Auto-generated policy for ${pack.framework} compliance. Contains ${requiredRules.length} required rules.`,
       enabled: true,
       rules: requiredRules as any,
       createdBy,
+      sourceFramework: pack.framework,
     });
 
     logger.info('Provisioned compliance policies', {
       tenantId,
       framework: pack.framework,
+      policyId: policy.policyId,
       rulesCreated: requiredRules.length,
     });
+
+    return policy;
   }
 }

@@ -43,8 +43,8 @@ export async function complianceRoutes(app: FastifyInstance) {
       framework: ComplianceFramework;
     };
     const { enabledBy = 'admin' } = (request.body as { enabledBy?: string }) ?? {};
-    const state = await service.enableFramework(tenantId, framework, enabledBy);
-    return reply.status(201).send(state);
+    const result = await service.enableFramework(tenantId, framework, enabledBy);
+    return reply.status(201).send(result);
   });
 
   // Disable a framework
@@ -53,8 +53,8 @@ export async function complianceRoutes(app: FastifyInstance) {
       tenantId: string;
       framework: ComplianceFramework;
     };
-    await service.disableFramework(tenantId, framework);
-    return reply.status(204).send();
+    const result = await service.disableFramework(tenantId, framework);
+    return reply.status(200).send(result);
   });
 
   // Re-assess compliance status
