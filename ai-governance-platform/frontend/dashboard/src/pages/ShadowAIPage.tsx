@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { AlertTriangle, Eye, ShieldX, TrendingUp, Globe, User, Clock, RefreshCw } from 'lucide-react';
+import { AlertTriangle, Eye, ShieldX, TrendingUp, Globe, User, Clock, RefreshCw, Building2, Calendar } from 'lucide-react';
 import clsx from 'clsx';
 import { format } from 'date-fns';
 import axios from 'axios';
@@ -10,44 +11,125 @@ import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
 import { useAuth } from '../lib/auth';
 
+type TimePeriod = '1h' | '3h' | '24h' | '3d' | '7d' | '30d';
+
+const TIME_OPTIONS: { value: TimePeriod; label: string }[] = [
+  { value: '1h',  label: '1 hour' },
+  { value: '3h',  label: '3 hours' },
+  { value: '24h', label: '24 hours' },
+  { value: '3d',  label: '3 days' },
+  { value: '7d',  label: '7 days' },
+  { value: '30d', label: '30 days' },
+];
+
+function getGatewayUrl() {
+  return window.location.origin.replace('5174', '3000');
+}
+
 async function fetchShadowAIData(tenantId: string) {
-  const gatewayUrl = window.location.origin.replace('5174', '3000');
-  const { data } = await axios.get(`${gatewayUrl}/v1/shadow-ai/data/${tenantId}`, {
-    headers: { authorization: 'Bearer test-key' },
-  });
+  const { data } = await axios.get(`${getGatewayUrl()}/v1/shadow-ai/data/${tenantId}`);
   return data;
+}
+
+async function fetchAllTenants() {
+  try {
+    const { data } = await axios.get(`${getGatewayUrl()}/v1/tenants`, {
+      headers: { 'x-tenant-id': 'tenant_platform', authorization: 'Bearer test-key' },
+    });
+    return Array.isArray(data) ? data : [];
+  } catch { return []; }
 }
 
 export function ShadowAIPage() {
   const { isDark } = useTheme();
   const t = themeClasses(isDark);
-  const { user } = useAuth();
+  const { user, isPlatformAdmin } = useAuth();
+  const [selectedTenant, setSelectedTenant] = useState(user?.tenantId || 'tenant_platform');
+  const [timePeriod, setTimePeriod] = useState<TimePeriod>('7d');
   const tooltipStyle = isDark
     ? { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8 }
     : { background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, color: '#111827' };
   const tickFill = isDark ? '#64748b' : '#9ca3af';
   const gridStroke = isDark ? '#1e293b' : '#f3f4f6';
 
-  const { data = mockShadowAIData, refetch, isLoading } = useQuery({
-    queryKey: ['shadow-ai', user?.tenantId],
-    queryFn: () => fetchShadowAIData(user?.tenantId || 'tenant_platform'),
-    placeholderData: mockShadowAIData,
-    refetchInterval: 30000, // Auto-refresh every 30s
+  // Platform admin can switch tenants
+  const { data: tenants = [] } = useQuery({
+    queryKey: ['tenants-list'],
+    queryFn: fetchAllTenants,
+    enabled: isPlatformAdmin,
   });
+
+  const activeTenantId = isPlatformAdmin ? selectedTenant : (user?.tenantId || 'tenant_platform');
+
+  const { data = mockShadowAIData, refetch, isLoading } = useQuery({
+    queryKey: ['shadow-ai', activeTenantId],
+    queryFn: () => fetchShadowAIData(activeTenantId),
+    placeholderData: mockShadowAIData,
+    refetchInterval: 30000,
+  });
+
+  // Client-side time filtering on the events
+  const filterByTime = <T extends { timestamp?: string; date?: string }>(items: T[]): T[] => {
+    const now = Date.now();
+    const ms: Record<TimePeriod, number> = { '1h': 3600000, '3h': 10800000, '24h': 86400000, '3d': 259200000, '7d': 604800000, '30d': 2592000000 };
+    const cutoff = now - ms[timePeriod];
+    return items.filter((item) => {
+      const ts = item.timestamp ? new Date(item.timestamp).getTime() : 0;
+      return ts > cutoff;
+    });
+  };
+
+  const filteredEvents = filterByTime(data.recentEvents || []);
+  const filteredUsers = filterByTime(data.topBypassUsers?.map((u: any) => ({ ...u, timestamp: u.lastSeen })) || []);
 
   const hasRealData = data.summary.totalBypassAttempts > 0 && data !== mockShadowAIData;
   const riskColor = data.summary.riskScore >= 75 ? 'text-red-400' : data.summary.riskScore >= 50 ? 'text-orange-400' : data.summary.riskScore >= 25 ? 'text-yellow-400' : 'text-accent-400';
 
   return (
     <div className="space-y-6">
-      {/* Data source + refresh */}
-      <div className="flex items-center justify-between">
-        <p className={clsx('text-xs', t.muted)}>
-          {hasRealData ? 'Live data from browser extension' : 'Showing sample data — install the Shadow AI Guard extension to see real events'}
-        </p>
-        <button onClick={() => refetch()} className={clsx('flex items-center gap-1.5 text-xs transition-colors', t.muted, t.hoverText)}>
-          <RefreshCw className={clsx('w-3 h-3', isLoading && 'animate-spin')} /> Refresh
-        </button>
+      {/* Filters bar */}
+      <div className="flex flex-wrap items-center gap-3">
+        {/* Tenant filter — platform admin only */}
+        {isPlatformAdmin && (
+          <div className="flex items-center gap-2">
+            <Building2 className={clsx('w-4 h-4', t.muted)} />
+            <select
+              value={selectedTenant}
+              onChange={(e) => setSelectedTenant(e.target.value)}
+              className={clsx('border rounded-lg px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500', t.input)}
+            >
+              <option value="tenant_platform">All Tenants (Platform)</option>
+              {tenants.map((tn: any) => (
+                <option key={tn.tenantId} value={tn.tenantId}>{tn.name}</option>
+              ))}
+            </select>
+          </div>
+        )}
+
+        {/* Time period filter */}
+        <div className="flex items-center gap-2">
+          <Clock className={clsx('w-4 h-4', t.muted)} />
+          {TIME_OPTIONS.map((opt) => (
+            <button
+              key={opt.value}
+              onClick={() => setTimePeriod(opt.value)}
+              className={clsx('px-3 py-1.5 rounded-lg text-xs font-medium transition-colors',
+                timePeriod === opt.value ? 'bg-brand-600 text-white' : t.btnSecondary
+              )}
+            >
+              {opt.label}
+            </button>
+          ))}
+        </div>
+
+        <div className="ml-auto flex items-center gap-3">
+          <p className={clsx('text-xs', t.muted)}>
+            {hasRealData ? 'Live data' : 'Sample data'}
+          </p>
+          <button onClick={() => refetch()} className={clsx('flex items-center gap-1.5 text-xs transition-colors', t.muted, t.hoverText)}>
+            <RefreshCw className={clsx('w-3 h-3', isLoading && 'animate-spin')} /> Refresh
+          </button>
+        </div>
       </div>
 
       {data.summary.riskScore >= 50 && (
@@ -124,7 +206,9 @@ export function ShadowAIPage() {
             </tr>
           </thead>
           <tbody className={clsx('divide-y', t.divider)}>
-            {data.topBypassUsers.map((user, i) => (
+            {data.topBypassUsers.length === 0 ? (
+              <tr><td colSpan={5} className={clsx('px-5 py-8 text-center', t.muted)}>No bypass attempts detected</td></tr>
+            ) : data.topBypassUsers.map((user, i) => (
               <tr key={user.userId} className={clsx('transition-colors', t.hoverRow)}>
                 <td className="px-5 py-3">
                   <div className="flex items-center gap-2">
@@ -139,7 +223,6 @@ export function ShadowAIPage() {
               </tr>
             ))}
           </tbody>
-        </table>
       </div>
       <div className={clsx('border rounded-xl overflow-hidden', t.card)}>
         <div className={clsx('px-5 py-4 border-b', t.border)}>

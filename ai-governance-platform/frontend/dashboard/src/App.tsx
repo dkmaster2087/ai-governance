@@ -85,7 +85,7 @@ export default function App() {
           <Route path="/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
           <Route path="/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
           {/* Platform admin only */}
-          <Route path="/shadow-ai" element={<RequirePlatformAdmin><ShadowAIPage /></RequirePlatformAdmin>} />
+          <Route path="/shadow-ai" element={<RequireAdmin><ShadowAIPage /></RequireAdmin>} />
           <Route path="/tenants" element={<RequirePlatformAdmin><TenantsPage /></RequirePlatformAdmin>} />
           <Route path="*" element={<Navigate to="/overview" replace />} />
         </Routes>

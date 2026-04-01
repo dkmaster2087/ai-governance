@@ -29,6 +29,7 @@ const tenantAdminNav = [
   { label: 'Policies',        href: '/policies',        icon: ShieldCheck },
   { label: 'Compliance',      href: '/compliance',      icon: BadgeCheck },
   { label: 'Content Scanner', href: '/content-scanner', icon: ScanLine },
+  { label: 'Shadow AI',       href: '/shadow-ai',       icon: Eye },
   { label: 'Models',          href: '/models',          icon: Cpu },
   { label: 'Users',           href: '/users',           icon: Users },
   { label: 'Settings',        href: '/settings',        icon: Settings },
