@@ -10,17 +10,21 @@
   ],
   "host_permissions": [
     "https://*.openai.com/*",
+    "https://*.chatgpt.com/*",
     "https://*.anthropic.com/*",
     "https://*.claude.ai/*",
     "https://*.bard.google.com/*",
     "https://*.gemini.google.com/*",
+    "https://*.aistudio.google.com/*",
     "https://*.perplexity.ai/*",
     "https://*.huggingface.co/api/*",
     "https://*.replicate.com/api/*",
     "https://*.cohere.ai/*",
     "https://*.mistral.ai/*",
     "https://*.together.ai/*",
-    "https://*.groq.com/*"
+    "https://*.groq.com/*",
+    "https://*.copilot.microsoft.com/*",
+    "https://*.deepseek.com/*"
   ],
   "background": {
     "service_worker": "background.js"
