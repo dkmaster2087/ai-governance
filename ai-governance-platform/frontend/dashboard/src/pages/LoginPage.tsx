@@ -2,14 +2,10 @@ import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { Shield, Eye, EyeOff, AlertCircle, Sun, Moon } from 'lucide-react';
-import { useAuth } from '../lib/auth';
+import { useAuth, getRegisteredAccounts } from '../lib/auth';
 import { useTheme } from '../lib/theme';
 
-const DEMO_ACCOUNTS = [
-  { email: 'admin@platform.com', password: 'admin123', role: 'Platform Admin', badge: 'All tenants' },
-  { email: 'admin@democorp.com', password: 'demo123', role: 'Tenant Admin', badge: 'Demo Corp' },
-  { email: 'admin@healthco.com', password: 'health123', role: 'Tenant Admin', badge: 'HealthCo' },
-];
+const PLACEHOLDER_ACCOUNTS: never[] = []; // Replaced by dynamic accounts
 
 export function LoginPage() {
   const { login } = useAuth();
@@ -18,6 +14,7 @@ export function LoginPage() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [showPassword, setShowPassword] = useState(false);
+  const accounts = getRegisteredAccounts();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
 
@@ -34,7 +31,7 @@ export function LoginPage() {
     }
   };
 
-  const fillDemo = (acc: typeof DEMO_ACCOUNTS[0]) => {
+  const fillDemo = (acc: { email: string; password: string }) => {
     setEmail(acc.email);
     setPassword(acc.password);
     setError('');
@@ -135,9 +132,9 @@ export function LoginPage() {
 
         {/* Demo accounts */}
         <div className="mt-6">
-          <p className={clsx('text-xs text-center mb-3 uppercase tracking-wider', isDark ? 'text-slate-600' : 'text-gray-400')}>Demo accounts</p>
+          <p className={clsx('text-xs text-center mb-3 uppercase tracking-wider', isDark ? 'text-slate-600' : 'text-gray-400')}>Accounts</p>
           <div className="space-y-2">
-            {DEMO_ACCOUNTS.map((acc) => (
+            {accounts.map((acc) => (
               <button
                 key={acc.email}
                 onClick={() => fillDemo(acc)}

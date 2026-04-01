@@ -1,4 +1,4 @@
-import { createContext, useContext, useState, useEffect, ReactNode } from 'react';
+import { createContext, useContext, useState, ReactNode } from 'react';
 
 export type UserRole = 'platform_admin' | 'tenant_user';
 
@@ -18,8 +18,8 @@ interface AuthContextValue {
   isAdmin: boolean;
 }
 
-// Demo accounts — in production these come from Cognito
-const DEMO_ACCOUNTS: Record<string, { password: string; user: AuthUser }> = {
+// Built-in demo accounts
+const BUILTIN_ACCOUNTS: Record<string, { password: string; user: AuthUser }> = {
   'admin@platform.com': {
     password: 'admin123',
     user: {
@@ -55,8 +55,60 @@ const DEMO_ACCOUNTS: Record<string, { password: string; user: AuthUser }> = {
   },
 };
 
-const AuthContext = createContext<AuthContextValue | null>(null);
 const STORAGE_KEY = 'aegis_auth_user';
+const DYNAMIC_ACCOUNTS_KEY = 'aegis_dynamic_accounts';
+
+/** Get all accounts — built-in + dynamically registered */
+function getAllAccounts(): Record<string, { password: string; user: AuthUser }> {
+  const dynamic = getDynamicAccounts();
+  return { ...BUILTIN_ACCOUNTS, ...dynamic };
+}
+
+function getDynamicAccounts(): Record<string, { password: string; user: AuthUser }> {
+  try {
+    const stored = localStorage.getItem(DYNAMIC_ACCOUNTS_KEY);
+    return stored ? JSON.parse(stored) : {};
+  } catch {
+    return {};
+  }
+}
+
+/** Register a new tenant admin account — called when onboarding a tenant */
+export function registerTenantAccount(opts: {
+  email: string;
+  password: string;
+  name: string;
+  tenantId: string;
+  tenantName: string;
+}) {
+  const accounts = getDynamicAccounts();
+  const key = opts.email.toLowerCase();
+  accounts[key] = {
+    password: opts.password,
+    user: {
+      userId: `user_${opts.tenantId}_admin`,
+      name: opts.name,
+      email: opts.email,
+      role: 'tenant_user',
+      tenantId: opts.tenantId,
+      tenantName: opts.tenantName,
+    },
+  };
+  localStorage.setItem(DYNAMIC_ACCOUNTS_KEY, JSON.stringify(accounts));
+}
+
+/** Get all registered accounts for display on login page */
+export function getRegisteredAccounts(): Array<{ email: string; password: string; role: string; badge: string }> {
+  const all = getAllAccounts();
+  return Object.entries(all).map(([email, acc]) => ({
+    email,
+    password: acc.password,
+    role: acc.user.role === 'platform_admin' ? 'Platform Admin' : 'Tenant Admin',
+    badge: acc.user.tenantName,
+  }));
+}
+
+const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => {
@@ -69,7 +121,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   });
 
   const login = async (email: string, password: string) => {
-    const account = DEMO_ACCOUNTS[email.toLowerCase()];
+    const accounts = getAllAccounts();
+    const account = accounts[email.toLowerCase()];
     if (!account) return { success: false, error: 'No account found with that email' };
     if (account.password !== password) return { success: false, error: 'Incorrect password' };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(account.user));

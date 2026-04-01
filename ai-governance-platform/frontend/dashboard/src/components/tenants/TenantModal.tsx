@@ -6,6 +6,7 @@ import { createTenant, updateTenant } from '../../lib/tenant-api';
 import { Toggle } from '../ui/Toggle';
 import { useTheme } from '../../lib/theme';
 import { themeClasses } from '../../lib/theme-classes';
+import { registerTenantAccount } from '../../lib/auth';
 
 interface Props {
   tenant?: any;
@@ -90,6 +91,7 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
 
   const [name, setName] = useState(tenant?.name ?? '');
   const [adminEmail, setAdminEmail] = useState(tenant?.adminEmail ?? '');
+  const [adminPassword, setAdminPassword] = useState('');
   const [plan, setPlan] = useState(tenant?.plan ?? 'starter');
   const [deploymentMode, setDeploymentMode] = useState(tenant?.deploymentMode ?? 'saas');
   const [region, setRegion] = useState(tenant?.region ?? 'us-east-1');
@@ -121,9 +123,33 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
       };
       return isEdit ? updateTenant(tenant.tenantId, payload) : createTenant(payload);
     },
-    onSuccess: onSaved,
+    onSuccess: (data) => {
+      // Register login account for the new tenant admin
+      if (!isEdit && adminEmail) {
+        const tenantId = data?.tenantId || `tenant_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+        registerTenantAccount({
+          email: adminEmail,
+          password: adminPassword || 'welcome123',
+          name: `${name} Admin`,
+          tenantId,
+          tenantName: name,
+        });
+      }
+      onSaved();
+    },
     onError: (err) => {
       console.warn('Tenant API not available, simulating success', err);
+      // Still register the account for demo purposes
+      if (!isEdit && adminEmail) {
+        const tenantId = `tenant_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
+        registerTenantAccount({
+          email: adminEmail,
+          password: adminPassword || 'welcome123',
+          name: `${name} Admin`,
+          tenantId,
+          tenantName: name,
+        });
+      }
       onSaved();
     },
   });
@@ -176,6 +202,9 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
             <div className="space-y-4">
               <FieldInput tc={t} label="Organization name" id="t-name" value={name} onChange={(e) => setName(e.target.value)} placeholder="Acme Corp" autoFocus />
               <FieldInput tc={t} label="Admin email" id="t-email" type="email" value={adminEmail} onChange={(e) => setAdminEmail(e.target.value)} placeholder="admin@acme.com" />
+              {!isEdit && (
+                <FieldInput tc={t} label="Admin password" id="t-password" type="password" value={adminPassword} onChange={(e) => setAdminPassword(e.target.value)} placeholder="Leave blank for default: welcome123" hint="Used to log in as this tenant's admin" />
+              )}
               <div className="grid grid-cols-2 gap-4">
                 <FieldSelect tc={t} label="Plan" id="t-plan" value={plan} onChange={(e) => setPlan(e.target.value)}>
                   {PLANS.map((p) => (
