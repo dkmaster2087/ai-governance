@@ -12,8 +12,8 @@ declare module 'fastify' {
 
 async function authPlugin(app: FastifyInstance) {
   app.addHook('preHandler', async (request, reply) => {
-    // Skip health checks and public routes
-    if (request.url.startsWith('/health') || request.url.startsWith('/public')) return;
+    // Skip health checks, public routes, and shadow-ai (extension + dashboard)
+    if (request.url.startsWith('/health') || request.url.startsWith('/public') || request.url.startsWith('/v1/shadow-ai')) return;
 
     const tenantId = request.headers['x-tenant-id'] as string;
     const userId = request.headers['x-user-id'] as string;

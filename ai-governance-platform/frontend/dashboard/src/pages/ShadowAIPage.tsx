@@ -1,26 +1,55 @@
 import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { AlertTriangle, Eye, ShieldX, TrendingUp, Globe, User, Clock } from 'lucide-react';
+import { AlertTriangle, Eye, ShieldX, TrendingUp, Globe, User, Clock, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import { format } from 'date-fns';
+import axios from 'axios';
 import { mockShadowAIData } from '../lib/mock-shadow-ai';
 import { StatCard } from '../components/ui/StatCard';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
+import { useAuth } from '../lib/auth';
+
+async function fetchShadowAIData(tenantId: string) {
+  const gatewayUrl = window.location.origin.replace('5174', '3000');
+  const { data } = await axios.get(`${gatewayUrl}/v1/shadow-ai/data/${tenantId}`, {
+    headers: { authorization: 'Bearer test-key' },
+  });
+  return data;
+}
 
 export function ShadowAIPage() {
   const { isDark } = useTheme();
   const t = themeClasses(isDark);
+  const { user } = useAuth();
   const tooltipStyle = isDark
     ? { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8 }
     : { background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, color: '#111827' };
   const tickFill = isDark ? '#64748b' : '#9ca3af';
   const gridStroke = isDark ? '#1e293b' : '#f3f4f6';
-  const { data = mockShadowAIData } = useQuery({ queryKey: ['shadow-ai'], queryFn: async () => mockShadowAIData, placeholderData: mockShadowAIData });
+
+  const { data = mockShadowAIData, refetch, isLoading } = useQuery({
+    queryKey: ['shadow-ai', user?.tenantId],
+    queryFn: () => fetchShadowAIData(user?.tenantId || 'tenant_platform'),
+    placeholderData: mockShadowAIData,
+    refetchInterval: 30000, // Auto-refresh every 30s
+  });
+
+  const hasRealData = data.summary.totalBypassAttempts > 0 && data !== mockShadowAIData;
   const riskColor = data.summary.riskScore >= 75 ? 'text-red-400' : data.summary.riskScore >= 50 ? 'text-orange-400' : data.summary.riskScore >= 25 ? 'text-yellow-400' : 'text-accent-400';
 
   return (
     <div className="space-y-6">
+      {/* Data source + refresh */}
+      <div className="flex items-center justify-between">
+        <p className={clsx('text-xs', t.muted)}>
+          {hasRealData ? 'Live data from browser extension' : 'Showing sample data — install the Shadow AI Guard extension to see real events'}
+        </p>
+        <button onClick={() => refetch()} className={clsx('flex items-center gap-1.5 text-xs transition-colors', t.muted, t.hoverText)}>
+          <RefreshCw className={clsx('w-3 h-3', isLoading && 'animate-spin')} /> Refresh
+        </button>
+      </div>
+
       {data.summary.riskScore >= 50 && (
         <div className="flex items-start gap-3 bg-orange-500/10 border border-orange-500/30 rounded-xl px-5 py-4">
           <AlertTriangle className="w-5 h-5 text-orange-400 flex-shrink-0 mt-0.5" />
