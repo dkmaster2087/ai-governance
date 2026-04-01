@@ -34,13 +34,13 @@ export async function modelConfigRoutes(app: FastifyInstance) {
   app.post('/models/config', async (request, reply) => {
     const body = modelSchema.parse(request.body);
     const { apiKey, ...data } = body;
-
-    // TODO: store apiKey in AWS Secrets Manager and save ARN
     const apiKeyHint = apiKey ? `...${apiKey.slice(-4)}` : undefined;
 
+    // Store key hint for display + actual key for runtime use
+    // In production, the actual key would go to AWS Secrets Manager
     const config = await service.createModel(
       request.tenantId,
-      { ...data, apiKeyHint, createdBy: request.userId },
+      { ...data, apiKeyHint, ...(apiKey ? { apiKeyStored: apiKey } : {}), createdBy: request.userId },
       request.userId
     );
     return reply.status(201).send(config);
@@ -52,7 +52,11 @@ export async function modelConfigRoutes(app: FastifyInstance) {
     const body = modelSchema.partial().parse(request.body);
     const { apiKey, ...data } = body;
     const apiKeyHint = apiKey ? `...${apiKey.slice(-4)}` : undefined;
-    return service.updateModel(request.tenantId, modelConfigId, { ...data, ...(apiKeyHint ? { apiKeyHint } : {}) });
+    return service.updateModel(request.tenantId, modelConfigId, {
+      ...data,
+      ...(apiKeyHint ? { apiKeyHint } : {}),
+      ...(apiKey ? { apiKeyStored: apiKey } : {}),
+    });
   });
 
   // Delete a model config

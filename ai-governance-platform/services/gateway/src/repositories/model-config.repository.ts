@@ -78,8 +78,11 @@ export class ModelConfigRepository {
       requiresApproval:     { expr: 'requiresApproval',   alias: '',        value: data.requiresApproval },
       tags:                 { expr: '#tags',               alias: '#tags',  value: data.tags },
       region:               { expr: '#region',             alias: '#region',value: data.region },
+      modelId:              { expr: '#modelId',           alias: '#modelId', value: (data as any).modelId },
+      provider:             { expr: '#provider',          alias: '#provider', value: (data as any).provider },
       endpoint:             { expr: 'endpoint',           alias: '',        value: data.endpoint },
       apiKeyHint:           { expr: 'apiKeyHint',         alias: '',        value: (data as any).apiKeyHint },
+      apiKeyStored:         { expr: 'apiKeyStored',       alias: '',        value: (data as any).apiKeyStored },
     };
 
     const updates: string[] = ['updatedAt = :updatedAt'];
@@ -91,13 +94,9 @@ export class ModelConfigRepository {
         const valKey = `:${key}`;
         updates.push(`${field.expr} = ${valKey}`);
         values[valKey] = field.value;
-        if (field.alias) names[field.alias] = key === 'tags' ? 'tags' : key === 'region' ? 'region' : key;
+        if (field.alias) names[field.alias] = key;
       }
     }
-
-    // Always alias reserved words
-    if (!names['#name']) { names['#name'] = 'name'; }
-    if (!names['#status']) { names['#status'] = 'status'; }
 
     await this.client.send(
       new UpdateCommand({

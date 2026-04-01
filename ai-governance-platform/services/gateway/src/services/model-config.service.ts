@@ -68,7 +68,8 @@ export class ModelConfigService {
       if (config.provider === 'bedrock') {
         await new BedrockProvider().complete(testRequest);
       } else if (config.provider === 'openai' || config.provider === 'anthropic') {
-        await new OpenAIProvider().complete(testRequest);
+        const storedKey = (config as any).apiKeyStored;
+        await new OpenAIProvider().complete(testRequest, storedKey);
       }
 
       const latencyMs = Date.now() - start;
@@ -88,8 +89,8 @@ export class ModelConfigService {
   }
 
   private sanitize(config: ModelConfig): ModelConfig {
-    // Strip secret ARN from response — clients only see the hint
-    const { apiKeySecretArn, ...safe } = config;
+    // Strip secrets from response — clients only see the hint
+    const { apiKeySecretArn, apiKeyStored, ...safe } = config as any;
     return safe as ModelConfig;
   }
 

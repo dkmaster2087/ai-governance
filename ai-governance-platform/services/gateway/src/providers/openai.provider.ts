@@ -6,11 +6,15 @@ const logger = createLogger('gateway:openai');
 
 export class OpenAIProvider {
   private baseUrl = process.env.OPENAI_BASE_URL || 'https://api.openai.com/v1';
-  private apiKey = process.env.OPENAI_API_KEY || '';
+  private defaultApiKey = process.env.OPENAI_API_KEY || '';
 
-  async complete(request: NormalizedAIRequest): Promise<NormalizedAIResponse> {
+  async complete(request: NormalizedAIRequest, apiKey?: string): Promise<NormalizedAIResponse> {
+    const key = apiKey || this.defaultApiKey;
+    if (!key) {
+      throw new ProviderError('openai', 'No API key configured for this model. Add one in the model configuration.');
+    }
+
     const start = Date.now();
-
     try {
       const response = await axios.post(
         `${this.baseUrl}/chat/completions`,
@@ -22,7 +26,7 @@ export class OpenAIProvider {
         },
         {
           headers: {
-            Authorization: `Bearer ${this.apiKey}`,
+            Authorization: `Bearer ${key}`,
             'Content-Type': 'application/json',
           },
           timeout: 30000,
@@ -41,9 +45,10 @@ export class OpenAIProvider {
         finishReason: data.choices?.[0]?.finish_reason || 'stop',
         timestamp: new Date().toISOString(),
       };
-    } catch (err) {
-      logger.error('OpenAI invocation failed', { error: err, modelId: request.modelId });
-      throw new ProviderError('openai', (err as Error).message);
+    } catch (err: any) {
+      const msg = err?.response?.data?.error?.message || err.message;
+      logger.error('OpenAI invocation failed', { error: msg, modelId: request.modelId });
+      throw new ProviderError('openai', msg);
     }
   }
 }

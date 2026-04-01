@@ -2,6 +2,7 @@ import { AIProvider, NormalizedAIRequest, NormalizedAIResponse } from '@ai-gover
 import { ProviderError } from '@ai-governance/utils';
 import { BedrockProvider } from '../providers/bedrock.provider';
 import { OpenAIProvider } from '../providers/openai.provider';
+import { ModelConfigRepository } from '../repositories/model-config.repository';
 
 const MODEL_PROVIDER_MAP: Record<string, AIProvider> = {
   'anthropic.claude': 'bedrock',
@@ -12,34 +13,39 @@ const MODEL_PROVIDER_MAP: Record<string, AIProvider> = {
 };
 
 export class ProviderRouter {
-  private providers = {
-    bedrock: new BedrockProvider(),
-    openai: new OpenAIProvider(),
-  };
+  private bedrockProvider = new BedrockProvider();
+  private openaiProvider = new OpenAIProvider();
+  private modelConfigRepo = new ModelConfigRepository();
 
   resolveProvider(modelId: string): AIProvider {
     for (const [prefix, provider] of Object.entries(MODEL_PROVIDER_MAP)) {
       if (modelId.startsWith(prefix)) return provider;
     }
-    return 'bedrock'; // default
+    return 'bedrock';
   }
 
   async route(request: NormalizedAIRequest): Promise<NormalizedAIResponse> {
-    const provider = this.providers[request.provider as keyof typeof this.providers];
-    if (!provider) {
-      throw new ProviderError(request.provider, 'Provider not configured');
+    // Look up model config to get the stored API key
+    const configs = await this.modelConfigRepo.getForTenant(request.tenantId);
+    const modelConfig = configs.find((c) => c.modelId === request.modelId);
+    const storedKey = (modelConfig as any)?.apiKeyStored;
+
+    if (request.provider === 'openai') {
+      return this.openaiProvider.complete(request, storedKey);
     }
-    return provider.complete(request);
+    if (request.provider === 'bedrock') {
+      return this.bedrockProvider.complete(request);
+    }
+
+    throw new ProviderError(request.provider, 'Provider not configured');
   }
 
-  async getModelsForTenant(_tenantId: string) {
+  async getModelsForTenant(tenantId: string) {
+    const configs = await this.modelConfigRepo.getForTenant(tenantId);
     return {
-      models: [
-        { id: 'anthropic.claude-3-sonnet-20240229-v1:0', provider: 'bedrock', name: 'Claude 3 Sonnet' },
-        { id: 'anthropic.claude-3-haiku-20240307-v1:0', provider: 'bedrock', name: 'Claude 3 Haiku' },
-        { id: 'amazon.titan-text-express-v1', provider: 'bedrock', name: 'Titan Text Express' },
-        { id: 'gpt-4o', provider: 'openai', name: 'GPT-4o' },
-      ],
+      models: configs
+        .filter((c) => c.status === 'active')
+        .map((c) => ({ id: c.modelId, provider: c.provider, name: c.name })),
     };
   }
 }
