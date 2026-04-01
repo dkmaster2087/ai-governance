@@ -3,14 +3,15 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, ScrollText, ShieldCheck, Cpu, Settings,
   Shield, Menu, Bell, BadgeCheck, ScanLine,
-  Building2, Eye, LogOut, Sun, Moon,
+  Building2, Eye, LogOut, Sun, Moon, MessageSquare, Users,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../../lib/auth';
 import { useTheme } from '../../lib/theme';
 
-const adminNav = [
+const platformAdminNav = [
   { label: 'Overview',        href: '/overview',        icon: LayoutDashboard },
+  { label: 'AI Chat',         href: '/chat',            icon: MessageSquare },
   { label: 'Audit Logs',      href: '/audit-logs',      icon: ScrollText },
   { label: 'Policies',        href: '/policies',        icon: ShieldCheck },
   { label: 'Compliance',      href: '/compliance',      icon: BadgeCheck },
@@ -21,23 +22,44 @@ const adminNav = [
   { label: 'Settings',        href: '/settings',        icon: Settings },
 ];
 
-const tenantNav = [
+const tenantAdminNav = [
   { label: 'Overview',        href: '/overview',        icon: LayoutDashboard },
+  { label: 'AI Chat',         href: '/chat',            icon: MessageSquare },
   { label: 'Audit Logs',      href: '/audit-logs',      icon: ScrollText },
   { label: 'Policies',        href: '/policies',        icon: ShieldCheck },
   { label: 'Compliance',      href: '/compliance',      icon: BadgeCheck },
   { label: 'Content Scanner', href: '/content-scanner', icon: ScanLine },
   { label: 'Models',          href: '/models',          icon: Cpu },
+  { label: 'Users',           href: '/users',           icon: Users },
   { label: 'Settings',        href: '/settings',        icon: Settings },
 ];
 
+const auditorNav = [
+  { label: 'Overview',        href: '/overview',        icon: LayoutDashboard },
+  { label: 'AI Chat',         href: '/chat',            icon: MessageSquare },
+  { label: 'Audit Logs',      href: '/audit-logs',      icon: ScrollText },
+];
+
+const userNav = [
+  { label: 'AI Chat',         href: '/chat',            icon: MessageSquare },
+];
+
+function getNavForRole(role: string) {
+  switch (role) {
+    case 'platform_admin': return platformAdminNav;
+    case 'tenant_admin':   return tenantAdminNav;
+    case 'tenant_auditor': return auditorNav;
+    default:               return userNav;
+  }
+}
+
 export function Shell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
-  const { user, logout, isAdmin } = useAuth();
+  const { user, logout, isPlatformAdmin } = useAuth();
   const { isDark, toggle: toggleTheme } = useTheme();
   const navigate = useNavigate();
   const location = useLocation();
-  const nav = isAdmin ? adminNav : tenantNav;
+  const nav = getNavForRole(user?.role || 'tenant_user');
 
   const handleLogout = () => { logout(); navigate('/login'); };
   const currentPage = nav.find((n) => n.href === location.pathname);
@@ -68,7 +90,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
             <Shield className="w-4 h-4 text-white" />
           </div>
           <span className={clsx('font-bold', textPrimary)}>Aegis AI</span>
-          {isAdmin && (
+          {isPlatformAdmin && (
             <span className="ml-auto text-xs text-brand-400 bg-brand-600/20 px-2 py-0.5 rounded-full">
               Admin
             </span>
@@ -78,7 +100,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {/* Tenant badge */}
         <div className={clsx('px-4 py-3 border-b', border)}>
           <div className={clsx('flex items-center gap-2 px-3 py-2 rounded-lg', cardInner)}>
-            <div className={clsx('w-2 h-2 rounded-full', isAdmin ? 'bg-brand-400' : 'bg-accent-400')} />
+            <div className={clsx('w-2 h-2 rounded-full', isPlatformAdmin ? 'bg-brand-400' : 'bg-accent-400')} />
             <span className={clsx('text-sm font-medium truncate', isDark ? 'text-slate-300' : 'text-gray-700')}>
               {user?.tenantName}
             </span>

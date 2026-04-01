@@ -131,6 +131,7 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
           email: adminEmail,
           password: adminPassword || 'welcome123',
           name: `${name} Admin`,
+          role: 'tenant_admin',
           tenantId,
           tenantName: name,
         });
@@ -146,6 +147,7 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
           email: adminEmail,
           password: adminPassword || 'welcome123',
           name: `${name} Admin`,
+          role: 'tenant_admin',
           tenantId,
           tenantName: name,
         });

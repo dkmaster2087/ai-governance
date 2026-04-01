@@ -1,6 +1,6 @@
 import { createContext, useContext, useState, ReactNode } from 'react';
 
-export type UserRole = 'platform_admin' | 'tenant_user';
+export type UserRole = 'platform_admin' | 'tenant_admin' | 'tenant_auditor' | 'tenant_user';
 
 export interface AuthUser {
   userId: string;
@@ -15,81 +15,62 @@ interface AuthContextValue {
   user: AuthUser | null;
   login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
   logout: () => void;
+  isPlatformAdmin: boolean;
+  isTenantAdmin: boolean;
+  isAuditor: boolean;
+  /** platform_admin or tenant_admin */
   isAdmin: boolean;
+  /** Can view audit logs */
+  canViewAudit: boolean;
+  /** Can only access chat */
+  isChatOnly: boolean;
 }
 
-// Built-in demo accounts
 const BUILTIN_ACCOUNTS: Record<string, { password: string; user: AuthUser }> = {
   'admin@platform.com': {
     password: 'admin123',
-    user: {
-      userId: 'user_platform_admin',
-      name: 'Platform Admin',
-      email: 'admin@platform.com',
-      role: 'platform_admin',
-      tenantId: 'tenant_platform',
-      tenantName: 'Aegis AI Platform',
-    },
+    user: { userId: 'user_platform_admin', name: 'Platform Admin', email: 'admin@platform.com', role: 'platform_admin', tenantId: 'tenant_platform', tenantName: 'Aegis AI Platform' },
   },
   'admin@democorp.com': {
     password: 'demo123',
-    user: {
-      userId: 'user_demo_admin',
-      name: 'Demo Corp Admin',
-      email: 'admin@democorp.com',
-      role: 'tenant_user',
-      tenantId: 'tenant_demo',
-      tenantName: 'Demo Corp',
-    },
+    user: { userId: 'user_demo_admin', name: 'Demo Corp Admin', email: 'admin@democorp.com', role: 'tenant_admin', tenantId: 'tenant_demo', tenantName: 'Demo Corp' },
   },
   'admin@healthco.com': {
     password: 'health123',
-    user: {
-      userId: 'user_healthco_admin',
-      name: 'HealthCo Admin',
-      email: 'admin@healthco.com',
-      role: 'tenant_user',
-      tenantId: 'tenant_healthco',
-      tenantName: 'HealthCo Systems',
-    },
+    user: { userId: 'user_healthco_admin', name: 'HealthCo Admin', email: 'admin@healthco.com', role: 'tenant_admin', tenantId: 'tenant_healthco', tenantName: 'HealthCo Systems' },
   },
 };
 
 const STORAGE_KEY = 'aegis_auth_user';
 const DYNAMIC_ACCOUNTS_KEY = 'aegis_dynamic_accounts';
 
-/** Get all accounts — built-in + dynamically registered */
 function getAllAccounts(): Record<string, { password: string; user: AuthUser }> {
-  const dynamic = getDynamicAccounts();
-  return { ...BUILTIN_ACCOUNTS, ...dynamic };
+  return { ...BUILTIN_ACCOUNTS, ...getDynamicAccounts() };
 }
 
 function getDynamicAccounts(): Record<string, { password: string; user: AuthUser }> {
   try {
     const stored = localStorage.getItem(DYNAMIC_ACCOUNTS_KEY);
     return stored ? JSON.parse(stored) : {};
-  } catch {
-    return {};
-  }
+  } catch { return {}; }
 }
 
-/** Register a new tenant admin account — called when onboarding a tenant */
 export function registerTenantAccount(opts: {
   email: string;
   password: string;
   name: string;
+  role: UserRole;
   tenantId: string;
   tenantName: string;
 }) {
   const accounts = getDynamicAccounts();
-  const key = opts.email.toLowerCase();
-  accounts[key] = {
+  accounts[opts.email.toLowerCase()] = {
     password: opts.password,
     user: {
-      userId: `user_${opts.tenantId}_admin`,
+      userId: `user_${Date.now().toString(36)}`,
       name: opts.name,
       email: opts.email,
-      role: 'tenant_user',
+      role: opts.role,
       tenantId: opts.tenantId,
       tenantName: opts.tenantName,
     },
@@ -97,13 +78,33 @@ export function registerTenantAccount(opts: {
   localStorage.setItem(DYNAMIC_ACCOUNTS_KEY, JSON.stringify(accounts));
 }
 
-/** Get all registered accounts for display on login page */
+/** Get users for a specific tenant */
+export function getTenantUsers(tenantId: string): AuthUser[] {
+  const all = getAllAccounts();
+  return Object.values(all)
+    .filter((a) => a.user.tenantId === tenantId)
+    .map((a) => a.user);
+}
+
+/** Delete a user account */
+export function deleteUserAccount(email: string) {
+  const accounts = getDynamicAccounts();
+  delete accounts[email.toLowerCase()];
+  localStorage.setItem(DYNAMIC_ACCOUNTS_KEY, JSON.stringify(accounts));
+}
+
 export function getRegisteredAccounts(): Array<{ email: string; password: string; role: string; badge: string }> {
+  const roleLabels: Record<UserRole, string> = {
+    platform_admin: 'Platform Admin',
+    tenant_admin: 'Tenant Admin',
+    tenant_auditor: 'Auditor',
+    tenant_user: 'User',
+  };
   const all = getAllAccounts();
   return Object.entries(all).map(([email, acc]) => ({
     email,
     password: acc.password,
-    role: acc.user.role === 'platform_admin' ? 'Platform Admin' : 'Tenant Admin',
+    role: roleLabels[acc.user.role] || acc.user.role,
     badge: acc.user.tenantName,
   }));
 }
@@ -115,14 +116,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
       return stored ? JSON.parse(stored) : null;
-    } catch {
-      return null;
-    }
+    } catch { return null; }
   });
 
   const login = async (email: string, password: string) => {
-    const accounts = getAllAccounts();
-    const account = accounts[email.toLowerCase()];
+    const account = getAllAccounts()[email.toLowerCase()];
     if (!account) return { success: false, error: 'No account found with that email' };
     if (account.password !== password) return { success: false, error: 'Incorrect password' };
     localStorage.setItem(STORAGE_KEY, JSON.stringify(account.user));
@@ -130,13 +128,24 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return { success: true };
   };
 
-  const logout = () => {
-    localStorage.removeItem(STORAGE_KEY);
-    setUser(null);
-  };
+  const logout = () => { localStorage.removeItem(STORAGE_KEY); setUser(null); };
+
+  const role = user?.role;
+  const isPlatformAdmin = role === 'platform_admin';
+  const isTenantAdmin = role === 'tenant_admin';
+  const isAuditor = role === 'tenant_auditor';
+  const isChatOnly = role === 'tenant_user';
 
   return (
-    <AuthContext.Provider value={{ user, login, logout, isAdmin: user?.role === 'platform_admin' }}>
+    <AuthContext.Provider value={{
+      user, login, logout,
+      isPlatformAdmin,
+      isTenantAdmin,
+      isAuditor,
+      isAdmin: isPlatformAdmin || isTenantAdmin,
+      canViewAudit: isPlatformAdmin || isTenantAdmin || isAuditor,
+      isChatOnly,
+    }}>
       {children}
     </AuthContext.Provider>
   );

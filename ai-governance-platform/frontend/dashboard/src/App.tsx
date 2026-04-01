@@ -11,6 +11,8 @@ import { CompliancePage } from './pages/CompliancePage';
 import { ContentScannerPage } from './pages/ContentScannerPage';
 import { TenantsPage } from './pages/TenantsPage';
 import { ShadowAIPage } from './pages/ShadowAIPage';
+import { ChatPage } from './pages/ChatPage';
+import { UsersPage } from './pages/UsersPage';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -21,12 +23,26 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 function RequireAdmin({ children }: { children: React.ReactNode }) {
   const { user, isAdmin } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (!isAdmin) return <Navigate to="/overview" replace />;
+  if (!isAdmin) return <Navigate to="/chat" replace />;
+  return <>{children}</>;
+}
+
+function RequirePlatformAdmin({ children }: { children: React.ReactNode }) {
+  const { user, isPlatformAdmin } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (!isPlatformAdmin) return <Navigate to="/overview" replace />;
+  return <>{children}</>;
+}
+
+function RequireAuditAccess({ children }: { children: React.ReactNode }) {
+  const { user, canViewAudit } = useAuth();
+  if (!user) return <Navigate to="/login" replace />;
+  if (!canViewAudit) return <Navigate to="/chat" replace />;
   return <>{children}</>;
 }
 
 export default function App() {
-  const { user } = useAuth();
+  const { user, isChatOnly } = useAuth();
 
   if (!user) {
     return (
@@ -37,6 +53,20 @@ export default function App() {
     );
   }
 
+  // Chat-only users get a minimal shell
+  if (isChatOnly) {
+    return (
+      <RequireAuth>
+        <Shell>
+          <Routes>
+            <Route path="/chat" element={<ChatPage />} />
+            <Route path="*" element={<Navigate to="/chat" replace />} />
+          </Routes>
+        </Shell>
+      </RequireAuth>
+    );
+  }
+
   return (
     <RequireAuth>
       <Shell>
@@ -44,15 +74,19 @@ export default function App() {
           <Route path="/" element={<Navigate to="/overview" replace />} />
           <Route path="/login" element={<Navigate to="/overview" replace />} />
           <Route path="/overview" element={<OverviewPage />} />
-          <Route path="/audit-logs" element={<AuditLogsPage />} />
-          <Route path="/policies" element={<PoliciesPage />} />
-          <Route path="/compliance" element={<CompliancePage />} />
-          <Route path="/models" element={<ModelsPage />} />
-          <Route path="/content-scanner" element={<ContentScannerPage />} />
-          <Route path="/settings" element={<SettingsPage />} />
-          {/* Admin-only routes */}
-          <Route path="/shadow-ai" element={<RequireAdmin><ShadowAIPage /></RequireAdmin>} />
-          <Route path="/tenants" element={<RequireAdmin><TenantsPage /></RequireAdmin>} />
+          <Route path="/chat" element={<ChatPage />} />
+          {/* Audit access: admin + auditor */}
+          <Route path="/audit-logs" element={<RequireAuditAccess><AuditLogsPage /></RequireAuditAccess>} />
+          {/* Admin-only tenant routes */}
+          <Route path="/policies" element={<RequireAdmin><PoliciesPage /></RequireAdmin>} />
+          <Route path="/compliance" element={<RequireAdmin><CompliancePage /></RequireAdmin>} />
+          <Route path="/models" element={<RequireAdmin><ModelsPage /></RequireAdmin>} />
+          <Route path="/content-scanner" element={<RequireAdmin><ContentScannerPage /></RequireAdmin>} />
+          <Route path="/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
+          <Route path="/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
+          {/* Platform admin only */}
+          <Route path="/shadow-ai" element={<RequirePlatformAdmin><ShadowAIPage /></RequirePlatformAdmin>} />
+          <Route path="/tenants" element={<RequirePlatformAdmin><TenantsPage /></RequirePlatformAdmin>} />
           <Route path="*" element={<Navigate to="/overview" replace />} />
         </Routes>
       </Shell>
