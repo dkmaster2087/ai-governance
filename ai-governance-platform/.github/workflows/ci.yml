@@ -1,0 +1,125 @@
+name: CI
+
+on:
+  pull_request:
+    branches: [main, develop]
+  push:
+    branches: [develop]
+
+env:
+  NODE_VERSION: '20'
+
+jobs:
+  lint-and-test:
+    name: Lint & Test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared packages
+        run: npx turbo run build --filter=@ai-governance/types --filter=@ai-governance/utils
+
+      - name: Lint all packages
+        run: npx turbo run lint
+
+      - name: Run all tests
+        run: npx turbo run test
+        env:
+          AWS_REGION: us-east-1
+          # Tests use mocks — no real AWS credentials needed
+
+      - name: Upload coverage
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-reports
+          path: '**/coverage/**'
+          retention-days: 7
+
+  build-services:
+    name: Build Services
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    strategy:
+      matrix:
+        service: [gateway, policy-engine, data-protection, analytics]
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build service
+        run: npx turbo run build --filter=@ai-governance/${{ matrix.service }}
+
+      - name: Build Docker image (dry run)
+        run: |
+          docker build -t ai-governance/${{ matrix.service }}:${{ github.sha }} \
+            -f services/${{ matrix.service }}/Dockerfile \
+            services/${{ matrix.service }}
+        continue-on-error: true # Dockerfile may not exist yet
+
+  build-frontend:
+    name: Build Frontend
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build website
+        run: npx turbo run build --filter=@ai-governance/website
+
+      - name: Build dashboard
+        run: npx turbo run build --filter=@ai-governance/dashboard
+        continue-on-error: true
+
+  cdk-synth:
+    name: CDK Synth Check
+    runs-on: ubuntu-latest
+    needs: lint-and-test
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: CDK Synth (validate templates)
+        run: npx turbo run build --filter=@ai-governance/infra
+        working-directory: infra
+        env:
+          CDK_DEFAULT_ACCOUNT: '123456789012'
+          CDK_DEFAULT_REGION: 'us-east-1'
+
+      - name: Run CDK tests
+        run: npm test
+        working-directory: ai-governance-platform/infra

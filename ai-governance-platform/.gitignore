@@ -1,0 +1,12 @@
+node_modules/
+dist/
+build/
+.turbo/
+coverage/
+*.env
+.env.*
+!.env.example
+cdk.out/
+*.js.map
+*.d.ts
+.DS_Store

@@ -1,0 +1,108 @@
+version: '3.9'
+
+services:
+  # ── LocalStack (mocks AWS: DynamoDB, S3, Comprehend) ──────────────────────
+  localstack:
+    image: localstack/localstack:3.4
+    container_name: ai-gov-localstack
+    ports:
+      - '4566:4566'
+    environment:
+      - SERVICES=s3,dynamodb,comprehend,athena
+      - DEFAULT_REGION=us-east-1
+      - EAGER_SERVICE_LOADING=1
+      - LOCALSTACK_AUTH_TOKEN=${LOCALSTACK_AUTH_TOKEN:-}
+    volumes:
+      - localstack-data:/var/lib/localstack
+      - ./scripts/localstack-init.sh:/etc/localstack/init/ready.d/init.sh
+    healthcheck:
+      test: ['CMD', 'curl', '-f', 'http://localhost:4566/_localstack/health']
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+  # ── Gateway ────────────────────────────────────────────────────────────────
+  gateway:
+    build:
+      context: .
+      dockerfile: services/gateway/Dockerfile
+    container_name: ai-gov-gateway
+    ports:
+      - '3000:3000'
+    env_file: .env.local
+    environment:
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - POLICY_ENGINE_URL=http://policy-engine:3001
+      - DATA_PROTECTION_URL=http://data-protection:3002
+    depends_on:
+      localstack:
+        condition: service_healthy
+      policy-engine:
+        condition: service_started
+      data-protection:
+        condition: service_started
+
+  # ── Policy Engine ──────────────────────────────────────────────────────────
+  policy-engine:
+    build:
+      context: .
+      dockerfile: services/policy-engine/Dockerfile
+    container_name: ai-gov-policy-engine
+    ports:
+      - '3001:3001'
+    env_file: .env.local
+    environment:
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    depends_on:
+      localstack:
+        condition: service_healthy
+
+  # ── Data Protection ────────────────────────────────────────────────────────
+  data-protection:
+    build:
+      context: .
+      dockerfile: services/data-protection/Dockerfile
+    container_name: ai-gov-data-protection
+    ports:
+      - '3002:3002'
+    env_file: .env.local
+    environment:
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - COMPREHEND_ENABLED=false
+    depends_on:
+      localstack:
+        condition: service_healthy
+
+  # ── Analytics ──────────────────────────────────────────────────────────────
+  analytics:
+    build:
+      context: .
+      dockerfile: services/analytics/Dockerfile
+    container_name: ai-gov-analytics
+    ports:
+      - '3003:3003'
+    env_file: .env.local
+    environment:
+      - AWS_ENDPOINT_URL=http://localstack:4566
+    depends_on:
+      localstack:
+        condition: service_healthy
+
+  # ── Content Scanner ────────────────────────────────────────────────────────
+  content-scanner:
+    build:
+      context: .
+      dockerfile: services/content-scanner/Dockerfile
+    container_name: ai-gov-content-scanner
+    ports:
+      - '3004:3004'
+    env_file: .env.local
+    environment:
+      - AWS_ENDPOINT_URL=http://localstack:4566
+      - SCAN_TEMP_BUCKET=ai-gov-audit-logs-dev-000000000000
+    depends_on:
+      localstack:
+        condition: service_healthy
+
+volumes:
+  localstack-data:

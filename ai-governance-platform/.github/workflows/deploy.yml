@@ -1,0 +1,201 @@
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      stage:
+        description: 'Deployment stage'
+        required: true
+        default: 'dev'
+        type: choice
+        options: [dev, staging, prod]
+      destroy:
+        description: 'Destroy environment (teardown)'
+        required: false
+        default: false
+        type: boolean
+
+env:
+  NODE_VERSION: '20'
+  AWS_REGION: us-east-1
+
+jobs:
+  # ─── Build & Push Docker Images ───────────────────────────────────────────
+  build-and-push:
+    name: Build & Push — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    if: ${{ !inputs.destroy }}
+    strategy:
+      matrix:
+        service: [gateway, policy-engine, data-protection, analytics]
+    permissions:
+      id-token: write
+      contents: read
+    outputs:
+      image-tag: ${{ github.sha }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr-login
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install & build
+        run: |
+          npm ci
+          npx turbo run build --filter=@ai-governance/${{ matrix.service }}
+
+      - name: Build & push Docker image
+        env:
+          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
+          STAGE: ${{ inputs.stage || 'dev' }}
+        run: |
+          IMAGE_URI=$ECR_REGISTRY/ai-gov-${{ matrix.service }}-$STAGE:${{ github.sha }}
+          docker build -t $IMAGE_URI services/${{ matrix.service }}
+          docker push $IMAGE_URI
+          docker tag $IMAGE_URI $ECR_REGISTRY/ai-gov-${{ matrix.service }}-$STAGE:latest
+          docker push $ECR_REGISTRY/ai-gov-${{ matrix.service }}-$STAGE:latest
+
+  # ─── CDK Deploy ───────────────────────────────────────────────────────────
+  cdk-deploy:
+    name: CDK Deploy — ${{ inputs.stage || 'dev' }}
+    runs-on: ubuntu-latest
+    needs: build-and-push
+    if: ${{ !inputs.destroy }}
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: ${{ inputs.stage || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build infra
+        run: npm run build
+        working-directory: ai-governance-platform/infra
+
+      - name: CDK Bootstrap (idempotent)
+        run: npx cdk bootstrap
+        working-directory: ai-governance-platform/infra
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
+      - name: CDK Deploy all stacks
+        run: npx cdk deploy --all --require-approval never --context stage=${{ inputs.stage || 'dev' }}
+        working-directory: ai-governance-platform/infra
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+
+  # ─── Deploy Website to S3/CloudFront ──────────────────────────────────────
+  deploy-website:
+    name: Deploy Website
+    runs-on: ubuntu-latest
+    needs: cdk-deploy
+    if: ${{ !inputs.destroy }}
+    permissions:
+      id-token: write
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install & build website
+        run: |
+          npm ci
+          npx turbo run build --filter=@ai-governance/website
+
+      - name: Sync to S3
+        run: |
+          aws s3 sync frontend/website/dist/ s3://${{ secrets.WEBSITE_BUCKET_NAME }} \
+            --delete \
+            --cache-control "public, max-age=31536000, immutable" \
+            --exclude "index.html"
+          aws s3 cp frontend/website/dist/index.html s3://${{ secrets.WEBSITE_BUCKET_NAME }}/index.html \
+            --cache-control "no-cache, no-store, must-revalidate"
+
+      - name: Invalidate CloudFront cache
+        run: |
+          aws cloudfront create-invalidation \
+            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
+            --paths "/*"
+
+  # ─── Teardown (destroy all stacks) ────────────────────────────────────────
+  cdk-destroy:
+    name: CDK Destroy — ${{ inputs.stage || 'dev' }}
+    runs-on: ubuntu-latest
+    if: ${{ inputs.destroy == true }}
+    permissions:
+      id-token: write
+      contents: read
+    environment:
+      name: ${{ inputs.stage || 'dev' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Configure AWS credentials (OIDC)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build infra
+        run: npm run build
+        working-directory: ai-governance-platform/infra
+
+      - name: CDK Destroy all stacks
+        run: npx cdk destroy --all --force --context stage=${{ inputs.stage || 'dev' }}
+        working-directory: ai-governance-platform/infra
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
