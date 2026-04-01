@@ -165,7 +165,9 @@ export function ContentScannerPage() {
           >
             <ScanLine className={clsx('w-4 h-4', isScanning && 'animate-pulse')} />
             {uploadProgress !== null
-              ? `Uploading... ${uploadProgress}%`
+              ? uploadProgress < 100
+                ? `Uploading... ${uploadProgress}%`
+                : 'Analyzing content...'
               : isScanning
                 ? 'Scanning...'
                 : `Scan ${selectedFiles.length} file${selectedFiles.length !== 1 ? 's' : ''}`}

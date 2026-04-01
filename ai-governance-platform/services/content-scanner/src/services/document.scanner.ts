@@ -80,9 +80,15 @@ export class DocumentScanner {
   }
 
   private async extractText(buffer: Buffer, mimeType: string): Promise<{ extractedText: string; pageCount: number }> {
-    // Plain text files — read directly
+    // Plain text files — read directly (cap at 1MB for performance)
     if (mimeType === 'text/plain' || mimeType === 'text/csv') {
-      return { extractedText: buffer.toString('utf-8'), pageCount: 1 };
+      const maxScanBytes = 1 * 1024 * 1024; // 1MB
+      const text = buffer.toString('utf-8', 0, Math.min(buffer.length, maxScanBytes));
+      const truncated = buffer.length > maxScanBytes;
+      if (truncated) {
+        logger.info('Large text file truncated for scanning', { originalSize: buffer.length, scannedSize: maxScanBytes });
+      }
+      return { extractedText: text, pageCount: 1 };
     }
 
     // PDF and images — use Textract
