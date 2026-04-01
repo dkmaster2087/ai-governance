@@ -1,0 +1,48 @@
+{
+  "manifest_version": 3,
+  "name": "Aegis AI — Shadow AI Guard",
+  "version": "1.0.0",
+  "description": "Detects and blocks unauthorized AI tool usage. Managed by your organization's AI governance platform.",
+  "permissions": [
+    "declarativeNetRequest",
+    "storage",
+    "alarms"
+  ],
+  "host_permissions": [
+    "https://*.openai.com/*",
+    "https://*.anthropic.com/*",
+    "https://*.claude.ai/*",
+    "https://*.bard.google.com/*",
+    "https://*.gemini.google.com/*",
+    "https://*.perplexity.ai/*",
+    "https://*.huggingface.co/api/*",
+    "https://*.replicate.com/api/*",
+    "https://*.cohere.ai/*",
+    "https://*.mistral.ai/*",
+    "https://*.together.ai/*",
+    "https://*.groq.com/*"
+  ],
+  "background": {
+    "service_worker": "background.js"
+  },
+  "action": {
+    "default_popup": "popup.html",
+    "default_icon": {
+      "16": "icons/icon16.png",
+      "48": "icons/icon48.png",
+      "128": "icons/icon128.png"
+    }
+  },
+  "icons": {
+    "16": "icons/icon16.png",
+    "48": "icons/icon48.png",
+    "128": "icons/icon128.png"
+  },
+  "declarative_net_request": {
+    "rule_resources": [{
+      "id": "dynamic_rules",
+      "enabled": true,
+      "path": "rules.json"
+    }]
+  }
+}
