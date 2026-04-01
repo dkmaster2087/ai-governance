@@ -62,33 +62,53 @@ export class ModelConfigRepository {
   }
 
   async update(tenantId: string, modelConfigId: string, data: Partial<ModelConfig>): Promise<ModelConfig> {
-    const updated = { ...data, tenantId, modelConfigId, updatedAt: new Date().toISOString() };
+    const updatedAt = new Date().toISOString();
+
+    // Build dynamic update expression — only include fields that are defined
+    const fieldMap: Record<string, { expr: string; alias: string; value: unknown }> = {
+      name:                 { expr: '#name',              alias: '#name',   value: data.name },
+      status:               { expr: '#status',            alias: '#status', value: data.status },
+      isDefault:            { expr: 'isDefault',          alias: '',        value: data.isDefault },
+      maxTokensPerRequest:  { expr: 'maxTokensPerRequest',alias: '',        value: data.maxTokensPerRequest },
+      maxContextTokens:     { expr: 'maxContextTokens',   alias: '',        value: data.maxContextTokens },
+      inputCostPer1kTokens: { expr: 'inputCostPer1kTokens',alias: '',      value: data.inputCostPer1kTokens },
+      outputCostPer1kTokens:{ expr: 'outputCostPer1kTokens',alias: '',     value: data.outputCostPer1kTokens },
+      allowedForRoles:      { expr: 'allowedForRoles',    alias: '',        value: data.allowedForRoles },
+      allowedForApps:       { expr: 'allowedForApps',     alias: '',        value: data.allowedForApps },
+      requiresApproval:     { expr: 'requiresApproval',   alias: '',        value: data.requiresApproval },
+      tags:                 { expr: '#tags',               alias: '#tags',  value: data.tags },
+      region:               { expr: '#region',             alias: '#region',value: data.region },
+      endpoint:             { expr: 'endpoint',           alias: '',        value: data.endpoint },
+      apiKeyHint:           { expr: 'apiKeyHint',         alias: '',        value: (data as any).apiKeyHint },
+    };
+
+    const updates: string[] = ['updatedAt = :updatedAt'];
+    const names: Record<string, string> = {};
+    const values: Record<string, unknown> = { ':updatedAt': updatedAt };
+
+    for (const [key, field] of Object.entries(fieldMap)) {
+      if (field.value !== undefined) {
+        const valKey = `:${key}`;
+        updates.push(`${field.expr} = ${valKey}`);
+        values[valKey] = field.value;
+        if (field.alias) names[field.alias] = key === 'tags' ? 'tags' : key === 'region' ? 'region' : key;
+      }
+    }
+
+    // Always alias reserved words
+    if (!names['#name']) { names['#name'] = 'name'; }
+    if (!names['#status']) { names['#status'] = 'status'; }
+
     await this.client.send(
       new UpdateCommand({
         TableName: this.table,
         Key: { tenantId, modelConfigId },
-        UpdateExpression: 'SET #name = :name, #status = :status, isDefault = :isDefault, ' +
-          'maxTokensPerRequest = :maxTokens, inputCostPer1kTokens = :inputCost, ' +
-          'outputCostPer1kTokens = :outputCost, allowedForRoles = :roles, ' +
-          'allowedForApps = :apps, requiresApproval = :approval, tags = :tags, ' +
-          'updatedAt = :updatedAt',
-        ExpressionAttributeNames: { '#name': 'name', '#status': 'status' },
-        ExpressionAttributeValues: {
-          ':name': data.name,
-          ':status': data.status,
-          ':isDefault': data.isDefault,
-          ':maxTokens': data.maxTokensPerRequest,
-          ':inputCost': data.inputCostPer1kTokens,
-          ':outputCost': data.outputCostPer1kTokens,
-          ':roles': data.allowedForRoles,
-          ':apps': data.allowedForApps,
-          ':approval': data.requiresApproval,
-          ':tags': data.tags,
-          ':updatedAt': updated.updatedAt,
-        },
+        UpdateExpression: `SET ${updates.join(', ')}`,
+        ExpressionAttributeNames: Object.keys(names).length > 0 ? names : undefined,
+        ExpressionAttributeValues: values,
       })
     );
-    return updated as ModelConfig;
+    return { ...data, tenantId, modelConfigId, updatedAt } as ModelConfig;
   }
 
   async updateTestResult(tenantId: string, modelConfigId: string, success: boolean): Promise<void> {

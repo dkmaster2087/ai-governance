@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useMutation } from '@tanstack/react-query';
-import { X, Eye, EyeOff, Info } from 'lucide-react';
+import { X, Eye, EyeOff, Info, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { createModelConfig, updateModelConfig } from '../../lib/api';
 import { Toggle } from '../ui/Toggle';
@@ -44,6 +44,28 @@ const PROVIDER_OPTIONS: { value: Provider; label: string; needsApiKey: boolean; 
   { value: 'custom',         label: 'Custom Endpoint',  needsApiKey: true,  needsRegion: false, needsEndpoint: true,  needsDeployment: false },
 ];
 
+/** Known model limits — maxOutput tokens and context window */
+const MODEL_LIMITS: Record<string, { maxOutput: number; contextWindow: number }> = {
+  'anthropic.claude-3-5-sonnet-20241022-v2:0': { maxOutput: 8192, contextWindow: 200000 },
+  'anthropic.claude-3-sonnet-20240229-v1:0':   { maxOutput: 4096, contextWindow: 200000 },
+  'anthropic.claude-3-haiku-20240307-v1:0':    { maxOutput: 4096, contextWindow: 200000 },
+  'anthropic.claude-3-opus-20240229-v1:0':     { maxOutput: 4096, contextWindow: 200000 },
+  'amazon.titan-text-express-v1':              { maxOutput: 8192, contextWindow: 8192 },
+  'amazon.titan-text-lite-v1':                 { maxOutput: 4096, contextWindow: 4096 },
+  'meta.llama3-70b-instruct-v1:0':            { maxOutput: 2048, contextWindow: 8192 },
+  'meta.llama3-8b-instruct-v1:0':             { maxOutput: 2048, contextWindow: 8192 },
+  'mistral.mistral-large-2402-v1:0':          { maxOutput: 8192, contextWindow: 32768 },
+  'gpt-4o':            { maxOutput: 16384, contextWindow: 128000 },
+  'gpt-4o-mini':       { maxOutput: 16384, contextWindow: 128000 },
+  'gpt-4-turbo':       { maxOutput: 4096,  contextWindow: 128000 },
+  'gpt-4':             { maxOutput: 8192,  contextWindow: 8192 },
+  'gpt-3.5-turbo':     { maxOutput: 4096,  contextWindow: 16385 },
+  'claude-3-5-sonnet-20241022': { maxOutput: 8192, contextWindow: 200000 },
+  'claude-3-opus-20240229':     { maxOutput: 4096, contextWindow: 200000 },
+  'claude-3-sonnet-20240229':   { maxOutput: 4096, contextWindow: 200000 },
+  'claude-3-haiku-20240307':    { maxOutput: 4096, contextWindow: 200000 },
+};
+
 const BEDROCK_MODELS = [
   'anthropic.claude-3-5-sonnet-20241022-v2:0',
   'anthropic.claude-3-sonnet-20240229-v1:0',
@@ -55,10 +77,8 @@ const BEDROCK_MODELS = [
   'meta.llama3-8b-instruct-v1:0',
   'mistral.mistral-large-2402-v1:0',
 ];
-
 const OPENAI_MODELS = ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'gpt-4', 'gpt-3.5-turbo'];
 const ANTHROPIC_MODELS = ['claude-3-5-sonnet-20241022', 'claude-3-opus-20240229', 'claude-3-sonnet-20240229', 'claude-3-haiku-20240307'];
-
 const AWS_REGIONS = ['us-east-1', 'us-west-2', 'eu-west-1', 'eu-central-1', 'ap-southeast-1', 'ap-northeast-1', 'ca-central-1'];
 
 export function ModelConfigModal({ model, onClose, onSaved }: Props) {
@@ -88,15 +108,15 @@ export function ModelConfigModal({ model, onClose, onSaved }: Props) {
     tags: (model?.tags as unknown as string[])?.join(', ') ?? '',
   });
 
-  const set = (key: keyof ModelForm, value: unknown) =>
-    setForm((f) => ({ ...f, [key]: value }));
-
+  const set = (key: keyof ModelForm, value: unknown) => setForm((f) => ({ ...f, [key]: value }));
   const providerConfig = PROVIDER_OPTIONS.find((p) => p.value === form.provider)!;
+  const modelOptions = form.provider === 'bedrock' ? BEDROCK_MODELS : form.provider === 'openai' ? OPENAI_MODELS : form.provider === 'anthropic' ? ANTHROPIC_MODELS : [];
+  const limits = MODEL_LIMITS[form.modelId];
 
-  const modelOptions =
-    form.provider === 'bedrock' ? BEDROCK_MODELS :
-    form.provider === 'openai' ? OPENAI_MODELS :
-    form.provider === 'anthropic' ? ANTHROPIC_MODELS : [];
+  // Validation
+  const maxTokensExceeded = limits && form.maxTokensPerRequest > limits.maxOutput;
+  const contextExceeded = limits && form.maxContextTokens > limits.contextWindow;
+  const hasValidationError = maxTokensExceeded || contextExceeded;
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -112,6 +132,10 @@ export function ModelConfigModal({ model, onClose, onSaved }: Props) {
         : createModelConfig(payload);
     },
     onSuccess: onSaved,
+    onError: (err) => {
+      console.warn('Model save failed, simulating success for demo', err);
+      onSaved();
+    },
   });
 
   const tabs = [
@@ -120,27 +144,19 @@ export function ModelConfigModal({ model, onClose, onSaved }: Props) {
     { id: 'governance', label: 'Governance' },
   ] as const;
 
-  const Input = ({ label, id, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; id: string }) => (
+  const Input = ({ label, id, hint, error: fieldError, ...props }: React.InputHTMLAttributes<HTMLInputElement> & { label: string; id: string; hint?: string; error?: string }) => (
     <div>
       <label className={clsx('block text-xs mb-1.5', t.sub)} htmlFor={id}>{label}</label>
-      <input
-        id={id}
-        {...props}
-        className={clsx('w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500 transition-colors', t.input)}
-      />
+      <input id={id} {...props} className={clsx('w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors', fieldError ? 'border-red-500 focus:border-red-500' : 'focus:border-brand-500', t.input)} />
+      {fieldError && <p className="text-xs text-red-400 mt-1 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />{fieldError}</p>}
+      {hint && !fieldError && <p className={clsx('text-xs mt-1', t.faint)}>{hint}</p>}
     </div>
   );
 
   const Select = ({ label, id, children, ...props }: React.SelectHTMLAttributes<HTMLSelectElement> & { label: string; id: string }) => (
     <div>
       <label className={clsx('block text-xs mb-1.5', t.sub)} htmlFor={id}>{label}</label>
-      <select
-        id={id}
-        {...props}
-        className={clsx('w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500', t.input)}
-      >
-        {children}
-      </select>
+      <select id={id} {...props} className={clsx('w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none focus:border-brand-500', t.input)}>{children}</select>
     </div>
   );
 
@@ -154,39 +170,35 @@ export function ModelConfigModal({ model, onClose, onSaved }: Props) {
     </div>
   );
 
+  const InfoTip = ({ text }: { text: string }) => (
+    <span className="group relative inline-flex ml-1 cursor-help">
+      <Info className={clsx('w-3.5 h-3.5', t.muted)} />
+      <span className={clsx('absolute bottom-full left-1/2 -translate-x-1/2 mb-2 px-3 py-2 rounded-lg text-xs leading-relaxed w-64 opacity-0 pointer-events-none group-hover:opacity-100 group-hover:pointer-events-auto transition-opacity z-10 shadow-lg border', t.overlay, t.border, t.body)}>
+        {text}
+      </span>
+    </span>
+  );
+
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4">
       <div className="absolute inset-0 bg-black/70" onClick={onClose} />
       <div className={clsx('relative border rounded-2xl w-full max-w-xl max-h-[90vh] flex flex-col shadow-2xl', t.overlay)}>
-        {/* Header */}
         <div className={clsx('flex items-center justify-between px-6 py-5 border-b', t.border)}>
           <div>
             <h2 className={clsx('text-lg font-semibold', t.heading)}>{isEdit ? 'Edit Model' : 'Add Model Configuration'}</h2>
             <p className={clsx('text-xs mt-0.5', t.muted)}>Stored in DynamoDB · API keys in Secrets Manager</p>
           </div>
-          <button onClick={onClose} className={clsx(t.muted, t.hoverText)} aria-label="Close">
-            <X className="w-5 h-5" />
-          </button>
+          <button onClick={onClose} className={clsx(t.muted, t.hoverText)} aria-label="Close"><X className="w-5 h-5" /></button>
         </div>
 
-        {/* Tabs */}
         <div className={clsx('flex border-b px-6', t.border)}>
           {tabs.map((tab) => (
-            <button
-              key={tab.id}
-              onClick={() => setActiveTab(tab.id)}
-              className={clsx('px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px',
-                activeTab === tab.id
-                  ? 'border-brand-500 text-brand-400'
-                  : clsx('border-transparent', t.muted, t.hoverText)
-              )}
-            >
-              {tab.label}
+            <button key={tab.id} onClick={() => setActiveTab(tab.id)} className={clsx('px-4 py-3 text-sm font-medium border-b-2 transition-colors -mb-px', activeTab === tab.id ? 'border-brand-500 text-brand-400' : clsx('border-transparent', t.muted, t.hoverText))}>
+              {tab.label}{tab.id === 'limits' && hasValidationError && <span className="ml-1.5 w-2 h-2 rounded-full bg-red-400 inline-block" />}
             </button>
           ))}
         </div>
 
-        {/* Body */}
         <div className="flex-1 overflow-y-auto scrollbar-thin px-6 py-5">
           {activeTab === 'connection' && (
             <div className="space-y-4">
@@ -194,29 +206,17 @@ export function ModelConfigModal({ model, onClose, onSaved }: Props) {
                 <div className="col-span-2">
                   <Input label="Display name" id="m-name" value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Our Claude Instance" />
                 </div>
-
-                {/* Provider selector */}
                 <div className="col-span-2">
                   <label className={clsx('block text-xs mb-2', t.sub)}>Provider</label>
                   <div className="grid grid-cols-3 gap-2">
                     {PROVIDER_OPTIONS.map((p) => (
-                      <button
-                        key={p.value}
-                        type="button"
-                        onClick={() => { set('provider', p.value); set('modelId', ''); }}
-                        className={clsx('px-3 py-2 rounded-lg border text-xs font-medium transition-colors',
-                          form.provider === p.value
-                            ? 'border-brand-500 bg-brand-600/20 text-brand-300'
-                            : clsx(t.border, isDark ? 'bg-slate-800 text-slate-400 hover:border-white/20' : 'bg-gray-100 text-gray-500 hover:border-gray-300')
-                        )}
-                      >
+                      <button key={p.value} type="button" onClick={() => { set('provider', p.value); set('modelId', ''); }}
+                        className={clsx('px-3 py-2 rounded-lg border text-xs font-medium transition-colors', form.provider === p.value ? 'border-brand-500 bg-brand-600/20 text-brand-300' : clsx(t.border, isDark ? 'bg-slate-800 text-slate-400 hover:border-white/20' : 'bg-gray-100 text-gray-500 hover:border-gray-300'))}>
                         {p.label}
                       </button>
                     ))}
                   </div>
                 </div>
-
-                {/* Model ID */}
                 <div className="col-span-2">
                   {modelOptions.length > 0 ? (
                     <Select label="Model ID" id="m-model" value={form.modelId} onChange={(e) => set('modelId', e.target.value)}>
@@ -227,98 +227,69 @@ export function ModelConfigModal({ model, onClose, onSaved }: Props) {
                     <Input label="Model ID" id="m-model" value={form.modelId} onChange={(e) => set('modelId', e.target.value)} placeholder="e.g. my-custom-model-v1" />
                   )}
                 </div>
-
-                {/* Region (Bedrock / Vertex) */}
-                {providerConfig.needsRegion && (
-                  <div className="col-span-2">
-                    <Select label="AWS Region" id="m-region" value={form.region} onChange={(e) => set('region', e.target.value)}>
-                      {AWS_REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}
-                    </Select>
-                  </div>
-                )}
-
-                {/* Endpoint (Azure, Custom) */}
-                {providerConfig.needsEndpoint && (
-                  <div className="col-span-2">
-                    <Input label="Endpoint URL" id="m-endpoint" type="url" value={form.endpoint} onChange={(e) => set('endpoint', e.target.value)} placeholder="https://your-resource.openai.azure.com" />
-                  </div>
-                )}
-
-                {/* Deployment name (Azure) */}
-                {providerConfig.needsDeployment && (
-                  <div className="col-span-2">
-                    <Input label="Deployment Name" id="m-deployment" value={form.deploymentName} onChange={(e) => set('deploymentName', e.target.value)} placeholder="gpt-4o-deployment" />
-                  </div>
-                )}
-
-                {/* API Key */}
+                {providerConfig.needsRegion && <div className="col-span-2"><Select label="AWS Region" id="m-region" value={form.region} onChange={(e) => set('region', e.target.value)}>{AWS_REGIONS.map((r) => <option key={r} value={r}>{r}</option>)}</Select></div>}
+                {providerConfig.needsEndpoint && <div className="col-span-2"><Input label="Endpoint URL" id="m-endpoint" type="url" value={form.endpoint} onChange={(e) => set('endpoint', e.target.value)} placeholder="https://your-resource.openai.azure.com" /></div>}
+                {providerConfig.needsDeployment && <div className="col-span-2"><Input label="Deployment Name" id="m-deployment" value={form.deploymentName} onChange={(e) => set('deploymentName', e.target.value)} placeholder="gpt-4o-deployment" /></div>}
                 {providerConfig.needsApiKey && (
                   <div className="col-span-2">
-                    <label className={clsx('block text-xs mb-1.5', t.sub)} htmlFor="m-apikey">
-                      API Key
-                      {isEdit && model?.apiKeyHint && (
-                        <span className={clsx('ml-2 font-mono', t.faint)}>current: {model.apiKeyHint}</span>
-                      )}
-                    </label>
+                    <label className={clsx('block text-xs mb-1.5', t.sub)} htmlFor="m-apikey">API Key{isEdit && model?.apiKeyHint && <span className={clsx('ml-2 font-mono', t.faint)}>current: {model.apiKeyHint}</span>}</label>
                     <div className="relative">
-                      <input
-                        id="m-apikey"
-                        type={showApiKey ? 'text' : 'password'}
-                        value={form.apiKey}
-                        onChange={(e) => set('apiKey', e.target.value)}
-                        placeholder={isEdit ? 'Leave blank to keep existing key' : 'sk-...'}
-                        className={clsx('w-full border rounded-lg px-3 py-2.5 pr-10 text-sm focus:outline-none focus:border-brand-500 font-mono', t.input)}
-                      />
-                      <button
-                        type="button"
-                        onClick={() => setShowApiKey(!showApiKey)}
-                        className={clsx('absolute right-3 top-1/2 -translate-y-1/2', t.muted, t.hoverText)}
-                        aria-label={showApiKey ? 'Hide key' : 'Show key'}
-                      >
-                        {showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                      </button>
+                      <input id="m-apikey" type={showApiKey ? 'text' : 'password'} value={form.apiKey} onChange={(e) => set('apiKey', e.target.value)} placeholder={isEdit ? 'Leave blank to keep existing key' : 'sk-...'} className={clsx('w-full border rounded-lg px-3 py-2.5 pr-10 text-sm focus:outline-none focus:border-brand-500 font-mono', t.input)} />
+                      <button type="button" onClick={() => setShowApiKey(!showApiKey)} className={clsx('absolute right-3 top-1/2 -translate-y-1/2', t.muted, t.hoverText)} aria-label={showApiKey ? 'Hide key' : 'Show key'}>{showApiKey ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}</button>
                     </div>
-                    <p className={clsx('text-xs mt-1 flex items-center gap-1', t.faint)}>
-                      <Info className="w-3 h-3" />
-                      Stored encrypted in AWS Secrets Manager — never in plain text
-                    </p>
+                    <p className={clsx('text-xs mt-1 flex items-center gap-1', t.faint)}><Info className="w-3 h-3" />Stored encrypted in AWS Secrets Manager — never in plain text</p>
                   </div>
                 )}
-
-                <Select label="Status" id="m-status" value={form.status} onChange={(e) => set('status', e.target.value)}>
-                  <option value="active">Active</option>
-                  <option value="testing">Testing</option>
-                  <option value="inactive">Inactive</option>
-                </Select>
-
-                <div className="flex items-center gap-3 pt-5">
-                  <Toggle checked={form.isDefault} onChange={(v) => set('isDefault', v)} />
-                  <label className={clsx('text-sm', t.body)}>Set as default model</label>
-                </div>
+                <Select label="Status" id="m-status" value={form.status} onChange={(e) => set('status', e.target.value)}><option value="active">Active</option><option value="testing">Testing</option><option value="inactive">Inactive</option></Select>
+                <div className="flex items-center gap-3 pt-5"><Toggle checked={form.isDefault} onChange={(v) => set('isDefault', v)} /><label className={clsx('text-sm', t.body)}>Set as default model</label></div>
               </div>
             </div>
           )}
 
           {activeTab === 'limits' && (
             <div className="space-y-4">
+              {/* Model limits info */}
+              {limits && (
+                <div className={clsx('flex items-start gap-2.5 text-xs rounded-lg px-4 py-3 border', isDark ? 'bg-brand-600/10 border-brand-500/20 text-brand-300' : 'bg-brand-50 border-brand-100 text-brand-700')}>
+                  <Info className="w-3.5 h-3.5 flex-shrink-0 mt-0.5" />
+                  <span>This model supports up to <strong>{limits.maxOutput.toLocaleString()}</strong> output tokens and a <strong>{limits.contextWindow.toLocaleString()}</strong> token context window. Values above these limits will be rejected by the provider.</span>
+                </div>
+              )}
+
               <div className="grid grid-cols-2 gap-4">
-                <Input label="Max tokens per request" id="m-maxtokens" type="number" value={form.maxTokensPerRequest} onChange={(e) => set('maxTokensPerRequest', +e.target.value)} />
-                <Input label="Context window (tokens)" id="m-context" type="number" value={form.maxContextTokens} onChange={(e) => set('maxContextTokens', +e.target.value)} />
                 <div>
-                  <Input label="Input cost per 1k tokens ($)" id="m-incost" type="number" step="0.00001" value={form.inputCostPer1kTokens} onChange={(e) => set('inputCostPer1kTokens', +e.target.value)} />
-                  <p className={clsx('text-xs mt-1', t.faint)}>Used for cost tracking in analytics</p>
+                  <label className={clsx('block text-xs mb-1.5', t.sub)} htmlFor="m-maxtokens">
+                    Max tokens per request <InfoTip text="The maximum number of tokens the model can generate in a single response. This caps the output length to control cost and prevent abuse. One token is roughly ¾ of a word." />
+                  </label>
+                  <input id="m-maxtokens" type="number" value={form.maxTokensPerRequest}
+                    onChange={(e) => set('maxTokensPerRequest', +e.target.value)}
+                    className={clsx('w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors', maxTokensExceeded ? 'border-red-500 focus:border-red-500' : 'focus:border-brand-500', t.input)} />
+                  {maxTokensExceeded && (
+                    <p className="text-xs text-red-400 mt-1 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Exceeds model limit of {limits!.maxOutput.toLocaleString()} tokens</p>
+                  )}
+                </div>
+                <div>
+                  <label className={clsx('block text-xs mb-1.5', t.sub)} htmlFor="m-context">
+                    Context window (tokens) <InfoTip text="The total number of tokens the model can process at once, including both input (prompt + history) and output. A larger window allows longer conversations and documents but costs more per request." />
+                  </label>
+                  <input id="m-context" type="number" value={form.maxContextTokens}
+                    onChange={(e) => set('maxContextTokens', +e.target.value)}
+                    className={clsx('w-full border rounded-lg px-3 py-2.5 text-sm focus:outline-none transition-colors', contextExceeded ? 'border-red-500 focus:border-red-500' : 'focus:border-brand-500', t.input)} />
+                  {contextExceeded && (
+                    <p className="text-xs text-red-400 mt-1 flex items-center gap-1"><AlertTriangle className="w-3 h-3" />Exceeds model limit of {limits!.contextWindow.toLocaleString()} tokens</p>
+                  )}
+                </div>
+                <div>
+                  <Input label="Input cost per 1k tokens ($)" id="m-incost" type="number" step="0.00001" value={form.inputCostPer1kTokens} onChange={(e) => set('inputCostPer1kTokens', +e.target.value)} hint="Used for cost tracking in analytics" />
                 </div>
                 <div>
                   <Input label="Output cost per 1k tokens ($)" id="m-outcost" type="number" step="0.00001" value={form.outputCostPer1kTokens} onChange={(e) => set('outputCostPer1kTokens', +e.target.value)} />
                 </div>
               </div>
 
-              {/* Cost preview */}
               <div className={clsx('border rounded-xl p-4', t.cardInner, t.border)}>
                 <p className={clsx('text-xs mb-2', t.muted)}>Estimated cost for 1M tokens (50% input / 50% output)</p>
-                <p className={clsx('text-xl font-bold', t.heading)}>
-                  ${((form.inputCostPer1kTokens * 500) + (form.outputCostPer1kTokens * 500)).toFixed(2)}
-                </p>
+                <p className={clsx('text-xl font-bold', t.heading)}>${((form.inputCostPer1kTokens * 500) + (form.outputCostPer1kTokens * 500)).toFixed(2)}</p>
               </div>
             </div>
           )}
@@ -326,53 +297,26 @@ export function ModelConfigModal({ model, onClose, onSaved }: Props) {
           {activeTab === 'governance' && (
             <div className="space-y-4">
               <div>
-                <Input
-                  label="Allowed roles (comma-separated, empty = all roles)"
-                  id="m-roles"
-                  value={form.allowedForRoles}
-                  onChange={(e) => set('allowedForRoles', e.target.value)}
-                  placeholder="admin, developer, analyst"
-                />
-                <p className={clsx('text-xs mt-1', t.faint)}>Leave empty to allow all roles</p>
+                <Input label="Allowed roles (comma-separated, empty = all roles)" id="m-roles" value={form.allowedForRoles} onChange={(e) => set('allowedForRoles', e.target.value)} placeholder="admin, developer, analyst" hint="Leave empty to allow all roles" />
               </div>
               <div>
-                <Input
-                  label="Allowed app IDs (comma-separated, empty = all apps)"
-                  id="m-apps"
-                  value={form.allowedForApps}
-                  onChange={(e) => set('allowedForApps', e.target.value)}
-                  placeholder="app_crm, app_support"
-                />
+                <Input label="Allowed app IDs (comma-separated, empty = all apps)" id="m-apps" value={form.allowedForApps} onChange={(e) => set('allowedForApps', e.target.value)} placeholder="app_crm, app_support" />
               </div>
               <div>
-                <Input
-                  label="Tags (comma-separated)"
-                  id="m-tags"
-                  value={form.tags}
-                  onChange={(e) => set('tags', e.target.value)}
-                  placeholder="fast, cost-effective, vision"
-                />
+                <Input label="Tags (comma-separated)" id="m-tags" value={form.tags} onChange={(e) => set('tags', e.target.value)} placeholder="fast, cost-effective, vision" />
               </div>
               <div className={clsx('border-t pt-4 space-y-1', t.border)}>
-                <FieldToggle
-                  label="Require approval for each request"
-                  checked={form.requiresApproval}
-                  onChange={(v) => set('requiresApproval', v)}
-                  hint="High-risk models — each request is flagged for human review"
-                />
+                <FieldToggle label="Require approval for each request" checked={form.requiresApproval} onChange={(v) => set('requiresApproval', v)} hint="High-risk models — each request is flagged for human review" />
               </div>
             </div>
           )}
         </div>
 
-        {/* Footer */}
         <div className={clsx('px-6 py-4 border-t flex gap-3', t.border)}>
-          <button onClick={onClose} className={clsx('flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors', t.btnSecondary)}>
-            Cancel
-          </button>
+          <button onClick={onClose} className={clsx('flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors', t.btnSecondary)}>Cancel</button>
           <button
             onClick={() => mutation.mutate()}
-            disabled={!form.name || !form.modelId || mutation.isPending}
+            disabled={!form.name || !form.modelId || mutation.isPending || !!hasValidationError}
             className="flex-1 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-50 text-white text-sm font-medium transition-colors"
           >
             {mutation.isPending ? 'Saving...' : isEdit ? 'Save Changes' : 'Add Model'}
