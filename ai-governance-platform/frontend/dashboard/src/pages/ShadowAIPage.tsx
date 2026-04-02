@@ -223,6 +223,7 @@ export function ShadowAIPage() {
               </tr>
             ))}
           </tbody>
+        </table>
       </div>
       <div className={clsx('border rounded-xl overflow-hidden', t.card)}>
         <div className={clsx('px-5 py-4 border-b', t.border)}>
