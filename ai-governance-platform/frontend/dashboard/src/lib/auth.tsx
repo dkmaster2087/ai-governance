@@ -51,7 +51,25 @@ function getAllAccounts(): Record<string, { password: string; user: AuthUser }> 
 function getDynamicAccounts(): Record<string, { password: string; user: AuthUser }> {
   try {
     const stored = localStorage.getItem(DYNAMIC_ACCOUNTS_KEY);
-    return stored ? JSON.parse(stored) : {};
+    if (!stored) return {};
+    const accounts = JSON.parse(stored) as Record<string, { password: string; user: AuthUser }>;
+    // Migration: accounts created before the role system had 'tenant_user' role
+    // but were actually tenant admins (created via onboarding). Upgrade them.
+    let migrated = false;
+    const tenantCounts: Record<string, number> = {};
+    for (const acc of Object.values(accounts)) {
+      const tid = acc.user?.tenantId;
+      if (tid) tenantCounts[tid] = (tenantCounts[tid] || 0) + 1;
+    }
+    for (const acc of Object.values(accounts)) {
+      // If this is the only user for the tenant and has tenant_user role, upgrade to admin
+      if (acc.user?.role === 'tenant_user' && tenantCounts[acc.user.tenantId] === 1) {
+        acc.user.role = 'tenant_admin';
+        migrated = true;
+      }
+    }
+    if (migrated) localStorage.setItem(DYNAMIC_ACCOUNTS_KEY, JSON.stringify(accounts));
+    return accounts;
   } catch { return {}; }
 }
 
@@ -115,7 +133,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => {
     try {
       const stored = localStorage.getItem(STORAGE_KEY);
-      return stored ? JSON.parse(stored) : null;
+      if (!stored) return null;
+      const parsed = JSON.parse(stored);
+      // Re-check against current accounts to pick up role migrations
+      const accounts = getAllAccounts();
+      const current = accounts[parsed.email?.toLowerCase()];
+      if (current && current.user.role !== parsed.role) {
+        const updated = { ...parsed, role: current.user.role };
+        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+        return updated;
+      }
+      return parsed;
     } catch { return null; }
   });
 
