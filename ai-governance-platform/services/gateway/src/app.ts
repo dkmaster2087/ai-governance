@@ -9,6 +9,7 @@ import { modelConfigRoutes } from './routes/model-config.routes';
 import { multimodalRoutes } from './routes/multimodal.routes';
 import { tenantRoutes } from './routes/tenant.routes';
 import { shadowAIRoutes } from './routes/shadow-ai.routes';
+import { costRoutes } from './routes/cost.routes';
 import { errorHandler } from './middleware/error.handler';
 import { authMiddleware } from './middleware/auth.middleware';
 
@@ -39,6 +40,7 @@ export async function buildApp() {
   await app.register(multimodalRoutes, { prefix: '/v1' });
   await app.register(tenantRoutes, { prefix: '/v1' });
   await app.register(shadowAIRoutes, { prefix: '/v1' });
+  await app.register(costRoutes, { prefix: '/v1' });
 
   // Error handler
   app.setErrorHandler(errorHandler);

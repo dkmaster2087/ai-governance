@@ -115,3 +115,28 @@ export async function testModelConfig(modelConfigId: string) {
   const { data } = await gateway.post(`/v1/models/config/${modelConfigId}/test`, {}, { headers: headers() });
   return data;
 }
+
+// ── Cost Analytics ────────────────────────────────────────────────────────────
+export async function fetchCostSummary(tenantId: string, period = '30d') {
+  const { data } = await gateway.get(`/v1/cost/summary/${tenantId}`, {
+    params: { period },
+    headers: headers(),
+  });
+  return data;
+}
+
+export async function fetchCostDailyBreakdown(tenantId: string, period = '30d') {
+  const { data } = await gateway.get(`/v1/cost/breakdown/${tenantId}`, {
+    params: { period },
+    headers: headers(),
+  });
+  return data;
+}
+
+export async function fetchCostUsers(tenantId: string, period = '30d') {
+  const { data } = await gateway.get(`/v1/cost/users/${tenantId}`, {
+    params: { period },
+    headers: headers(),
+  });
+  return data;
+}

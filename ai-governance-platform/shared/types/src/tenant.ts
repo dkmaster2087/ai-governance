@@ -1,6 +1,7 @@
 export type DeploymentMode = 'saas' | 'onprem';
 export type TenantPlan = 'starter' | 'professional' | 'enterprise';
 export type TenantStatus = 'active' | 'suspended' | 'trial';
+export type BillingPlan = 'free' | 'starter' | 'professional' | 'enterprise';
 
 export interface Tenant {
   tenantId: string;
@@ -12,6 +13,14 @@ export interface Tenant {
   createdAt: string;
   updatedAt: string;
   settings: TenantSettings;
+  billing?: TenantBilling;
+}
+
+export interface TenantBilling {
+  billingPlan: BillingPlan;
+  monthlyBudgetUSD: number;
+  costMarkupPercent: number;
+  billingAlertThresholdPercent: number;
 }
 
 export interface TenantSettings {

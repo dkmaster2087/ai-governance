@@ -3,7 +3,7 @@ import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, ScrollText, ShieldCheck, Cpu, Settings,
   Shield, Menu, Bell, BadgeCheck, ScanLine,
-  Building2, Eye, LogOut, Sun, Moon, MessageSquare, Users,
+  Building2, Eye, LogOut, Sun, Moon, MessageSquare, Users, DollarSign,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../../lib/auth';
@@ -18,6 +18,7 @@ const platformAdminNav = [
   { label: 'Content Scanner', href: '/content-scanner', icon: ScanLine },
   { label: 'Shadow AI',       href: '/shadow-ai',       icon: Eye },
   { label: 'Models',          href: '/models',          icon: Cpu },
+  { label: 'Cost & Billing',  href: '/cost',            icon: DollarSign },
   { label: 'Tenants',         href: '/tenants',         icon: Building2 },
   { label: 'Settings',        href: '/settings',        icon: Settings },
 ];
@@ -31,6 +32,7 @@ const tenantAdminNav = [
   { label: 'Content Scanner', href: '/content-scanner', icon: ScanLine },
   { label: 'Shadow AI',       href: '/shadow-ai',       icon: Eye },
   { label: 'Models',          href: '/models',          icon: Cpu },
+  { label: 'Cost & Billing',  href: '/cost',            icon: DollarSign },
   { label: 'Users',           href: '/users',           icon: Users },
   { label: 'Settings',        href: '/settings',        icon: Settings },
 ];

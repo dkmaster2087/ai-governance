@@ -13,6 +13,7 @@ import { TenantsPage } from './pages/TenantsPage';
 import { ShadowAIPage } from './pages/ShadowAIPage';
 import { ChatPage } from './pages/ChatPage';
 import { UsersPage } from './pages/UsersPage';
+import { CostPage } from './pages/CostPage';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -81,6 +82,7 @@ export default function App() {
           <Route path="/policies" element={<RequireAdmin><PoliciesPage /></RequireAdmin>} />
           <Route path="/compliance" element={<RequireAdmin><CompliancePage /></RequireAdmin>} />
           <Route path="/models" element={<RequireAdmin><ModelsPage /></RequireAdmin>} />
+          <Route path="/cost" element={<RequireAdmin><CostPage /></RequireAdmin>} />
           <Route path="/content-scanner" element={<RequireAdmin><ContentScannerPage /></RequireAdmin>} />
           <Route path="/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
           <Route path="/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />

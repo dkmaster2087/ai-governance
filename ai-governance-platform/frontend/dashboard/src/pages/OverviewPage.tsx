@@ -7,11 +7,13 @@ import { Activity, DollarSign, ShieldX, ScanEye, BadgeCheck } from 'lucide-react
 import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import { StatCard } from '../components/ui/StatCard';
-import { fetchSummary, fetchModelDistribution } from '../lib/api';
+import { fetchSummary, fetchModelDistribution, fetchCostDailyBreakdown } from '../lib/api';
 import { fetchComplianceStatus } from '../lib/compliance-api';
 import { useTheme } from '../lib/theme';
 import { mockSummary, mockModelDistribution } from '../lib/mock-data';
 import { mockCompliancePacks } from '../lib/mock-compliance';
+
+const mockCostTrend = mockSummary.costTrend;
 
 export function OverviewPage() {
   const { isDark } = useTheme();
@@ -43,6 +45,28 @@ export function OverviewPage() {
     queryFn: fetchComplianceStatus,
     placeholderData: mockCompliancePacks,
   });
+
+  // Fetch live cost data from the cost endpoint
+  const tenantId = (() => {
+    try {
+      const stored = localStorage.getItem('aegis_auth_user');
+      if (stored) return JSON.parse(stored).tenantId || 'tenant_demo';
+    } catch { /* empty */ }
+    return 'tenant_demo';
+  })();
+
+  const { data: costBreakdownData } = useQuery({
+    queryKey: ['overview-cost-breakdown', tenantId],
+    queryFn: () => fetchCostDailyBreakdown(tenantId, '7d'),
+  });
+
+  // Use live cost data if available, otherwise fall back to mock
+  const costTrend = costBreakdownData?.breakdown?.length
+    ? costBreakdownData.breakdown.map((d: { date: string; cost: number }) => ({
+        date: d.date.slice(5),
+        cost: d.cost,
+      }))
+    : mockCostTrend;
 
   const compliancePacks = complianceData?.length ? complianceData : mockCompliancePacks;
   const enabledFrameworks = compliancePacks.filter((p: { status: string }) => p.status === 'enabled').length;
@@ -131,7 +155,7 @@ export function OverviewPage() {
         <div className={clsx('border rounded-xl p-5', card)}>
           <h2 className={clsx('text-sm font-semibold mb-5', heading)}>Daily Cost (USD)</h2>
           <ResponsiveContainer width="100%" height={200}>
-            <BarChart data={summary.costTrend ?? mockSummary.costTrend}>
+            <BarChart data={costTrend}>
               <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
               <XAxis dataKey="date" tick={{ fill: tickFill, fontSize: 12 }} axisLine={false} tickLine={false} />
               <YAxis tick={{ fill: tickFill, fontSize: 12 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
