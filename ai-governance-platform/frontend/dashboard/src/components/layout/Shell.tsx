@@ -225,7 +225,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </header>
 
         {/* Page content */}
-        <main className="flex-1 overflow-y-auto scrollbar-thin p-6">
+        <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin p-6">
           {children}
         </main>
       </div>
