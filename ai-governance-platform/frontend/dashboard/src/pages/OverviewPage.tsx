@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, Sector,
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { Activity, DollarSign, ShieldX, ScanEye, BadgeCheck } from 'lucide-react';
@@ -13,41 +13,7 @@ import { fetchComplianceStatus } from '../lib/compliance-api';
 import { useTheme } from '../lib/theme';
 import { mockSummary, mockModelDistribution } from '../lib/mock-data';
 import { mockCompliancePacks } from '../lib/mock-compliance';
-
-/** Renders the active (hovered) pie segment projected outward */
-function renderActiveShape(props: any) {
-  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload, value } = props;
-  return (
-    <g>
-      <Sector
-        cx={cx}
-        cy={cy}
-        innerRadius={innerRadius - 3}
-        outerRadius={outerRadius + 8}
-        startAngle={startAngle}
-        endAngle={endAngle}
-        fill={fill}
-        style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.3))' }}
-      />
-      <Sector
-        cx={cx}
-        cy={cy}
-        innerRadius={outerRadius + 12}
-        outerRadius={outerRadius + 14}
-        startAngle={startAngle}
-        endAngle={endAngle}
-        fill={fill}
-        opacity={0.4}
-      />
-      <text x={cx} y={cy - 6} textAnchor="middle" fill={fill} fontSize={16} fontWeight={700}>
-        {value}%
-      </text>
-      <text x={cx} y={cy + 10} textAnchor="middle" fill="#94a3b8" fontSize={10}>
-        {payload.name}
-      </text>
-    </g>
-  );
-}
+import { renderActiveShape } from '../components/ui/ActivePieShape';
 
 const mockCostTrend = mockSummary.costTrend;
 

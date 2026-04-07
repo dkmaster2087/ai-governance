@@ -8,6 +8,7 @@ import { DollarSign, TrendingUp, Calendar, AlertTriangle } from 'lucide-react';
 import clsx from 'clsx';
 import { StatCard } from '../components/ui/StatCard';
 import { fetchCostSummary, fetchCostDailyBreakdown, fetchCostUsers } from '../lib/api';
+import { renderActiveShape } from '../components/ui/ActivePieShape';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
 import { useAuth } from '../lib/auth';
@@ -65,6 +66,7 @@ export function CostPage() {
   const { user, isPlatformAdmin } = useAuth();
   const tenantId = user?.tenantId || 'tenant_demo';
   const [period, setPeriod] = useState<string>('30d');
+  const [activeCostModelIndex, setActiveCostModelIndex] = useState<number | undefined>(undefined);
 
   const tooltipStyle = isDark
     ? { background: '#0f172a', border: '1px solid #1e293b', borderRadius: 8 }
@@ -230,25 +232,27 @@ export function CostPage() {
         <div className={clsx('border rounded-xl p-5', t.card)}>
           <h2 className={clsx('text-sm font-semibold mb-5', t.heading)}>Cost by Model</h2>
           <div className="flex items-center gap-6">
-            <ResponsiveContainer width={160} height={160}>
+            <ResponsiveContainer width={180} height={180}>
               <PieChart>
                 <Pie
+                  activeIndex={activeCostModelIndex}
+                  activeShape={renderActiveShape}
                   data={modelPieData}
                   cx="50%"
                   cy="50%"
                   innerRadius={45}
-                  outerRadius={70}
+                  outerRadius={65}
                   dataKey="value"
-                  paddingAngle={3}
+                  paddingAngle={2}
+                  stroke={isDark ? '#0f172a' : '#ffffff'}
+                  strokeWidth={2}
+                  onMouseEnter={(_, index) => setActiveCostModelIndex(index)}
+                  onMouseLeave={() => setActiveCostModelIndex(undefined)}
                 >
                   {modelPieData.map((entry: { color: string }, i: number) => (
-                    <Cell key={i} fill={entry.color} />
+                    <Cell key={i} fill={entry.color} cursor="pointer" />
                   ))}
                 </Pie>
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(v: number) => [`$${v.toFixed(2)}`, '']}
-                />
               </PieChart>
             </ResponsiveContainer>
             <ul className="space-y-2 flex-1">
