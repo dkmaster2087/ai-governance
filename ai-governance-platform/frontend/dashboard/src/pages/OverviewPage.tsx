@@ -1,6 +1,7 @@
+import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import {
-  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell,
+  AreaChart, Area, BarChart, Bar, PieChart, Pie, Cell, Sector,
   XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend,
 } from 'recharts';
 import { Activity, DollarSign, ShieldX, ScanEye, BadgeCheck } from 'lucide-react';
@@ -12,6 +13,41 @@ import { fetchComplianceStatus } from '../lib/compliance-api';
 import { useTheme } from '../lib/theme';
 import { mockSummary, mockModelDistribution } from '../lib/mock-data';
 import { mockCompliancePacks } from '../lib/mock-compliance';
+
+/** Renders the active (hovered) pie segment projected outward */
+function renderActiveShape(props: any) {
+  const { cx, cy, innerRadius, outerRadius, startAngle, endAngle, fill, payload, value } = props;
+  return (
+    <g>
+      <Sector
+        cx={cx}
+        cy={cy}
+        innerRadius={innerRadius - 3}
+        outerRadius={outerRadius + 8}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill={fill}
+        style={{ filter: 'drop-shadow(0 2px 6px rgba(0,0,0,0.3))' }}
+      />
+      <Sector
+        cx={cx}
+        cy={cy}
+        innerRadius={outerRadius + 12}
+        outerRadius={outerRadius + 14}
+        startAngle={startAngle}
+        endAngle={endAngle}
+        fill={fill}
+        opacity={0.4}
+      />
+      <text x={cx} y={cy - 6} textAnchor="middle" fill={fill} fontSize={16} fontWeight={700}>
+        {value}%
+      </text>
+      <text x={cx} y={cy + 10} textAnchor="middle" fill="#94a3b8" fontSize={10}>
+        {payload.name}
+      </text>
+    </g>
+  );
+}
 
 const mockCostTrend = mockSummary.costTrend;
 
@@ -72,6 +108,7 @@ export function OverviewPage() {
   const enabledFrameworks = compliancePacks.filter((p: { status: string }) => p.status === 'enabled').length;
 
   const distribution = modelDist.distribution?.length ? modelDist.distribution : mockModelDistribution;
+  const [activeModelIndex, setActiveModelIndex] = useState(0);
 
   const blockRate = summary.totalRequests
     ? ((summary.blockedRequests / summary.totalRequests) * 100).toFixed(1)
@@ -177,27 +214,26 @@ export function OverviewPage() {
         <div className={clsx('border rounded-xl p-5', card)}>
           <h2 className={clsx('text-sm font-semibold mb-5', heading)}>Model Distribution</h2>
           <div className="flex items-center gap-6">
-            <ResponsiveContainer width={160} height={160}>
+            <ResponsiveContainer width={180} height={180}>
               <PieChart>
                 <Pie
+                  activeIndex={activeModelIndex}
+                  activeShape={renderActiveShape}
                   data={distribution}
                   cx="50%"
                   cy="50%"
                   innerRadius={45}
-                  outerRadius={70}
+                  outerRadius={65}
                   dataKey="value"
-                  paddingAngle={3}
+                  paddingAngle={2}
                   stroke={isDark ? '#0f172a' : '#ffffff'}
                   strokeWidth={2}
+                  onMouseEnter={(_, index) => setActiveModelIndex(index)}
                 >
                   {distribution.map((entry: { color: string }, i: number) => (
-                    <Cell key={i} fill={entry.color} />
+                    <Cell key={i} fill={entry.color} cursor="pointer" />
                   ))}
                 </Pie>
-                <Tooltip
-                  contentStyle={tooltipStyle}
-                  formatter={(v: number) => [`${v}%`, '']}
-                />
               </PieChart>
             </ResponsiveContainer>
             <ul className="space-y-2 flex-1">
