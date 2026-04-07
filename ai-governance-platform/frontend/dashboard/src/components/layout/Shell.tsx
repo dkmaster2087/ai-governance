@@ -184,7 +184,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       )}
 
       {/* Main */}
-      <div className={clsx('flex-1 flex flex-col min-h-0 transition-all duration-300', mainPl)}>
+      <div className={clsx('flex-1 flex flex-col min-h-0 min-w-0 transition-all duration-300', mainPl)}>
         {/* Topbar */}
         <header className={clsx(
           'h-16 flex items-center gap-4 px-6 border-b backdrop-blur-md sticky top-0 z-30',

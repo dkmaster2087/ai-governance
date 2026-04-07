@@ -149,7 +149,7 @@ export function CompliancePage() {
   const openBuilderFromDrawer = (controlId: string) => { setDrawerControl(null); setSelectedControls([controlId]); setBuilderOpen(true); };
 
   return (
-    <div className="space-y-6 max-w-full overflow-hidden">
+    <div className="space-y-6 w-full">
       {/* Summary bar */}
       <div className="grid grid-cols-3 gap-4">
         {(['enabled', 'partial', 'disabled'] as Status[]).map((s) => {
