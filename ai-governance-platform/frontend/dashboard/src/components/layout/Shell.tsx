@@ -4,6 +4,7 @@ import {
   LayoutDashboard, ScrollText, ShieldCheck, Cpu, Settings,
   Shield, Menu, Bell, BadgeCheck, ScanLine,
   Building2, Eye, LogOut, Sun, Moon, MessageSquare, Users, DollarSign,
+  ChevronLeft, Search,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../../lib/auth';
@@ -58,6 +59,7 @@ function getNavForRole(role: string) {
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [collapsed, setCollapsed] = useState(false);
   const { user, logout, isPlatformAdmin } = useAuth();
   const { isDark, toggle: toggleTheme } = useTheme();
   const navigate = useNavigate();
@@ -67,132 +69,157 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const handleLogout = () => { logout(); navigate('/login'); };
   const currentPage = nav.find((n) => n.href === location.pathname);
 
-  // Reusable theme classes
-  const card = isDark ? 'bg-slate-900 border-white/10' : 'bg-white border-gray-200';
-  const cardInner = isDark ? 'bg-slate-800' : 'bg-gray-100';
-  const border = isDark ? 'border-white/10' : 'border-gray-200';
-  const textPrimary = isDark ? 'text-white' : 'text-gray-900';
-  const textSecondary = isDark ? 'text-slate-400' : 'text-gray-500';
-  const textMuted = isDark ? 'text-slate-500' : 'text-gray-400';
-  const topbar = isDark ? 'bg-slate-950/80' : 'bg-white/80';
-  const mainBg = isDark ? 'bg-slate-950' : 'bg-gray-50';
+  const sidebarW = collapsed ? 'w-[68px]' : 'w-64';
+  const mainPl = collapsed ? 'lg:pl-[68px]' : 'lg:pl-64';
 
   return (
-    <div className={clsx('h-full flex', mainBg, isDark ? 'text-slate-100' : 'text-gray-900')}>
+    <div className={clsx('h-full flex', isDark ? 'bg-[#0a0e1a] text-slate-100' : 'bg-[#f5f7fb] text-gray-900')}>
       {/* Sidebar */}
       <aside
         className={clsx(
-          'fixed inset-y-0 left-0 z-50 w-60 flex flex-col transition-transform duration-200 border-r',
-          card,
+          'fixed inset-y-0 left-0 z-50 flex flex-col transition-all duration-300 border-r',
+          sidebarW,
+          isDark ? 'bg-[#0d1117] border-white/[0.06]' : 'bg-white border-gray-200/60',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         )}
       >
         {/* Logo */}
-        <div className={clsx('h-16 flex items-center gap-2 px-5 border-b', border)}>
-          <div className="w-7 h-7 rounded-lg bg-brand-600 flex items-center justify-center">
+        <div className={clsx('h-16 flex items-center gap-2.5 border-b', collapsed ? 'px-4 justify-center' : 'px-5', isDark ? 'border-white/[0.06]' : 'border-gray-200/60')}>
+          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-glow-brand flex-shrink-0">
             <Shield className="w-4 h-4 text-white" />
           </div>
-          <span className={clsx('font-bold', textPrimary)}>Aegis AI</span>
-          {isPlatformAdmin && (
-            <span className="ml-auto text-xs text-brand-400 bg-brand-600/20 px-2 py-0.5 rounded-full">
-              Admin
-            </span>
+          {!collapsed && (
+            <>
+              <span className={clsx('font-bold text-[15px] tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>Aegis AI</span>
+              {isPlatformAdmin && (
+                <span className="ml-auto text-[10px] font-semibold text-brand-400 bg-brand-500/10 px-2 py-0.5 rounded-full border border-brand-500/20">
+                  Admin
+                </span>
+              )}
+            </>
           )}
         </div>
 
         {/* Tenant badge */}
-        <div className={clsx('px-4 py-3 border-b', border)}>
-          <div className={clsx('flex items-center gap-2 px-3 py-2 rounded-lg', cardInner)}>
-            <div className={clsx('w-2 h-2 rounded-full', isPlatformAdmin ? 'bg-brand-400' : 'bg-accent-400')} />
-            <span className={clsx('text-sm font-medium truncate', isDark ? 'text-slate-300' : 'text-gray-700')}>
-              {user?.tenantName}
-            </span>
+        {!collapsed && (
+          <div className={clsx('px-4 py-3 border-b', isDark ? 'border-white/[0.06]' : 'border-gray-200/60')}>
+            <div className={clsx('flex items-center gap-2.5 px-3 py-2 rounded-xl', isDark ? 'bg-white/[0.04]' : 'bg-gray-50')}>
+              <div className={clsx('w-2 h-2 rounded-full animate-pulse-soft', isPlatformAdmin ? 'bg-brand-400' : 'bg-accent-400')} />
+              <span className={clsx('text-sm font-medium truncate', isDark ? 'text-slate-300' : 'text-gray-600')}>
+                {user?.tenantName}
+              </span>
+            </div>
           </div>
-        </div>
+        )}
 
         {/* Nav */}
-        <nav className="flex-1 px-3 py-4 space-y-0.5 overflow-y-auto scrollbar-thin">
+        <nav className={clsx('flex-1 py-3 space-y-0.5 overflow-y-auto scrollbar-thin', collapsed ? 'px-2' : 'px-3')}>
           {nav.map(({ label, href, icon: Icon }) => (
             <NavLink
               key={href}
               to={href}
               onClick={() => setSidebarOpen(false)}
+              title={collapsed ? label : undefined}
               className={({ isActive }) =>
                 clsx(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
+                  'flex items-center gap-3 rounded-xl text-[13px] font-medium transition-all duration-200',
+                  collapsed ? 'px-3 py-2.5 justify-center' : 'px-3 py-2.5',
                   isActive
-                    ? 'bg-brand-600/20 text-brand-400'
+                    ? clsx('text-brand-400', isDark ? 'bg-brand-500/10 shadow-glow-brand' : 'bg-brand-50 shadow-sm')
                     : isDark
-                      ? 'text-slate-400 hover:text-white hover:bg-white/5'
-                      : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                      ? 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
+                      : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100/80'
                 )
               }
             >
-              <Icon className="w-4 h-4 flex-shrink-0" />
-              {label}
+              <Icon className="w-[18px] h-[18px] flex-shrink-0" />
+              {!collapsed && label}
             </NavLink>
           ))}
         </nav>
 
+        {/* Collapse toggle */}
+        <div className={clsx('px-3 py-2 border-t hidden lg:block', isDark ? 'border-white/[0.06]' : 'border-gray-200/60')}>
+          <button
+            onClick={() => setCollapsed(!collapsed)}
+            className={clsx('w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs transition-colors', isDark ? 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100')}
+          >
+            <ChevronLeft className={clsx('w-3.5 h-3.5 transition-transform', collapsed && 'rotate-180')} />
+            {!collapsed && 'Collapse'}
+          </button>
+        </div>
+
         {/* User footer */}
-        <div className={clsx('px-4 py-4 border-t', border)}>
-          <div className="flex items-center gap-3">
-            <div className="w-8 h-8 rounded-full bg-brand-600/30 flex items-center justify-center text-brand-400 text-xs font-bold flex-shrink-0">
+        <div className={clsx('px-3 py-3 border-t', isDark ? 'border-white/[0.06]' : 'border-gray-200/60')}>
+          <div className={clsx('flex items-center', collapsed ? 'justify-center' : 'gap-3')}>
+            <div className={clsx(
+              'rounded-xl bg-gradient-to-br from-brand-500/20 to-brand-600/20 flex items-center justify-center text-brand-400 text-xs font-bold flex-shrink-0',
+              collapsed ? 'w-9 h-9' : 'w-9 h-9'
+            )}>
               {user?.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
             </div>
-            <div className="flex-1 min-w-0">
-              <p className={clsx('text-sm font-medium truncate', textPrimary)}>{user?.name}</p>
-              <p className={clsx('text-xs truncate', textMuted)}>{user?.email}</p>
-            </div>
-            <button
-              onClick={handleLogout}
-              className={clsx('transition-colors flex-shrink-0', isDark ? 'text-slate-500 hover:text-red-400' : 'text-gray-400 hover:text-red-500')}
-              title="Sign out"
-              aria-label="Sign out"
-            >
-              <LogOut className="w-4 h-4" />
-            </button>
+            {!collapsed && (
+              <>
+                <div className="flex-1 min-w-0">
+                  <p className={clsx('text-sm font-medium truncate', isDark ? 'text-white' : 'text-gray-900')}>{user?.name}</p>
+                  <p className={clsx('text-[11px] truncate', isDark ? 'text-slate-500' : 'text-gray-400')}>{user?.email}</p>
+                </div>
+                <button
+                  onClick={handleLogout}
+                  className={clsx('p-1.5 rounded-lg transition-colors', isDark ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10' : 'text-gray-400 hover:text-red-500 hover:bg-red-50')}
+                  title="Sign out"
+                  aria-label="Sign out"
+                >
+                  <LogOut className="w-4 h-4" />
+                </button>
+              </>
+            )}
           </div>
         </div>
       </aside>
 
       {/* Mobile overlay */}
       {sidebarOpen && (
-        <div className="fixed inset-0 z-40 bg-black/40 lg:hidden" onClick={() => setSidebarOpen(false)} />
+        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden" onClick={() => setSidebarOpen(false)} />
       )}
 
       {/* Main */}
-      <div className={clsx('flex-1 flex flex-col lg:pl-60 min-h-0', mainBg)}>
+      <div className={clsx('flex-1 flex flex-col min-h-0 transition-all duration-300', mainPl)}>
         {/* Topbar */}
-        <header className={clsx('h-16 flex items-center gap-4 px-6 border-b backdrop-blur sticky top-0 z-30', border, topbar)}>
+        <header className={clsx(
+          'h-16 flex items-center gap-4 px-6 border-b backdrop-blur-md sticky top-0 z-30',
+          isDark ? 'bg-[#0a0e1a]/80 border-white/[0.06]' : 'bg-[#f5f7fb]/80 border-gray-200/60'
+        )}>
           <button
-            className={clsx('lg:hidden', textSecondary)}
+            className={clsx('lg:hidden', isDark ? 'text-slate-400' : 'text-gray-500')}
             onClick={() => setSidebarOpen(true)}
             aria-label="Open menu"
           >
             <Menu className="w-5 h-5" />
           </button>
-          <h1 className={clsx('text-base font-semibold', textPrimary)}>
-            {currentPage?.label ?? 'Dashboard'}
-          </h1>
-          <div className="ml-auto flex items-center gap-2">
+          <div>
+            <h1 className={clsx('text-base font-semibold', isDark ? 'text-white' : 'text-gray-900')}>
+              {currentPage?.label ?? 'Dashboard'}
+            </h1>
+          </div>
+          <div className="ml-auto flex items-center gap-1.5">
             <button
               onClick={toggleTheme}
               className={clsx(
-                'p-2 rounded-lg transition-colors',
-                isDark ? 'text-slate-400 hover:text-yellow-400 hover:bg-white/10' : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100'
+                'p-2 rounded-xl transition-all duration-200',
+                isDark ? 'text-slate-400 hover:text-yellow-400 hover:bg-white/[0.06]' : 'text-gray-400 hover:text-gray-900 hover:bg-gray-100'
               )}
               title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
               aria-label="Toggle theme"
             >
-              {isDark ? <Sun className="w-4 h-4" /> : <Moon className="w-4 h-4" />}
+              {isDark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
             </button>
             <button
-              className={clsx('relative p-2 rounded-lg transition-colors', textSecondary)}
+              className={clsx('relative p-2 rounded-xl transition-all duration-200', isDark ? 'text-slate-400 hover:bg-white/[0.06]' : 'text-gray-400 hover:bg-gray-100')}
               aria-label="Notifications"
             >
-              <Bell className="w-5 h-5" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-brand-500" />
+              <Bell className="w-[18px] h-[18px]" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-brand-500 ring-2 ring-[#0a0e1a]" />
             </button>
           </div>
         </header>

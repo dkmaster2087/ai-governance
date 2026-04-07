@@ -99,10 +99,10 @@ describe('EmptyState', () => {
 describe('themeClasses', () => {
   it('returns dark classes when isDark is true', () => {
     const t = themeClasses(true);
-    expect(t.card).toContain('bg-slate-900');
+    expect(t.card).toContain('bg-[#111827]');
     expect(t.heading).toContain('text-white');
-    expect(t.input).toContain('bg-slate-800');
-    expect(t.btnSecondary).toContain('bg-slate-800');
+    expect(t.input).toContain('bg-white');
+    expect(t.btnSecondary).toContain('bg-white');
   });
 
   it('returns light classes when isDark is false', () => {

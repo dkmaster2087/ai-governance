@@ -27,17 +27,17 @@ const wrap = (ui: React.ReactElement) => {
 describe('themeClasses', () => {
   it('returns dark classes when isDark is true', () => {
     const t = themeClasses(true);
-    expect(t.card).toContain('bg-slate-900');
+    expect(t.card).toContain('bg-[#111827]');
     expect(t.heading).toBe('text-white');
     expect(t.body).toContain('slate-300');
-    expect(t.input).toContain('bg-slate-800');
+    expect(t.input).toContain('bg-white');
   });
 
   it('returns light classes when isDark is false', () => {
     const t = themeClasses(false);
     expect(t.card).toContain('bg-white');
     expect(t.heading).toBe('text-gray-900');
-    expect(t.body).toContain('gray-700');
+    expect(t.body).toContain('gray-600');
     expect(t.input).toContain('bg-white');
   });
 
@@ -89,13 +89,13 @@ describe('ConfirmDialog', () => {
   it('shows danger styling for danger variant', () => {
     wrap(<ConfirmDialog {...baseProps} />);
     const btn = screen.getByText('Delete');
-    expect(btn.className).toContain('bg-red-600');
+    expect(btn.className).toContain('from-red-6');
   });
 
   it('shows primary styling for primary variant', () => {
     wrap(<ConfirmDialog {...baseProps} confirmVariant="primary" confirmLabel="Enable" />);
     const btn = screen.getByText('Enable');
-    expect(btn.className).toContain('bg-brand-600');
+    expect(btn.className).toContain('from-brand-6');
   });
 });
 

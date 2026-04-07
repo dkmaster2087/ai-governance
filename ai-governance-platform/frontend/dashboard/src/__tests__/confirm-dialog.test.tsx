@@ -64,7 +64,7 @@ describe('ConfirmDialog', () => {
   it('shows danger styling when confirmVariant="danger"', () => {
     wrap(<ConfirmDialog {...baseProps} confirmVariant="danger" />);
     const confirmBtn = screen.getByText('Confirm');
-    expect(confirmBtn.className).toContain('bg-red-600');
+    expect(confirmBtn.className).toContain('from-red-6');
   });
 
   it('shows custom confirmLabel', () => {
