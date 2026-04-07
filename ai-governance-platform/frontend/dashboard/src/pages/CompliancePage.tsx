@@ -199,43 +199,44 @@ export function CompliancePage() {
               isSelecting && 'border-brand-500/50'
             )}>
               <div
-                className={clsx('flex items-center gap-4 px-5 py-4 cursor-pointer transition-colors', t.hoverRow)}
+                className={clsx('px-5 py-4 cursor-pointer transition-colors', t.hoverRow)}
                 onClick={() => !isSelecting && setExpanded(isExpanded ? null : pack.framework)}
               >
-                <div className={clsx('w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0', cfg.bg)}>
-                  <cfg.icon className={clsx('w-5 h-5', cfg.color)} />
-                </div>
-
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-2 mb-0.5 flex-wrap">
-                    <h3 className={clsx('font-semibold', t.heading)}>{pack.name}</h3>
-                    <span className={clsx('text-xs', t.faint)}>v{pack.version}</span>
-                    <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium',
-                      categoryColors[pack.category] ?? clsx(isDark ? 'bg-slate-700' : 'bg-gray-200', t.sub)
-                    )}>
-                      {pack.category}
-                    </span>
+                <div className="flex items-start gap-3">
+                  <div className={clsx('w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0 mt-0.5', cfg.bg)}>
+                    <cfg.icon className={clsx('w-5 h-5', cfg.color)} />
                   </div>
-                  <p className={clsx('text-sm truncate', t.muted)}>{pack.description}</p>
-                </div>
 
-                <div className="flex items-center gap-3 flex-shrink-0">
-                  <div className="hidden sm:block w-28">
-                    <div className="flex items-center justify-between mb-1">
-                      <span className={clsx('text-xs', t.muted)}>{pack.passedControls}/{pack.totalControls}</span>
-                      <span className={clsx('text-xs font-medium', cfg.color)}>{progress}%</span>
+                  <div className="flex-1 min-w-0">
+                    <div className="flex items-center gap-2 mb-0.5 flex-wrap">
+                      <h3 className={clsx('font-semibold', t.heading)}>{pack.name}</h3>
+                      <span className={clsx('text-xs', t.faint)}>v{pack.version}</span>
+                      <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium',
+                        categoryColors[pack.category] ?? clsx(isDark ? 'bg-slate-700' : 'bg-gray-200', t.sub)
+                      )}>
+                        {pack.category}
+                      </span>
                     </div>
-                    <div className={clsx('h-1.5 rounded-full overflow-hidden', isDark ? 'bg-slate-800' : 'bg-gray-200')}>
-                      <div
-                        className={clsx('h-full rounded-full transition-all', {
-                          'bg-accent-400': pack.status === 'enabled',
-                          'bg-yellow-400': pack.status === 'partial',
-                          [isDark ? 'bg-slate-600' : 'bg-gray-400']: pack.status === 'disabled',
-                        })}
-                        style={{ width: `${progress}%` }}
-                      />
-                    </div>
-                  </div>
+                    <p className={clsx('text-sm truncate', t.muted)}>{pack.description}</p>
+
+                    {/* Progress + actions row */}
+                    <div className="flex items-center gap-3 mt-3 flex-wrap">
+                      <div className="w-28">
+                        <div className="flex items-center justify-between mb-1">
+                          <span className={clsx('text-xs', t.muted)}>{pack.passedControls}/{pack.totalControls}</span>
+                          <span className={clsx('text-xs font-medium', cfg.color)}>{progress}%</span>
+                        </div>
+                        <div className={clsx('h-1.5 rounded-full overflow-hidden', isDark ? 'bg-white/[0.06]' : 'bg-gray-200')}>
+                          <div
+                            className={clsx('h-full rounded-full transition-all', {
+                              'bg-accent-400': pack.status === 'enabled',
+                              'bg-yellow-400': pack.status === 'partial',
+                              [isDark ? 'bg-slate-600' : 'bg-gray-400']: pack.status === 'disabled',
+                            })}
+                            style={{ width: `${progress}%` }}
+                          />
+                        </div>
+                      </div>
 
                   <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
                     {isSelecting ? (
@@ -272,6 +273,8 @@ export function CompliancePage() {
                   </div>
 
                   {!isSelecting && (isExpanded ? <ChevronDown className={clsx('w-4 h-4', t.muted)} /> : <ChevronRight className={clsx('w-4 h-4', t.muted)} />)}
+                    </div>
+                  </div>
                 </div>
               </div>
 
