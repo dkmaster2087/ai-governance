@@ -108,7 +108,7 @@ export function OverviewPage() {
   const enabledFrameworks = compliancePacks.filter((p: { status: string }) => p.status === 'enabled').length;
 
   const distribution = modelDist.distribution?.length ? modelDist.distribution : mockModelDistribution;
-  const [activeModelIndex, setActiveModelIndex] = useState(0);
+  const [activeModelIndex, setActiveModelIndex] = useState<number | undefined>(undefined);
 
   const blockRate = summary.totalRequests
     ? ((summary.blockedRequests / summary.totalRequests) * 100).toFixed(1)
@@ -229,6 +229,7 @@ export function OverviewPage() {
                   stroke={isDark ? '#0f172a' : '#ffffff'}
                   strokeWidth={2}
                   onMouseEnter={(_, index) => setActiveModelIndex(index)}
+                  onMouseLeave={() => setActiveModelIndex(undefined)}
                 >
                   {distribution.map((entry: { color: string }, i: number) => (
                     <Cell key={i} fill={entry.color} cursor="pointer" />
