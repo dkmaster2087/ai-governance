@@ -99,7 +99,7 @@ describe('EmptyState', () => {
 describe('themeClasses', () => {
   it('returns dark classes when isDark is true', () => {
     const t = themeClasses(true);
-    expect(t.card).toContain('bg-[#111827]');
+    expect(t.card).toContain('bg-[#0c1021]');
     expect(t.heading).toContain('text-white');
     expect(t.input).toContain('bg-white');
     expect(t.btnSecondary).toContain('bg-white');

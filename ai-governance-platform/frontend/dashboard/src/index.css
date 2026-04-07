@@ -9,11 +9,11 @@
   #root { @apply h-full; }
 
   .dark body {
-    @apply h-full bg-[#0a0e1a] text-slate-100 antialiased;
+    @apply h-full bg-[#060810] text-slate-100 antialiased;
     color-scheme: dark;
   }
   .light body {
-    @apply h-full bg-[#f5f7fb] text-gray-900 antialiased;
+    @apply h-full bg-[#f0f2f7] text-gray-900 antialiased;
     color-scheme: light;
   }
 }

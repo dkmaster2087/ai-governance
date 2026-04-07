@@ -73,13 +73,13 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const mainPl = collapsed ? 'lg:pl-[68px]' : 'lg:pl-64';
 
   return (
-    <div className={clsx('h-full flex', isDark ? 'bg-[#0a0e1a] text-slate-100' : 'bg-[#f5f7fb] text-gray-900')}>
+    <div className={clsx('h-full flex', isDark ? 'bg-[#060810] text-slate-100' : 'bg-[#f0f2f7] text-gray-900')}>
       {/* Sidebar */}
       <aside
         className={clsx(
           'fixed inset-y-0 left-0 z-50 flex flex-col transition-all duration-300 border-r',
           sidebarW,
-          isDark ? 'bg-[#0d1117] border-white/[0.06]' : 'bg-white border-gray-200/60',
+          isDark ? 'bg-[#080b14] border-white/[0.06]' : 'bg-white border-gray-200',
           sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
         )}
       >
@@ -188,7 +188,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         {/* Topbar */}
         <header className={clsx(
           'h-16 flex items-center gap-4 px-6 border-b backdrop-blur-md sticky top-0 z-30',
-          isDark ? 'bg-[#0a0e1a]/80 border-white/[0.06]' : 'bg-[#f5f7fb]/80 border-gray-200/60'
+          isDark ? 'bg-[#060810]/80 border-white/[0.06]' : 'bg-[#f0f2f7]/90 border-gray-200'
         )}>
           <button
             className={clsx('lg:hidden', isDark ? 'text-slate-400' : 'text-gray-500')}
@@ -219,7 +219,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
               aria-label="Notifications"
             >
               <Bell className="w-[18px] h-[18px]" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-brand-500 ring-2 ring-[#0a0e1a]" />
+              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-brand-500 ring-2 ring-[#060810]" />
             </button>
           </div>
         </header>

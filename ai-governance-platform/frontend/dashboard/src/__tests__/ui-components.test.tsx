@@ -27,7 +27,7 @@ const wrap = (ui: React.ReactElement) => {
 describe('themeClasses', () => {
   it('returns dark classes when isDark is true', () => {
     const t = themeClasses(true);
-    expect(t.card).toContain('bg-[#111827]');
+    expect(t.card).toContain('bg-[#0c1021]');
     expect(t.heading).toBe('text-white');
     expect(t.body).toContain('slate-300');
     expect(t.input).toContain('bg-white');

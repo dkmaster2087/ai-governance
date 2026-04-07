@@ -43,7 +43,7 @@ export function LoginPage() {
   );
 
   return (
-    <div className={clsx('min-h-screen flex items-center justify-center p-4 relative overflow-hidden', isDark ? 'bg-[#0a0e1a]' : 'bg-[#f5f7fb]')}>
+    <div className={clsx('min-h-screen flex items-center justify-center p-4 relative overflow-hidden', isDark ? 'bg-[#060810]' : 'bg-[#f0f2f7]')}>
       {/* Theme toggle */}
       <button
         onClick={toggleTheme}

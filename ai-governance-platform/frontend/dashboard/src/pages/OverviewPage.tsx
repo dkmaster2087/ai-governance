@@ -171,7 +171,7 @@ export function OverviewPage() {
                 contentStyle={tooltipStyle}
                 formatter={(v: number) => [`$${v.toFixed(2)}`, 'Cost']}
               />
-              <Bar dataKey="cost" fill="#10b981" radius={[4, 4, 0, 0]} />
+              <Bar dataKey="cost" fill="#06b6d4" radius={[4, 4, 0, 0]} />
             </BarChart>
           </ResponsiveContainer>
         </div>
