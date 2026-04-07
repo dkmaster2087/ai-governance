@@ -88,6 +88,7 @@ export function OverviewPage() {
           color="brand"
           trend="up"
           trendValue="+12%"
+          href="/audit-logs"
         />
         <StatCard
           label="Estimated Cost"
@@ -95,6 +96,7 @@ export function OverviewPage() {
           icon={DollarSign}
           color="green"
           sub="This period"
+          href="/cost"
         />
         <StatCard
           label="Blocked Requests"
@@ -103,6 +105,7 @@ export function OverviewPage() {
           color="red"
           trendValue={`${blockRate}% rate`}
           trend="neutral"
+          href="/audit-logs"
         />
         <StatCard
           label="PII Detections"
@@ -110,6 +113,7 @@ export function OverviewPage() {
           icon={ScanEye}
           color="yellow"
           sub="Masked before AI"
+          href="/content-scanner"
         />
         <StatCard
           label="Compliance Frameworks"
@@ -117,6 +121,7 @@ export function OverviewPage() {
           icon={BadgeCheck}
           color="green"
           sub={enabledFrameworks > 0 ? 'Active' : 'None enabled'}
+          href="/compliance"
         />
       </div>
 
@@ -174,7 +179,17 @@ export function OverviewPage() {
           <div className="flex items-center gap-6">
             <ResponsiveContainer width={160} height={160}>
               <PieChart>
-                <Pie data={distribution} cx="50%" cy="50%" innerRadius={45} outerRadius={70} dataKey="value" paddingAngle={3}>
+                <Pie
+                  data={distribution}
+                  cx="50%"
+                  cy="50%"
+                  innerRadius={45}
+                  outerRadius={70}
+                  dataKey="value"
+                  paddingAngle={3}
+                  stroke={isDark ? '#0f172a' : '#ffffff'}
+                  strokeWidth={2}
+                >
                   {distribution.map((entry: { color: string }, i: number) => (
                     <Cell key={i} fill={entry.color} />
                   ))}
