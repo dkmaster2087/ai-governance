@@ -149,7 +149,7 @@ export function CompliancePage() {
   const openBuilderFromDrawer = (controlId: string) => { setDrawerControl(null); setSelectedControls([controlId]); setBuilderOpen(true); };
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-6 max-w-full overflow-hidden">
       {/* Summary bar */}
       <div className="grid grid-cols-3 gap-4">
         {(['enabled', 'partial', 'disabled'] as Status[]).map((s) => {
@@ -238,7 +238,7 @@ export function CompliancePage() {
                         </div>
                       </div>
 
-                  <div className="flex items-center gap-1.5" onClick={(e) => e.stopPropagation()}>
+                  <div className="flex items-center gap-1.5 flex-wrap" onClick={(e) => e.stopPropagation()}>
                     {isSelecting ? (
                       <>
                         <span className="text-xs text-brand-400">{selectedControls.length} selected</span>
