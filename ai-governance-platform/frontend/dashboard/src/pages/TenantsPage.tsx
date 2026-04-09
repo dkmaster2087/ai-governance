@@ -1,4 +1,5 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
 import {
   Plus, Building2, Cloud, Server, CheckCircle,
@@ -39,6 +40,7 @@ export function TenantsPage() {
   const [editTarget, setEditTarget] = useState<typeof mockTenants[0] | null>(null);
   const [menuOpen, setMenuOpen] = useState<string | null>(null);
   const { user } = useAuth();
+  const navigate = useNavigate();
   const queryClient = useQueryClient();
 
   const { data } = useQuery({
@@ -125,7 +127,7 @@ export function TenantsPage() {
               const DeployIcon = deploymentIcon[tenant.deploymentMode as keyof typeof deploymentIcon];
 
               return (
-                <tr key={tenant.tenantId} className={clsx('transition-colors', t.hoverRow)}>
+                <tr key={tenant.tenantId} className={clsx('transition-colors cursor-pointer', t.hoverRow)} onClick={() => navigate(`/tenants/${tenant.tenantId}`)}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-3">
                       <div className="w-8 h-8 rounded-lg bg-brand-600/20 flex items-center justify-center flex-shrink-0">

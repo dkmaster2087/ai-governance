@@ -1,20 +1,23 @@
 import { useState } from 'react';
 import { useParams, Link } from 'react-router-dom';
-import { ArrowLeft, Building2, Cpu, Shield, ShieldCheck, ScrollText, Users, Key, DollarSign, Eye, Activity } from 'lucide-react';
+import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
+import { ArrowLeft, Building2, Cpu, Shield, ShieldCheck, ScrollText, Users, Key, DollarSign, Eye, Activity, BarChart3 } from 'lucide-react';
 import clsx from 'clsx';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
 
-type Tab = 'overview' | 'models' | 'policies' | 'compliance' | 'audit' | 'users' | 'cost';
+type Tab = 'overview' | 'analytics' | 'models' | 'policies' | 'compliance' | 'audit' | 'users' | 'cost' | 'license';
 
 const TABS: { id: Tab; label: string; icon: typeof Building2 }[] = [
   { id: 'overview',   label: 'Overview',    icon: Activity },
+  { id: 'analytics',  label: 'Analytics',   icon: BarChart3 },
   { id: 'models',     label: 'Models',      icon: Cpu },
   { id: 'policies',   label: 'Policies',    icon: ShieldCheck },
   { id: 'compliance', label: 'Compliance',  icon: Shield },
   { id: 'audit',      label: 'Audit Logs',  icon: ScrollText },
   { id: 'users',      label: 'Users',       icon: Users },
   { id: 'cost',       label: 'Cost',        icon: DollarSign },
+  { id: 'license',    label: 'License',     icon: Key },
 ];
 
 // Mock tenant detail data
@@ -60,6 +63,25 @@ const mockTenantDetail = {
     { userId: 'user_3', name: 'Priya M.', requests: 5400, cost: 156.80 },
     { userId: 'user_4', name: 'Carlos R.', requests: 4200, cost: 128.50 },
   ],
+  requestsTrend: Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (13 - i));
+    return { date: d.toISOString().slice(5, 10), requests: Math.floor(Math.random() * 3000) + 1000, blocked: Math.floor(Math.random() * 20) + 2 };
+  }),
+  costTrend: Array.from({ length: 14 }, (_, i) => {
+    const d = new Date(); d.setDate(d.getDate() - (13 - i));
+    return { date: d.toISOString().slice(5, 10), cost: +(Math.random() * 80 + 20).toFixed(2) };
+  }),
+  licenseInfo: {
+    key: 'AEGIS-DEMO-XXXX-XXXX',
+    type: 'cloud',
+    plan: 'professional',
+    status: 'active',
+    issuedAt: '2026-01-01',
+    expiresAt: '2027-01-01',
+    maxUsers: 50,
+    currentUsers: 45,
+    reportingConfig: { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: false },
+  },
 };
 
 export function TenantDetailPage() {
@@ -275,6 +297,89 @@ export function TenantDetailPage() {
               <p className={clsx('text-xs mt-1', t.faint)}>{m.requests.toLocaleString()} requests</p>
             </div>
           ))}
+        </div>
+      )}
+
+      {activeTab === 'analytics' && (() => {
+        const tt = isDark
+          ? { background: '#0c1021', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8 }
+          : { background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, color: '#111827' };
+        const tf = isDark ? '#475569' : '#9ca3af';
+        const gs = isDark ? 'rgba(255,255,255,0.04)' : '#f3f4f6';
+        return (
+          <div className="space-y-4">
+            <div className={clsx('border rounded-2xl p-5', t.card)}>
+              <h3 className={clsx('text-sm font-semibold mb-4', t.heading)}>Request Volume — Last 14 Days</h3>
+              <ResponsiveContainer width="100%" height={200}>
+                <AreaChart data={tenant.requestsTrend}>
+                  <defs>
+                    <linearGradient id="rg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} /><stop offset="95%" stopColor="#6366f1" stopOpacity={0} /></linearGradient>
+                    <linearGradient id="bg" x1="0" y1="0" x2="0" y2="1"><stop offset="5%" stopColor="#f87171" stopOpacity={0.3} /><stop offset="95%" stopColor="#f87171" stopOpacity={0} /></linearGradient>
+                  </defs>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gs} />
+                  <XAxis dataKey="date" tick={{ fill: tf, fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: tf, fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <Tooltip contentStyle={tt} />
+                  <Area type="monotone" dataKey="requests" stroke="#6366f1" fill="url(#rg)" strokeWidth={2} />
+                  <Area type="monotone" dataKey="blocked" stroke="#f87171" fill="url(#bg)" strokeWidth={2} />
+                </AreaChart>
+              </ResponsiveContainer>
+            </div>
+            <div className={clsx('border rounded-2xl p-5', t.card)}>
+              <h3 className={clsx('text-sm font-semibold mb-4', t.heading)}>Daily Cost (USD)</h3>
+              <ResponsiveContainer width="100%" height={180}>
+                <BarChart data={tenant.costTrend}>
+                  <CartesianGrid strokeDasharray="3 3" stroke={gs} />
+                  <XAxis dataKey="date" tick={{ fill: tf, fontSize: 11 }} axisLine={false} tickLine={false} />
+                  <YAxis tick={{ fill: tf, fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v: number) => `$${v}`} />
+                  <Tooltip contentStyle={tt} formatter={(v: number) => [`$${v.toFixed(2)}`, 'Cost']} />
+                  <Bar dataKey="cost" fill="#06b6d4" radius={[4, 4, 0, 0]} />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          </div>
+        );
+      })()}
+
+      {activeTab === 'license' && (
+        <div className="space-y-4">
+          <div className={clsx('border rounded-2xl p-5', t.card)}>
+            <h3 className={clsx('text-sm font-semibold mb-4', t.heading)}>License Details</h3>
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              <div className={clsx('rounded-xl p-4', t.cardInner)}>
+                <p className={clsx('text-xs mb-1', t.muted)}>License Key</p>
+                <p className={clsx('text-sm font-mono font-medium', t.heading)}>{tenant.licenseInfo.key}</p>
+              </div>
+              <div className={clsx('rounded-xl p-4', t.cardInner)}>
+                <p className={clsx('text-xs mb-1', t.muted)}>Status</p>
+                <span className={clsx('text-xs px-2 py-0.5 rounded-lg font-medium ring-1', 'bg-accent-500/10 text-accent-400 ring-accent-500/20')}>{tenant.licenseInfo.status}</span>
+              </div>
+              <div className={clsx('rounded-xl p-4', t.cardInner)}>
+                <p className={clsx('text-xs mb-1', t.muted)}>Users</p>
+                <p className={clsx('text-sm font-medium', t.heading)}>{tenant.licenseInfo.currentUsers} / {tenant.licenseInfo.maxUsers}</p>
+                <div className={clsx('h-1.5 rounded-full overflow-hidden mt-2', t.track)}>
+                  <div className="h-full bg-accent-400 rounded-full" style={{ width: `${(tenant.licenseInfo.currentUsers / tenant.licenseInfo.maxUsers) * 100}%` }} />
+                </div>
+              </div>
+              <div className={clsx('rounded-xl p-4', t.cardInner)}>
+                <p className={clsx('text-xs mb-1', t.muted)}>Expires</p>
+                <p className={clsx('text-sm font-medium', t.heading)}>{tenant.licenseInfo.expiresAt}</p>
+              </div>
+            </div>
+          </div>
+          <div className={clsx('border rounded-2xl p-5', t.card)}>
+            <h3 className={clsx('text-sm font-semibold mb-4', t.heading)}>Reporting Configuration</h3>
+            <p className={clsx('text-xs mb-3', t.muted)}>What this tenant reports to the platform</p>
+            <div className="grid grid-cols-2 gap-3">
+              {Object.entries(tenant.licenseInfo.reportingConfig).map(([key, enabled]) => (
+                <div key={key} className={clsx('flex items-center gap-3 rounded-xl px-4 py-3', t.cardInner)}>
+                  <span className={clsx('w-2 h-2 rounded-full', enabled ? 'bg-accent-400' : (isDark ? 'bg-white/[0.1]' : 'bg-gray-300'))} />
+                  <span className={clsx('text-sm capitalize', t.body)}>{key.replace(/([A-Z])/g, ' $1').trim()}</span>
+                  <span className={clsx('ml-auto text-xs font-medium', enabled ? 'text-accent-400' : t.faint)}>{enabled ? 'On' : 'Off'}</span>
+                </div>
+              ))}
+            </div>
+          </div>
         </div>
       )}
     </div>
