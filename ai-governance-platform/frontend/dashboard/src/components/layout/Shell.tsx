@@ -4,26 +4,25 @@ import {
   LayoutDashboard, ScrollText, ShieldCheck, Cpu, Settings,
   Shield, Menu, Bell, BadgeCheck, ScanLine,
   Building2, Eye, LogOut, Sun, Moon, MessageSquare, Users, DollarSign,
-  ChevronLeft, Search,
+  ChevronLeft, Search, Key, BarChart3, Activity,
 } from 'lucide-react';
 import clsx from 'clsx';
 import { useAuth } from '../../lib/auth';
 import { useTheme } from '../../lib/theme';
 
+// Platform admin — super admin dashboard (reporting, tenants, licenses)
 const platformAdminNav = [
-  { label: 'Overview',        href: '/overview',        icon: LayoutDashboard },
-  { label: 'AI Chat',         href: '/chat',            icon: MessageSquare },
-  { label: 'Audit Logs',      href: '/audit-logs',      icon: ScrollText },
-  { label: 'Policies',        href: '/policies',        icon: ShieldCheck },
-  { label: 'Compliance',      href: '/compliance',      icon: BadgeCheck },
-  { label: 'Content Scanner', href: '/content-scanner', icon: ScanLine },
-  { label: 'Shadow AI',       href: '/shadow-ai',       icon: Eye },
-  { label: 'Models',          href: '/models',          icon: Cpu },
-  { label: 'Cost & Billing',  href: '/cost',            icon: DollarSign },
+  { label: 'Dashboard',       href: '/overview',        icon: LayoutDashboard },
   { label: 'Tenants',         href: '/tenants',         icon: Building2 },
+  { label: 'Licenses',        href: '/licenses',        icon: Key },
+  { label: 'Usage Analytics', href: '/analytics',       icon: BarChart3 },
+  { label: 'Cost & Billing',  href: '/cost',            icon: DollarSign },
+  { label: 'Shadow AI',       href: '/shadow-ai',       icon: Eye },
+  { label: 'Platform Health', href: '/health',          icon: Activity },
   { label: 'Settings',        href: '/settings',        icon: Settings },
 ];
 
+// Tenant admin — full governance dashboard
 const tenantAdminNav = [
   { label: 'Overview',        href: '/overview',        icon: LayoutDashboard },
   { label: 'AI Chat',         href: '/chat',            icon: MessageSquare },

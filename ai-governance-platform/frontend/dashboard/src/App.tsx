@@ -3,6 +3,7 @@ import { useAuth } from './lib/auth';
 import { Shell } from './components/layout/Shell';
 import { LoginPage } from './pages/LoginPage';
 import { OverviewPage } from './pages/OverviewPage';
+import { PlatformDashboardPage } from './pages/PlatformDashboardPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
 import { PoliciesPage } from './pages/PoliciesPage';
 import { ModelsPage } from './pages/ModelsPage';
@@ -14,6 +15,9 @@ import { ShadowAIPage } from './pages/ShadowAIPage';
 import { ChatPage } from './pages/ChatPage';
 import { UsersPage } from './pages/UsersPage';
 import { CostPage } from './pages/CostPage';
+import { LicensesPage } from './pages/LicensesPage';
+import { AnalyticsPage } from './pages/AnalyticsPage';
+import { PlatformHealthPage } from './pages/PlatformHealthPage';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -43,7 +47,7 @@ function RequireAuditAccess({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { user, isChatOnly } = useAuth();
+  const { user, isChatOnly, isPlatformAdmin } = useAuth();
 
   if (!user) {
     return (
@@ -54,7 +58,7 @@ export default function App() {
     );
   }
 
-  // Chat-only users get a minimal shell
+  // Chat-only users
   if (isChatOnly) {
     return (
       <RequireAuth>
@@ -68,6 +72,30 @@ export default function App() {
     );
   }
 
+  // Platform admin — super admin dashboard
+  if (isPlatformAdmin) {
+    return (
+      <RequireAuth>
+        <Shell>
+          <Routes>
+            <Route path="/" element={<Navigate to="/overview" replace />} />
+            <Route path="/login" element={<Navigate to="/overview" replace />} />
+            <Route path="/overview" element={<PlatformDashboardPage />} />
+            <Route path="/tenants" element={<TenantsPage />} />
+            <Route path="/licenses" element={<LicensesPage />} />
+            <Route path="/analytics" element={<AnalyticsPage />} />
+            <Route path="/cost" element={<CostPage />} />
+            <Route path="/shadow-ai" element={<ShadowAIPage />} />
+            <Route path="/health" element={<PlatformHealthPage />} />
+            <Route path="/settings" element={<SettingsPage />} />
+            <Route path="*" element={<Navigate to="/overview" replace />} />
+          </Routes>
+        </Shell>
+      </RequireAuth>
+    );
+  }
+
+  // Tenant users (admin, auditor)
   return (
     <RequireAuth>
       <Shell>
@@ -76,19 +104,15 @@ export default function App() {
           <Route path="/login" element={<Navigate to="/overview" replace />} />
           <Route path="/overview" element={<OverviewPage />} />
           <Route path="/chat" element={<ChatPage />} />
-          {/* Audit access: admin + auditor */}
           <Route path="/audit-logs" element={<RequireAuditAccess><AuditLogsPage /></RequireAuditAccess>} />
-          {/* Admin-only tenant routes */}
           <Route path="/policies" element={<RequireAdmin><PoliciesPage /></RequireAdmin>} />
           <Route path="/compliance" element={<RequireAdmin><CompliancePage /></RequireAdmin>} />
           <Route path="/models" element={<RequireAdmin><ModelsPage /></RequireAdmin>} />
           <Route path="/cost" element={<RequireAdmin><CostPage /></RequireAdmin>} />
           <Route path="/content-scanner" element={<RequireAdmin><ContentScannerPage /></RequireAdmin>} />
+          <Route path="/shadow-ai" element={<RequireAdmin><ShadowAIPage /></RequireAdmin>} />
           <Route path="/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
           <Route path="/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
-          {/* Platform admin only */}
-          <Route path="/shadow-ai" element={<RequireAdmin><ShadowAIPage /></RequireAdmin>} />
-          <Route path="/tenants" element={<RequirePlatformAdmin><TenantsPage /></RequirePlatformAdmin>} />
           <Route path="*" element={<Navigate to="/overview" replace />} />
         </Routes>
       </Shell>
