@@ -19,7 +19,9 @@ export function LicensesPage() {
   const realLicenses = getLicenseList();
   const [copied, setCopied] = useState<string | null>(null);
   const [showGenerate, setShowGenerate] = useState(false);
-  const [newKey] = useState(generateLicenseKey());
+  const [newKey, setNewKey] = useState(generateLicenseKey());
+  const [genMaxUsers, setGenMaxUsers] = useState(50);
+  const [genValidityMonths, setGenValidityMonths] = useState(12);
 
   // Use real licenses if available, otherwise fall back to mock
   const licenses: TenantLicense[] = realLicenses.length > 0 ? realLicenses : mockLicenses;
@@ -54,15 +56,53 @@ export function LicensesPage() {
 
       {showGenerate && (
         <div className={clsx('border rounded-2xl p-5 animate-slide-up', t.card)}>
-          <h3 className={clsx('text-sm font-semibold mb-3', t.heading)}>New License Key</h3>
-          <div className="flex items-center gap-3">
+          <h3 className={clsx('text-sm font-semibold mb-4', t.heading)}>Generate New License</h3>
+
+          {/* Key row */}
+          <div className="flex items-center gap-3 mb-4">
             <code className={clsx('flex-1 font-mono text-sm px-4 py-3 rounded-xl', t.cardInner, t.heading)}>{newKey}</code>
             <button onClick={() => copyKey(newKey)} className={clsx('flex items-center gap-1.5 px-4 py-3 rounded-xl text-sm font-medium transition-colors', copied === newKey ? 'bg-accent-500/20 text-accent-400' : t.btnSecondary)}>
               {copied === newKey ? <Check className="w-4 h-4" /> : <Copy className="w-4 h-4" />}
               {copied === newKey ? 'Copied' : 'Copy'}
             </button>
+            <button onClick={() => setNewKey(generateLicenseKey())} className={clsx('px-3 py-3 rounded-xl text-sm font-medium transition-colors', t.btnSecondary)} title="Regenerate key">
+              <RefreshCw className="w-4 h-4" />
+            </button>
           </div>
-          <p className={clsx('text-xs mt-3', t.muted)}>Share this key with the tenant to activate their on-prem installation. The key will be validated on first connection.</p>
+
+          {/* Config row */}
+          <div className="grid grid-cols-2 gap-4 mb-4">
+            <div>
+              <label className={clsx('block text-xs mb-1.5', t.sub)}>Max Users</label>
+              <input type="number" min={1} value={genMaxUsers} onChange={(e) => setGenMaxUsers(+e.target.value)}
+                className={clsx('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500', t.input)} />
+            </div>
+            <div>
+              <label className={clsx('block text-xs mb-1.5', t.sub)}>Validity Period</label>
+              <select value={genValidityMonths} onChange={(e) => setGenValidityMonths(+e.target.value)}
+                className={clsx('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500', t.input)}>
+                <option value={1}>1 month</option>
+                <option value={3}>3 months</option>
+                <option value={6}>6 months</option>
+                <option value={12}>1 year</option>
+                <option value={24}>2 years</option>
+                <option value={36}>3 years</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Summary */}
+          <div className={clsx('rounded-xl px-4 py-3 text-xs', t.cardInner)}>
+            <span className={t.muted}>Expires: </span>
+            <span className={clsx('font-medium', t.heading)}>
+              {(() => { const d = new Date(); d.setMonth(d.getMonth() + genValidityMonths); return d.toISOString().slice(0, 10); })()}
+            </span>
+            <span className={clsx('mx-2', t.faint)}>·</span>
+            <span className={t.muted}>Users: </span>
+            <span className={clsx('font-medium', t.heading)}>{genMaxUsers}</span>
+          </div>
+
+          <p className={clsx('text-xs mt-3', t.muted)}>Share this key with the tenant to activate their installation. Configure the user count and validity before sharing.</p>
         </div>
       )}
 
