@@ -1,82 +1,138 @@
-import { Activity, Server, Database, Shield, CheckCircle, XCircle, Clock } from 'lucide-react';
+import { useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { Activity, Server, Database, Shield, CheckCircle, XCircle, Clock, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
+import axios from 'axios';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
+import { getGatewayUrl } from '../lib/api';
 
-const services = [
-  { name: 'Gateway', port: 3000, status: 'healthy', uptime: '28d 4h', latency: '12ms', icon: Shield },
-  { name: 'Policy Engine', port: 3001, status: 'healthy', uptime: '28d 4h', latency: '8ms', icon: Shield },
-  { name: 'Data Protection', port: 3002, status: 'healthy', uptime: '28d 4h', latency: '15ms', icon: Shield },
-  { name: 'Analytics', port: 3003, status: 'healthy', uptime: '28d 4h', latency: '22ms', icon: Activity },
-  { name: 'Content Scanner', port: 3004, status: 'healthy', uptime: '28d 4h', latency: '45ms', icon: Server },
-  { name: 'LocalStack (AWS)', port: 4566, status: 'healthy', uptime: '28d 4h', latency: '5ms', icon: Database },
+interface ServiceHealth {
+  name: string;
+  port: number;
+  icon: typeof Shield;
+  status: 'healthy' | 'unhealthy' | 'checking';
+  latencyMs: number | null;
+  service?: string;
+  error?: string;
+}
+
+const SERVICE_DEFS = [
+  { name: 'Gateway',         port: 3000, icon: Shield,   healthPath: '/health' },
+  { name: 'Policy Engine',   port: 3001, icon: Shield,   healthPath: '/health' },
+  { name: 'Analytics',       port: 3003, icon: Activity,  healthPath: '/health' },
+  { name: 'Content Scanner', port: 3004, icon: Server,   healthPath: '/health' },
 ];
 
-const onpremAgents = [
-  { tenant: 'HealthCo Systems', lastSeen: '2 min ago', status: 'connected', version: '1.0.0' },
-  { tenant: 'RetailMax', lastSeen: '5 min ago', status: 'connected', version: '1.0.0' },
-];
+async function checkServiceHealth(port: number, healthPath: string): Promise<{ ok: boolean; latencyMs: number; data?: any; error?: string }> {
+  const base = getGatewayUrl().replace(':3000', ':' + port);
+  const start = performance.now();
+  try {
+    const { data } = await axios.get(base + healthPath, { timeout: 5000 });
+    return { ok: true, latencyMs: Math.round(performance.now() - start), data };
+  } catch (err: any) {
+    return { ok: false, latencyMs: Math.round(performance.now() - start), error: err.message || 'Unreachable' };
+  }
+}
+
+async function checkAllServices(): Promise<ServiceHealth[]> {
+  const results = await Promise.all(
+    SERVICE_DEFS.map(async (svc) => {
+      const result = await checkServiceHealth(svc.port, svc.healthPath);
+      return {
+        name: svc.name,
+        port: svc.port,
+        icon: svc.icon,
+        status: result.ok ? 'healthy' : 'unhealthy',
+        latencyMs: result.latencyMs,
+        service: result.data?.service,
+        error: result.error,
+      } as ServiceHealth;
+    })
+  );
+  return results;
+}
 
 export function PlatformHealthPage() {
   const { isDark } = useTheme();
   const t = themeClasses(isDark);
 
+  const { data: services = [], refetch, isFetching } = useQuery({
+    queryKey: ['platform-health'],
+    queryFn: checkAllServices,
+    refetchInterval: 30000,
+  });
+
+  const healthyCount = services.filter((s) => s.status === 'healthy').length;
+  const totalCount = SERVICE_DEFS.length;
+
   return (
     <div className="space-y-6 w-full">
-      <p className={clsx('text-sm', t.sub)}>Platform infrastructure status</p>
+      <div className="flex items-center justify-between">
+        <div>
+          <p className={clsx('text-sm', t.sub)}>
+            {services.length > 0
+              ? `${healthyCount}/${totalCount} services healthy`
+              : 'Checking services...'}
+          </p>
+        </div>
+        <button onClick={() => refetch()} className={clsx('flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors', t.btnSecondary)}>
+          <RefreshCw className={clsx('w-4 h-4', isFetching && 'animate-spin')} />
+          Refresh
+        </button>
+      </div>
 
       {/* Services grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-3 gap-4">
-        {services.map((svc) => {
+      <div className="grid grid-cols-2 lg:grid-cols-2 gap-4">
+        {(services.length > 0 ? services : SERVICE_DEFS.map((s) => ({ ...s, status: 'checking' as const, latencyMs: null, error: undefined }))).map((svc) => {
           const Icon = svc.icon;
           const isHealthy = svc.status === 'healthy';
+          const isChecking = svc.status === 'checking';
           return (
-            <div key={svc.name} className={clsx('border rounded-2xl p-5 transition-all duration-300 hover:-translate-y-0.5', t.card, isDark ? 'shadow-card-dark hover:shadow-card-dark-hover' : 'shadow-card hover:shadow-card-hover')}>
+            <div key={svc.name} className={clsx('border rounded-2xl p-5 transition-all duration-300 hover:-translate-y-0.5', t.card)}>
               <div className="flex items-center gap-3 mb-4">
-                <div className={clsx('w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br', isHealthy ? 'from-accent-500/20 to-accent-600/10' : 'from-red-500/20 to-red-600/10')}>
-                  <Icon className={clsx('w-5 h-5', isHealthy ? 'text-accent-400' : 'text-red-400')} />
+                <div className={clsx('w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br',
+                  isChecking ? 'from-yellow-500/20 to-yellow-600/10' : isHealthy ? 'from-accent-500/20 to-accent-600/10' : 'from-red-500/20 to-red-600/10'
+                )}>
+                  <Icon className={clsx('w-5 h-5', isChecking ? 'text-yellow-400 animate-pulse' : isHealthy ? 'text-accent-400' : 'text-red-400')} />
                 </div>
-                <div>
+                <div className="flex-1">
                   <p className={clsx('font-semibold text-sm', t.heading)}>{svc.name}</p>
                   <p className={clsx('text-xs', t.muted)}>Port {svc.port}</p>
                 </div>
-                {isHealthy ? <CheckCircle className="w-4 h-4 text-accent-400 ml-auto" /> : <XCircle className="w-4 h-4 text-red-400 ml-auto" />}
+                {isChecking
+                  ? <Clock className="w-4 h-4 text-yellow-400 animate-pulse" />
+                  : isHealthy
+                    ? <CheckCircle className="w-4 h-4 text-accent-400" />
+                    : <XCircle className="w-4 h-4 text-red-400" />
+                }
               </div>
               <div className="grid grid-cols-2 gap-3 text-xs">
                 <div className={clsx('rounded-lg px-3 py-2', t.cardInner)}>
-                  <p className={t.muted}>Uptime</p>
-                  <p className={clsx('font-medium', t.heading)}>{svc.uptime}</p>
+                  <p className={t.muted}>Status</p>
+                  <p className={clsx('font-medium', isChecking ? 'text-yellow-400' : isHealthy ? 'text-accent-400' : 'text-red-400')}>
+                    {isChecking ? 'Checking...' : isHealthy ? 'Healthy' : 'Unhealthy'}
+                  </p>
                 </div>
                 <div className={clsx('rounded-lg px-3 py-2', t.cardInner)}>
                   <p className={t.muted}>Latency</p>
-                  <p className={clsx('font-medium', t.heading)}>{svc.latency}</p>
+                  <p className={clsx('font-medium', t.heading)}>
+                    {svc.latencyMs != null ? svc.latencyMs + 'ms' : '—'}
+                  </p>
                 </div>
               </div>
+              {svc.error && (
+                <p className={clsx('text-xs mt-3 px-3 py-2 rounded-lg', isDark ? 'bg-red-500/10 text-red-400' : 'bg-red-50 text-red-600')}>
+                  {svc.error}
+                </p>
+              )}
             </div>
           );
         })}
       </div>
 
-      {/* On-prem agents */}
-      <div className={clsx('border rounded-2xl p-5', t.card)}>
-        <h2 className={clsx('text-sm font-semibold mb-4', t.heading)}>On-Prem Reporting Agents</h2>
-        <div className="space-y-3">
-          {onpremAgents.map((agent) => (
-            <div key={agent.tenant} className={clsx('flex items-center gap-4 rounded-xl px-4 py-3', t.cardInner)}>
-              <span className="w-2 h-2 rounded-full bg-accent-400 animate-pulse-soft" />
-              <div className="flex-1">
-                <p className={clsx('text-sm font-medium', t.heading)}>{agent.tenant}</p>
-                <p className={clsx('text-xs', t.muted)}>v{agent.version}</p>
-              </div>
-              <span className={clsx('text-xs flex items-center gap-1', t.sub)}><Clock className="w-3 h-3" />{agent.lastSeen}</span>
-              <span className="text-xs px-2 py-0.5 rounded-lg font-medium bg-accent-500/10 text-accent-400 ring-1 ring-accent-500/20">{agent.status}</span>
-            </div>
-          ))}
-          {onpremAgents.length === 0 && (
-            <p className={clsx('text-sm text-center py-6', t.muted)}>No on-prem agents connected</p>
-          )}
-        </div>
-      </div>
+      {/* Auto-refresh note */}
+      <p className={clsx('text-xs text-center', t.faint)}>Auto-refreshes every 30 seconds</p>
     </div>
   );
 }
