@@ -106,6 +106,7 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
 
   // License fields
   const [maxUsers, setMaxUsers] = useState(tenant?.license?.maxUsers ?? 50);
+  const [validityMonths, setValidityMonths] = useState(tenant?.license?.validityMonths ?? 12);
   const [licenseKey] = useState(() => tenant?.license?.licenseKey ?? generateLicenseKey());
 
   const copyLicenseKey = () => {
@@ -117,7 +118,7 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
   const saveLicense = (tenantId: string) => {
     const now = new Date();
     const expiry = new Date(now);
-    expiry.setFullYear(expiry.getFullYear() + 1);
+    expiry.setMonth(expiry.getMonth() + validityMonths);
     storeTenantLicense({
       licenseKey,
       tenantId,
@@ -270,7 +271,17 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
                 </div>
                 <p className={clsx('text-xs mt-1', t.faint)}>Auto-generated. Share with tenant for on-prem activation.</p>
               </div>
-              <FieldInput tc={t} label="Max licensed users" id="t-maxusers" type="number" min={1} value={maxUsers} onChange={(e) => setMaxUsers(+e.target.value)} hint="Maximum number of users allowed under this license" />
+              <div className="grid grid-cols-2 gap-4">
+                <FieldInput tc={t} label="Max licensed users" id="t-maxusers" type="number" min={1} value={maxUsers} onChange={(e) => setMaxUsers(+e.target.value)} hint="Maximum users under this license" />
+                <FieldSelect tc={t} label="Validity period" id="t-validity" value={validityMonths} onChange={(e) => setValidityMonths(+e.target.value)}>
+                  <option value={1}>1 month</option>
+                  <option value={3}>3 months</option>
+                  <option value={6}>6 months</option>
+                  <option value={12}>1 year</option>
+                  <option value={24}>2 years</option>
+                  <option value={36}>3 years</option>
+                </FieldSelect>
+              </div>
               <div className={clsx('rounded-xl p-4 space-y-2', t.cardInner)}>
                 <p className={clsx('text-xs font-medium', t.heading)}>License Summary</p>
                 <div className="grid grid-cols-2 gap-2 text-xs">
@@ -281,7 +292,7 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
                   <span className={t.muted}>Max Users</span>
                   <span className={clsx('font-medium', t.body)}>{maxUsers}</span>
                   <span className={t.muted}>Validity</span>
-                  <span className={clsx('font-medium', t.body)}>1 year from activation</span>
+                  <span className={clsx('font-medium', t.body)}>{validityMonths >= 12 ? `${validityMonths / 12} year${validityMonths > 12 ? 's' : ''}` : `${validityMonths} month${validityMonths > 1 ? 's' : ''}`} from activation</span>
                 </div>
               </div>
             </div>
