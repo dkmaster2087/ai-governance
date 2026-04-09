@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import helmet from '@fastify/helmet';
+import cors from '@fastify/cors';
 import { evaluateRoutes } from './routes/evaluate.routes';
 import { policyRoutes } from './routes/policy.routes';
 import { complianceRoutes } from './routes/compliance.routes';
@@ -10,6 +11,7 @@ const PORT = parseInt(process.env.PORT || '3001', 10);
 
 async function main() {
   const app = Fastify({ logger: false, trustProxy: true });
+  await app.register(cors);
   await app.register(helmet);
   await app.register(evaluateRoutes, { prefix: '/v1' });
   await app.register(policyRoutes, { prefix: '/v1/policies' });

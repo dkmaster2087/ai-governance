@@ -1,11 +1,10 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, Server, Database, Shield, CheckCircle, XCircle, Clock, RefreshCw } from 'lucide-react';
+import { Activity, Server, Shield, CheckCircle, XCircle, Clock, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import axios from 'axios';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
-import { getGatewayUrl } from '../lib/api';
 
 interface ServiceHealth {
   name: string;
@@ -18,39 +17,24 @@ interface ServiceHealth {
 }
 
 const SERVICE_DEFS = [
-  { name: 'Gateway',         port: 3000, icon: Shield,   healthPath: '/health' },
-  { name: 'Policy Engine',   port: 3001, icon: Shield,   healthPath: '/health' },
-  { name: 'Analytics',       port: 3003, icon: Activity,  healthPath: '/health' },
-  { name: 'Content Scanner', port: 3004, icon: Server,   healthPath: '/health' },
+  { name: 'Gateway',         port: 3000, icon: Shield,   proxyPath: '/health/gateway' },
+  { name: 'Policy Engine',   port: 3001, icon: Shield,   proxyPath: '/health/policy-engine' },
+  { name: 'Analytics',       port: 3003, icon: Activity,  proxyPath: '/health/analytics' },
+  { name: 'Content Scanner', port: 3004, icon: Server,   proxyPath: '/health/content-scanner' },
 ];
 
-async function checkServiceHealth(port: number, healthPath: string): Promise<{ ok: boolean; latencyMs: number; data?: any; error?: string }> {
-  const base = getGatewayUrl().replace(':3000', ':' + port);
-  const start = performance.now();
-  try {
-    const { data } = await axios.get(base + healthPath, { timeout: 5000 });
-    return { ok: true, latencyMs: Math.round(performance.now() - start), data };
-  } catch (err: any) {
-    return { ok: false, latencyMs: Math.round(performance.now() - start), error: err.message || 'Unreachable' };
-  }
-}
-
 async function checkAllServices(): Promise<ServiceHealth[]> {
-  const results = await Promise.all(
+  return Promise.all(
     SERVICE_DEFS.map(async (svc) => {
-      const result = await checkServiceHealth(svc.port, svc.healthPath);
-      return {
-        name: svc.name,
-        port: svc.port,
-        icon: svc.icon,
-        status: result.ok ? 'healthy' : 'unhealthy',
-        latencyMs: result.latencyMs,
-        service: result.data?.service,
-        error: result.error,
-      } as ServiceHealth;
+      const start = performance.now();
+      try {
+        const { data } = await axios.get(svc.proxyPath, { timeout: 5000 });
+        return { name: svc.name, port: svc.port, icon: svc.icon, status: 'healthy' as const, latencyMs: Math.round(performance.now() - start), service: data?.service };
+      } catch (err: any) {
+        return { name: svc.name, port: svc.port, icon: svc.icon, status: 'unhealthy' as const, latencyMs: Math.round(performance.now() - start), error: err.message || 'Unreachable' };
+      }
     })
   );
-  return results;
 }
 
 export function PlatformHealthPage() {

@@ -32,6 +32,27 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/scanner/, ''),
       },
+      // Health check proxies for Platform Health page
+      '/health/gateway': {
+        target: 'http://localhost:3000',
+        changeOrigin: true,
+        rewrite: () => '/health',
+      },
+      '/health/policy-engine': {
+        target: 'http://localhost:3001',
+        changeOrigin: true,
+        rewrite: () => '/health',
+      },
+      '/health/analytics': {
+        target: 'http://localhost:3003',
+        changeOrigin: true,
+        rewrite: () => '/health',
+      },
+      '/health/content-scanner': {
+        target: 'http://localhost:3004',
+        changeOrigin: true,
+        rewrite: () => '/health',
+      },
     },
   },
   test: {
