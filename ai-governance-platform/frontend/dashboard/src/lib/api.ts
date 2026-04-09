@@ -5,8 +5,13 @@ const gateway = axios.create({ baseURL: '/api' });
 const analytics = axios.create({ baseURL: '/analytics' });
 const policyApi = axios.create({ baseURL: '/api/policies' });
 
+/** Gateway base URL for direct (non-proxied) requests */
+export function getGatewayUrl(): string {
+  return window.location.origin.replace('5174', '3000');
+}
+
 /** Get tenantId from localStorage auth */
-function getAuthTenantId(): string {
+export function getAuthTenantId(): string {
   try {
     const stored = localStorage.getItem('aegis_auth_user');
     if (stored) return JSON.parse(stored).tenantId || 'tenant_demo';

@@ -1,7 +1,7 @@
 import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Cell } from 'recharts';
-import { AlertTriangle, Eye, ShieldX, TrendingUp, Globe, User, Clock, RefreshCw, Building2, Calendar } from 'lucide-react';
+import { AlertTriangle, Eye, ShieldX, TrendingUp, Globe, User, Clock, RefreshCw, Building2 } from 'lucide-react';
 import clsx from 'clsx';
 import { format } from 'date-fns';
 import axios from 'axios';
@@ -10,6 +10,7 @@ import { StatCard } from '../components/ui/StatCard';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
 import { useAuth } from '../lib/auth';
+import { getGatewayUrl } from '../lib/api';
 
 type TimePeriod = '1h' | '3h' | '24h' | '3d' | '7d' | '30d';
 
@@ -21,10 +22,6 @@ const TIME_OPTIONS: { value: TimePeriod; label: string }[] = [
   { value: '7d',  label: '7 days' },
   { value: '30d', label: '30 days' },
 ];
-
-function getGatewayUrl() {
-  return window.location.origin.replace('5174', '3000');
-}
 
 async function fetchShadowAIData(tenantId: string) {
   const { data } = await axios.get(`${getGatewayUrl()}/v1/shadow-ai/data/${tenantId}`);

@@ -171,10 +171,9 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
       }
       onSaved();
     },
-    onError: (err) => {
-      console.warn('Tenant API not available, simulating success', err);
+    onError: (err: unknown) => {
+      // Fallback for when backend is unavailable
       const tenantId = tenant?.tenantId || `tenant_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-      // Store license
       saveLicense(tenantId);
       // Still register the account for demo purposes
       if (!isEdit && adminEmail) {

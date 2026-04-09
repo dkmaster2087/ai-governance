@@ -1,39 +1,17 @@
 import { useState } from 'react';
-import { Key, Plus, Copy, Check, Building2, Clock, AlertTriangle, RefreshCw } from 'lucide-react';
+import { Key, Plus, Copy, Check, Building2, AlertTriangle, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
 import { getLicenseList, generateLicenseKey, type TenantLicense } from '../lib/license';
 
-interface License {
-  id: string;
-  tenantName: string;
-  tenantId: string;
-  licenseKey: string;
-  type: 'cloud' | 'onprem';
-  plan: string;
-  status: 'active' | 'expired' | 'revoked' | 'trial';
-  issuedAt: string;
-  expiresAt: string;
-  maxUsers: number;
-  currentUsers: number;
-  lastHeartbeat?: string;
-  reportingEnabled: boolean;
-}
-
-const mockLicenses: License[] = [
-  { id: 'lic_1', tenantName: 'Demo Corp', tenantId: 'tenant_demo', licenseKey: 'AEGIS-DEMO-XXXX-XXXX', type: 'cloud', plan: 'professional', status: 'active', issuedAt: '2026-01-01', expiresAt: '2027-01-01', maxUsers: 50, currentUsers: 45, lastHeartbeat: '2026-04-01T20:00:00Z', reportingEnabled: true },
-  { id: 'lic_2', tenantName: 'HealthCo Systems', tenantId: 'tenant_healthco', licenseKey: 'AEGIS-HC01-XXXX-XXXX', type: 'onprem', plan: 'enterprise', status: 'active', issuedAt: '2026-01-15', expiresAt: '2027-01-15', maxUsers: 200, currentUsers: 120, lastHeartbeat: '2026-04-01T19:55:00Z', reportingEnabled: true },
-  { id: 'lic_3', tenantName: 'FinTech Inc', tenantId: 'tenant_fintech', licenseKey: 'AEGIS-FT01-XXXX-XXXX', type: 'cloud', plan: 'enterprise', status: 'active', issuedAt: '2026-02-01', expiresAt: '2027-02-01', maxUsers: 100, currentUsers: 38, reportingEnabled: true },
-  { id: 'lic_4', tenantName: 'RetailMax', tenantId: 'tenant_retail', licenseKey: 'AEGIS-RM01-XXXX-XXXX', type: 'onprem', plan: 'professional', status: 'trial', issuedAt: '2026-03-20', expiresAt: '2026-04-20', maxUsers: 50, currentUsers: 32, lastHeartbeat: '2026-04-01T18:30:00Z', reportingEnabled: false },
-  { id: 'lic_5', tenantName: 'LegalFirm LLP', tenantId: 'tenant_legal', licenseKey: 'AEGIS-LF01-XXXX-XXXX', type: 'cloud', plan: 'starter', status: 'active', issuedAt: '2026-03-01', expiresAt: '2027-03-01', maxUsers: 20, currentUsers: 12, reportingEnabled: true },
+const mockLicenses: TenantLicense[] = [
+  { tenantName: 'Demo Corp', tenantId: 'tenant_demo', licenseKey: 'AEGIS-DEMO-XXXX-XXXX', type: 'cloud', plan: 'professional', status: 'active', issuedAt: '2026-01-01', expiresAt: '2027-01-01', maxUsers: 50, currentUsers: 45, reportingConfig: { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: true } },
+  { tenantName: 'HealthCo Systems', tenantId: 'tenant_healthco', licenseKey: 'AEGIS-HC01-XXXX-XXXX', type: 'onprem', plan: 'enterprise', status: 'active', issuedAt: '2026-01-15', expiresAt: '2027-01-15', maxUsers: 200, currentUsers: 120, reportingConfig: { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: false } },
+  { tenantName: 'FinTech Inc', tenantId: 'tenant_fintech', licenseKey: 'AEGIS-FT01-XXXX-XXXX', type: 'cloud', plan: 'enterprise', status: 'active', issuedAt: '2026-02-01', expiresAt: '2027-02-01', maxUsers: 100, currentUsers: 38, reportingConfig: { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: true } },
+  { tenantName: 'RetailMax', tenantId: 'tenant_retail', licenseKey: 'AEGIS-RM01-XXXX-XXXX', type: 'onprem', plan: 'professional', status: 'trial', issuedAt: '2026-03-20', expiresAt: '2026-04-20', maxUsers: 50, currentUsers: 32, reportingConfig: { usageMetrics: false, costData: false, complianceStatus: false, auditLogs: false } },
+  { tenantName: 'LegalFirm LLP', tenantId: 'tenant_legal', licenseKey: 'AEGIS-LF01-XXXX-XXXX', type: 'cloud', plan: 'starter', status: 'active', issuedAt: '2026-03-01', expiresAt: '2027-03-01', maxUsers: 20, currentUsers: 12, reportingConfig: { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: true } },
 ];
-
-function generateLicenseKey() {
-  const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789';
-  const seg = () => Array.from({ length: 4 }, () => chars[Math.floor(Math.random() * chars.length)]).join('');
-  return `AEGIS-${seg()}-${seg()}-${seg()}`;
-}
 
 export function LicensesPage() {
   const { isDark } = useTheme();
@@ -44,19 +22,7 @@ export function LicensesPage() {
   const [newKey] = useState(generateLicenseKey());
 
   // Use real licenses if available, otherwise fall back to mock
-  const licenses: TenantLicense[] = realLicenses.length > 0 ? realLicenses : mockLicenses.map((m) => ({
-    licenseKey: m.licenseKey,
-    tenantId: m.tenantId,
-    tenantName: m.tenantName,
-    plan: m.plan,
-    type: m.type,
-    status: m.status,
-    maxUsers: m.maxUsers,
-    currentUsers: m.currentUsers,
-    issuedAt: m.issuedAt,
-    expiresAt: m.expiresAt,
-    reportingConfig: { usageMetrics: m.reportingEnabled, costData: m.reportingEnabled, complianceStatus: m.reportingEnabled, auditLogs: false },
-  }));
+  const licenses: TenantLicense[] = realLicenses.length > 0 ? realLicenses : mockLicenses;
 
   const copyKey = (key: string) => {
     navigator.clipboard.writeText(key);

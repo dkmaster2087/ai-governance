@@ -1,11 +1,11 @@
 import { useState, useRef, useEffect } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Send, Bot, User, AlertTriangle, Shield, Loader2 } from 'lucide-react';
+import { Send, Bot, AlertTriangle, Shield, Loader2 } from 'lucide-react';
 import clsx from 'clsx';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
 import { useAuth } from '../lib/auth';
-import { fetchModelConfigs } from '../lib/api';
+import { fetchModelConfigs, getGatewayUrl } from '../lib/api';
 import { mockModelConfigs } from '../lib/mock-data';
 import axios from 'axios';
 
@@ -18,10 +18,6 @@ interface Message {
   tokens?: number;
   latencyMs?: number;
   policyWarning?: string;
-}
-
-function getGatewayUrl() {
-  return window.location.origin.replace('5174', '3000');
 }
 
 export function ChatPage() {
