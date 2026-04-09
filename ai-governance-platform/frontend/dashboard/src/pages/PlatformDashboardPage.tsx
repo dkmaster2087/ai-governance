@@ -157,7 +157,7 @@ export function PlatformDashboardPage() {
             </thead>
             <tbody className={clsx('divide-y', t.divider)}>
               {data.topTenants.map((tenant) => (
-                <tr key={tenant.name} className={clsx('transition-colors', t.hoverRow)}>
+                <tr key={tenant.name} className={clsx('transition-colors cursor-pointer', t.hoverRow)} onClick={() => window.location.href = `/tenants/${tenant.name.toLowerCase().replace(/\s+/g, '_')}`}>
                   <td className="px-4 py-3">
                     <div className="flex items-center gap-2">
                       <Building2 className="w-4 h-4 text-brand-400 flex-shrink-0" />

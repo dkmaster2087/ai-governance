@@ -19,6 +19,8 @@ import { LicensesPage } from './pages/LicensesPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { PlatformHealthPage } from './pages/PlatformHealthPage';
 
+import { TenantDetailPage } from './pages/TenantDetailPage';
+
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
@@ -82,6 +84,7 @@ export default function App() {
             <Route path="/login" element={<Navigate to="/overview" replace />} />
             <Route path="/overview" element={<PlatformDashboardPage />} />
             <Route path="/tenants" element={<TenantsPage />} />
+            <Route path="/tenants/:tenantId" element={<TenantDetailPage />} />
             <Route path="/licenses" element={<LicensesPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/cost" element={<CostPage />} />
