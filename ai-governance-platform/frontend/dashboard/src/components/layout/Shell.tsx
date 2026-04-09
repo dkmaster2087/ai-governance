@@ -34,6 +34,7 @@ const tenantAdminNav = [
   { label: 'Models',          href: '/models',          icon: Cpu },
   { label: 'Cost & Billing',  href: '/cost',            icon: DollarSign },
   { label: 'Users',           href: '/users',           icon: Users },
+  { label: 'License',         href: '/license',         icon: Key },
   { label: 'Settings',        href: '/settings',        icon: Settings },
 ];
 

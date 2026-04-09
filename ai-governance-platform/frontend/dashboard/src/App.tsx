@@ -20,6 +20,7 @@ import { AnalyticsPage } from './pages/AnalyticsPage';
 import { PlatformHealthPage } from './pages/PlatformHealthPage';
 
 import { TenantDetailPage } from './pages/TenantDetailPage';
+import { TenantLicensePage } from './pages/TenantLicensePage';
 
 function RequireAuth({ children }: { children: React.ReactNode }) {
   const { user } = useAuth();
@@ -116,6 +117,7 @@ export default function App() {
           <Route path="/shadow-ai" element={<RequireAdmin><ShadowAIPage /></RequireAdmin>} />
           <Route path="/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
           <Route path="/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
+          <Route path="/license" element={<RequireAdmin><TenantLicensePage /></RequireAdmin>} />
           <Route path="*" element={<Navigate to="/overview" replace />} />
         </Routes>
       </Shell>

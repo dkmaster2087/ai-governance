@@ -1,25 +1,20 @@
 import { useState } from 'react';
-import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Building2, Cpu, Shield, Activity, ShieldX, ScanEye, DollarSign } from 'lucide-react';
+import { useQuery } from '@tanstack/react-query';
+import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
+import { Building2, Cpu, Activity, ShieldX, ScanEye, DollarSign } from 'lucide-react';
 import clsx from 'clsx';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
 import { StatCard } from '../components/ui/StatCard';
+import { fetchTenants } from '../lib/tenant-api';
+import { mockTenants } from '../lib/mock-tenants';
+import { useAuth } from '../lib/auth';
 
 const PERIODS = [
   { label: '7 days', value: '7d' },
   { label: '30 days', value: '30d' },
   { label: '90 days', value: '90d' },
 ] as const;
-
-const TENANTS = [
-  { id: 'all', name: 'All Tenants' },
-  { id: 'demo_corp', name: 'Demo Corp' },
-  { id: 'healthco', name: 'HealthCo Systems' },
-  { id: 'fintech', name: 'FinTech Inc' },
-  { id: 'legalfirm', name: 'LegalFirm LLP' },
-  { id: 'retailmax', name: 'RetailMax' },
-];
 
 const tenantData: Record<string, any> = {
   all: {
@@ -68,7 +63,6 @@ const tenantData: Record<string, any> = {
   },
 };
 
-// Fill remaining tenants with demo_corp-like data
 ['fintech', 'legalfirm', 'retailmax'].forEach((id) => {
   if (!tenantData[id]) tenantData[id] = { ...tenantData.demo_corp, totalRequests: Math.floor(Math.random() * 30000) + 5000 };
 });
@@ -76,8 +70,21 @@ const tenantData: Record<string, any> = {
 export function AnalyticsPage() {
   const { isDark } = useTheme();
   const t = themeClasses(isDark);
+  const { user } = useAuth();
   const [period, setPeriod] = useState('30d');
   const [selectedTenant, setSelectedTenant] = useState('all');
+
+  const { data: rawTenants } = useQuery({
+    queryKey: ['tenants', user?.tenantId],
+    queryFn: () => fetchTenants(user?.tenantId),
+    placeholderData: mockTenants,
+  });
+  const tenants: typeof mockTenants = Array.isArray(rawTenants) && rawTenants.length ? rawTenants : mockTenants;
+
+  const TENANT_OPTIONS = [
+    { id: 'all', name: 'All Tenants' },
+    ...tenants.map((tn) => ({ id: tn.tenantId, name: tn.name })),
+  ];
 
   const tooltipStyle = isDark
     ? { background: '#0c1021', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8 }
@@ -86,27 +93,31 @@ export function AnalyticsPage() {
   const gridStroke = isDark ? 'rgba(255,255,255,0.04)' : '#f3f4f6';
 
   const data = tenantData[selectedTenant] || tenantData.all;
-  const tenantLabel = TENANTS.find((t) => t.id === selectedTenant)?.name || 'All Tenants';
+  const tenantLabel = TENANT_OPTIONS.find((o) => o.id === selectedTenant)?.name || 'All Tenants';
+
+  // Aggregate real data from tenants
+  const realAll = {
+    totalRequests: tenants.reduce((s, tn) => s + (tn.usageThisMonth?.requests ?? 0), 0),
+    blockedRequests: tenants.reduce((s, tn) => s + (tn.usageThisMonth?.violations ?? 0), 0),
+    piiDetections: Math.round(tenants.reduce((s, tn) => s + (tn.usageThisMonth?.violations ?? 0), 0) * 1.1),
+    totalCost: tenants.reduce((s, tn) => s + (tn.usageThisMonth?.cost ?? 0), 0),
+  };
+  const dd = selectedTenant === 'all' && realAll.totalRequests > 0 ? { ...data, ...realAll } : data;
 
   return (
     <div className="space-y-6 w-full">
-      {/* Filters */}
       <div className="flex flex-wrap items-center gap-3">
         <div className="flex items-center gap-2">
           <Building2 className={clsx('w-4 h-4', t.muted)} />
-          <select
-            value={selectedTenant}
-            onChange={(e) => setSelectedTenant(e.target.value)}
-            className={clsx('border rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500', t.input)}
-          >
-            {TENANTS.map((tn) => (
-              <option key={tn.id} value={tn.id}>{tn.name}</option>
-            ))}
+          <select value={selectedTenant} onChange={(e) => setSelectedTenant(e.target.value)}
+            className={clsx('border rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500', t.input)}>
+            {TENANT_OPTIONS.map((tn) => <option key={tn.id} value={tn.id}>{tn.name}</option>)}
           </select>
         </div>
         <div className={clsx('flex rounded-xl border overflow-hidden', t.border)}>
           {PERIODS.map((p) => (
-            <button key={p.value} onClick={() => setPeriod(p.value)} className={clsx('px-3 py-1.5 text-xs font-medium transition-colors', period === p.value ? 'bg-brand-600 text-white' : t.btnSecondary)}>
+            <button key={p.value} onClick={() => setPeriod(p.value)}
+              className={clsx('px-3 py-1.5 text-xs font-medium transition-colors', period === p.value ? 'bg-brand-600 text-white' : t.btnSecondary)}>
               {p.label}
             </button>
           ))}
@@ -114,17 +125,15 @@ export function AnalyticsPage() {
         <p className={clsx('ml-auto text-xs', t.muted)}>Showing data for {tenantLabel}</p>
       </div>
 
-      {/* Stat cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Requests" value={data.totalRequests?.toLocaleString()} icon={Activity} color="brand" />
-        <StatCard label="Blocked Requests" value={data.blockedRequests?.toLocaleString()} icon={ShieldX} color="red" />
-        <StatCard label="PII Detections" value={data.piiDetections?.toLocaleString()} icon={ScanEye} color="yellow" />
-        <StatCard label="Total Cost" value={`$${data.totalCost?.toFixed(2)}`} icon={DollarSign} color="green" />
+        <StatCard label="Total Requests" value={dd.totalRequests?.toLocaleString()} icon={Activity} color="brand" />
+        <StatCard label="Blocked Requests" value={dd.blockedRequests?.toLocaleString()} icon={ShieldX} color="red" />
+        <StatCard label="PII Detections" value={dd.piiDetections?.toLocaleString()} icon={ScanEye} color="yellow" />
+        <StatCard label="Total Cost" value={'$' + dd.totalCost?.toFixed(2)} icon={DollarSign} color="green" />
       </div>
 
-      {/* Request volume chart */}
       <div className={clsx('border rounded-2xl p-5', t.card)}>
-        <h2 className={clsx('text-sm font-semibold mb-5', t.heading)}>Request Volume — {tenantLabel}</h2>
+        <h2 className={clsx('text-sm font-semibold mb-5', t.heading)}>{'Request Volume \u2014 ' + tenantLabel}</h2>
         <ResponsiveContainer width="100%" height={220}>
           <AreaChart data={data.requestsTrend}>
             <defs>
@@ -149,7 +158,6 @@ export function AnalyticsPage() {
       </div>
 
       <div className="grid lg:grid-cols-2 gap-4">
-        {/* Model usage */}
         <div className={clsx('border rounded-2xl p-5', t.card)}>
           <h2 className={clsx('text-sm font-semibold mb-4', t.heading)}>Model Usage</h2>
           <div className="space-y-3">
@@ -163,11 +171,11 @@ export function AnalyticsPage() {
                     </span>
                     <div className="flex items-center gap-3">
                       <span className={clsx('text-xs', t.sub)}>{row.requests.toLocaleString()}</span>
-                      <span className={clsx('text-xs font-medium', t.heading)}>${row.cost?.toLocaleString()}</span>
+                      <span className={clsx('text-xs font-medium', t.heading)}>{'$' + row.cost?.toLocaleString()}</span>
                     </div>
                   </div>
                   <div className={clsx('h-2 rounded-full overflow-hidden', t.track)}>
-                    <div className="h-full bg-accent-500 rounded-full" style={{ width: `${(row.requests / max) * 100}%` }} />
+                    <div className="h-full bg-accent-500 rounded-full" style={{ width: (row.requests / max * 100) + '%' }} />
                   </div>
                 </div>
               );
@@ -175,7 +183,6 @@ export function AnalyticsPage() {
           </div>
         </div>
 
-        {/* Top users */}
         <div className={clsx('border rounded-2xl p-5', t.card)}>
           <h2 className={clsx('text-sm font-semibold mb-4', t.heading)}>Top Users by Usage</h2>
           <div className="overflow-x-auto">
@@ -193,7 +200,7 @@ export function AnalyticsPage() {
                     <td className={clsx('py-2.5 pr-3 font-medium', t.heading)}>{u.user}</td>
                     {selectedTenant === 'all' && <td className={clsx('py-2.5 pr-3 text-xs', t.sub)}>{u.tenant}</td>}
                     <td className={clsx('py-2.5 pr-3', t.body)}>{u.requests.toLocaleString()}</td>
-                    <td className={clsx('py-2.5 font-medium', t.heading)}>${u.cost.toFixed(2)}</td>
+                    <td className={clsx('py-2.5 font-medium', t.heading)}>{'$' + u.cost.toFixed(2)}</td>
                   </tr>
                 ))}
               </tbody>

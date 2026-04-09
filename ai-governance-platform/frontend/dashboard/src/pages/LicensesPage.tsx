@@ -3,6 +3,7 @@ import { Key, Plus, Copy, Check, Building2, Clock, AlertTriangle, RefreshCw } fr
 import clsx from 'clsx';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
+import { getLicenseList, generateLicenseKey, type TenantLicense } from '../lib/license';
 
 interface License {
   id: string;
@@ -37,10 +38,25 @@ function generateLicenseKey() {
 export function LicensesPage() {
   const { isDark } = useTheme();
   const t = themeClasses(isDark);
-  const [licenses] = useState(mockLicenses);
+  const realLicenses = getLicenseList();
   const [copied, setCopied] = useState<string | null>(null);
   const [showGenerate, setShowGenerate] = useState(false);
   const [newKey] = useState(generateLicenseKey());
+
+  // Use real licenses if available, otherwise fall back to mock
+  const licenses: TenantLicense[] = realLicenses.length > 0 ? realLicenses : mockLicenses.map((m) => ({
+    licenseKey: m.licenseKey,
+    tenantId: m.tenantId,
+    tenantName: m.tenantName,
+    plan: m.plan,
+    type: m.type,
+    status: m.status,
+    maxUsers: m.maxUsers,
+    currentUsers: m.currentUsers,
+    issuedAt: m.issuedAt,
+    expiresAt: m.expiresAt,
+    reportingConfig: { usageMetrics: m.reportingEnabled, costData: m.reportingEnabled, complianceStatus: m.reportingEnabled, auditLogs: false },
+  }));
 
   const copyKey = (key: string) => {
     navigator.clipboard.writeText(key);
@@ -55,15 +71,15 @@ export function LicensesPage() {
     revoked: { color: 'bg-red-500/10 text-red-400 ring-red-500/20', label: 'Revoked' },
   };
 
-  const activeLicenses = licenses.filter((l) => l.status === 'active' || l.status === 'trial').length;
+  const activeLicenseCount = licenses.filter((l) => l.status === 'active' || l.status === 'trial').length;
   const onpremCount = licenses.filter((l) => l.type === 'onprem').length;
-  const totalUsers = licenses.reduce((s, l) => s + l.currentUsers, 0);
+  const totalUserCount = licenses.reduce((s, l) => s + l.currentUsers, 0);
 
   return (
     <div className="space-y-6 w-full">
       <div className="flex items-center justify-between">
         <div>
-          <p className={clsx('text-sm', t.sub)}>{licenses.length} licenses issued · {activeLicenses} active</p>
+          <p className={clsx('text-sm', t.sub)}>{licenses.length} licenses issued · {activeLicenseCount} active</p>
         </div>
         <button onClick={() => setShowGenerate(!showGenerate)} className="flex items-center gap-2 px-4 py-2 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 text-white text-sm font-medium transition-all">
           <Plus className="w-4 h-4" /> Generate License
@@ -88,7 +104,7 @@ export function LicensesPage() {
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
         <div className={clsx('border rounded-2xl p-5', t.card)}>
           <Key className="w-5 h-5 text-brand-400 mb-3" />
-          <p className={clsx('text-2xl font-bold', t.heading)}>{activeLicenses}</p>
+          <p className={clsx('text-2xl font-bold', t.heading)}>{activeLicenseCount}</p>
           <p className={clsx('text-xs', t.sub)}>Active Licenses</p>
         </div>
         <div className={clsx('border rounded-2xl p-5', t.card)}>
@@ -103,7 +119,7 @@ export function LicensesPage() {
         </div>
         <div className={clsx('border rounded-2xl p-5', t.card)}>
           <RefreshCw className="w-5 h-5 text-brand-400 mb-3" />
-          <p className={clsx('text-2xl font-bold', t.heading)}>{totalUsers}</p>
+          <p className={clsx('text-2xl font-bold', t.heading)}>{totalUserCount}</p>
           <p className={clsx('text-xs', t.sub)}>Total Licensed Users</p>
         </div>
       </div>
@@ -121,10 +137,11 @@ export function LicensesPage() {
             </thead>
             <tbody className={clsx('divide-y', t.divider)}>
               {licenses.map((lic) => {
-                const sc = statusConfig[lic.status];
-                const usagePercent = Math.round((lic.currentUsers / lic.maxUsers) * 100);
+                const sc = statusConfig[lic.status] || statusConfig.active;
+                const usagePercent = lic.maxUsers > 0 ? Math.round((lic.currentUsers / lic.maxUsers) * 100) : 0;
+                const reportingEnabled = lic.reportingConfig?.usageMetrics ?? true;
                 return (
-                  <tr key={lic.id} className={clsx('transition-colors', t.hoverRow)}>
+                  <tr key={lic.licenseKey} className={clsx('transition-colors', t.hoverRow)}>
                     <td className="px-4 py-3">
                       <span className={clsx('font-medium', t.heading)}>{lic.tenantName}</span>
                     </td>
@@ -154,18 +171,11 @@ export function LicensesPage() {
                       <span className={clsx('text-xs px-2 py-0.5 rounded-lg font-medium ring-1', sc.color)}>{sc.label}</span>
                     </td>
                     <td className="px-4 py-3">
-                      {lic.lastHeartbeat ? (
-                        <span className={clsx('text-xs flex items-center gap-1', t.body)}>
-                          <span className="w-1.5 h-1.5 rounded-full bg-accent-400 animate-pulse-soft" />
-                          {new Date(lic.lastHeartbeat).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                        </span>
-                      ) : (
-                        <span className={clsx('text-xs', t.faint)}>—</span>
-                      )}
+                      <span className={clsx('text-xs', t.faint)}>—</span>
                     </td>
                     <td className="px-4 py-3">
-                      <span className={clsx('text-xs', lic.reportingEnabled ? 'text-accent-400' : t.faint)}>
-                        {lic.reportingEnabled ? 'Enabled' : 'Disabled'}
+                      <span className={clsx('text-xs', reportingEnabled ? 'text-accent-400' : t.faint)}>
+                        {reportingEnabled ? 'Enabled' : 'Disabled'}
                       </span>
                     </td>
                     <td className={clsx('px-4 py-3 text-xs whitespace-nowrap', t.body)}>{lic.expiresAt}</td>
