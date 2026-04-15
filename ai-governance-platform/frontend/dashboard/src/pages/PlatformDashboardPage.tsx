@@ -129,6 +129,7 @@ export function PlatformDashboardPage() {
         <div className={clsx('border rounded-2xl p-5', t.card)}>
           <h2 className={clsx('text-sm font-semibold mb-5', t.heading)}>Tenants by Deployment</h2>
           <div className="flex items-center gap-4">
+            <div onMouseDown={(e) => e.preventDefault()}>
             <ResponsiveContainer width={140} height={140}>
               <PieChart>
                 <Pie activeIndex={activePieIndex} activeShape={renderActiveShape} data={tenantsByType} cx="50%" cy="50%" innerRadius={40} outerRadius={55} dataKey="value" paddingAngle={3} stroke={isDark ? '#0c1021' : '#fff'} strokeWidth={2} onMouseEnter={(_, i) => setActivePieIndex(i)} onMouseLeave={() => setActivePieIndex(undefined)}>
@@ -136,6 +137,7 @@ export function PlatformDashboardPage() {
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
+            </div>
             <ul className="space-y-2 flex-1">
               {tenantsByType.map((m) => (
                 <li key={m.name} className="flex items-center gap-2 text-sm">
@@ -152,6 +154,7 @@ export function PlatformDashboardPage() {
         <div className={clsx('border rounded-2xl p-5', t.card)}>
           <h2 className={clsx('text-sm font-semibold mb-5', t.heading)}>Tenants by Plan</h2>
           <div className="flex items-center gap-4">
+            <div onMouseDown={(e) => e.preventDefault()}>
             <ResponsiveContainer width={140} height={140}>
               <PieChart>
                 <Pie activeIndex={activePlanIndex} activeShape={renderActiveShape} data={tenantsByPlan} cx="50%" cy="50%" innerRadius={40} outerRadius={55} dataKey="value" paddingAngle={3} stroke={isDark ? '#0c1021' : '#fff'} strokeWidth={2} onMouseEnter={(_, i) => setActivePlanIndex(i)} onMouseLeave={() => setActivePlanIndex(undefined)}>
@@ -159,6 +162,7 @@ export function PlatformDashboardPage() {
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
+            </div>
             <ul className="space-y-2 flex-1">
               {tenantsByPlan.map((m) => (
                 <li key={m.name} className="flex items-center gap-2 text-sm">

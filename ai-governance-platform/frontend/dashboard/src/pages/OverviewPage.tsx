@@ -180,6 +180,7 @@ export function OverviewPage() {
         <div className={clsx('border rounded-xl p-5', card)}>
           <h2 className={clsx('text-sm font-semibold mb-5', heading)}>Model Distribution</h2>
           <div className="flex items-center gap-6">
+            <div onMouseDown={(e) => e.preventDefault()}>
             <ResponsiveContainer width={200} height={200}>
               <PieChart>
                 <Pie
@@ -196,16 +197,14 @@ export function OverviewPage() {
                   strokeWidth={2}
                   onMouseEnter={(_, index) => setActiveModelIndex(index)}
                   onMouseLeave={() => setActiveModelIndex(undefined)}
-                  onClick={() => {}}
-                  tabIndex={-1}
-                  style={{ outline: 'none' }}
                 >
                   {distribution.map((entry: { color: string }, i: number) => (
-                    <Cell key={i} fill={entry.color} cursor="pointer" style={{ outline: 'none' }} tabIndex={-1} />
+                    <Cell key={i} fill={entry.color} cursor="pointer" />
                   ))}
                 </Pie>
               </PieChart>
             </ResponsiveContainer>
+            </div>
             <ul className="space-y-2 flex-1">
               {distribution.map((m: { name: string; value: number; color: string }) => (
                 <li key={m.name} className="flex items-center gap-2 text-sm">
