@@ -16,6 +16,12 @@
     outline: none !important;
   }
 
+  /* Allow pie chart active shapes to render outside the SVG viewBox */
+  .recharts-wrapper,
+  .recharts-wrapper svg {
+    overflow: visible !important;
+  }
+
   .dark body {
     @apply h-full bg-[#060810] text-slate-100 antialiased;
     color-scheme: dark;
