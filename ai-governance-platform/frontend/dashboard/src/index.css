@@ -12,8 +12,14 @@
   .recharts-surface,
   .recharts-surface *,
   .recharts-sector,
-  .recharts-pie-sector {
+  .recharts-pie-sector,
+  .recharts-pie-sector path,
+  .recharts-wrapper path,
+  .recharts-wrapper svg *:focus,
+  .recharts-wrapper svg *:focus-visible {
     outline: none !important;
+    -webkit-tap-highlight-color: transparent;
+    box-shadow: none !important;
   }
 
   /* Allow pie chart active shapes to render outside the SVG viewBox */

@@ -196,9 +196,12 @@ export function OverviewPage() {
                   strokeWidth={2}
                   onMouseEnter={(_, index) => setActiveModelIndex(index)}
                   onMouseLeave={() => setActiveModelIndex(undefined)}
+                  onClick={() => {}}
+                  tabIndex={-1}
+                  style={{ outline: 'none' }}
                 >
                   {distribution.map((entry: { color: string }, i: number) => (
-                    <Cell key={i} fill={entry.color} cursor="pointer" />
+                    <Cell key={i} fill={entry.color} cursor="pointer" style={{ outline: 'none' }} tabIndex={-1} />
                   ))}
                 </Pie>
               </PieChart>
