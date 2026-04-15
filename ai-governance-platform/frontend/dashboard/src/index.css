@@ -8,6 +8,14 @@
   html { @apply h-full; }
   #root { @apply h-full; }
 
+  /* Suppress browser focus outline on recharts SVG elements */
+  .recharts-surface,
+  .recharts-surface *,
+  .recharts-sector,
+  .recharts-pie-sector {
+    outline: none !important;
+  }
+
   .dark body {
     @apply h-full bg-[#060810] text-slate-100 antialiased;
     color-scheme: dark;
