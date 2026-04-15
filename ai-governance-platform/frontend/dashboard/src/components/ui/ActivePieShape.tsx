@@ -13,8 +13,8 @@ export function renderActiveShape(props: any) {
       <Sector
         cx={cx}
         cy={cy}
-        innerRadius={innerRadius - 3}
-        outerRadius={outerRadius + 8}
+        innerRadius={innerRadius - 2}
+        outerRadius={outerRadius + 6}
         startAngle={startAngle}
         endAngle={endAngle}
         fill={fill}
@@ -23,19 +23,19 @@ export function renderActiveShape(props: any) {
       <Sector
         cx={cx}
         cy={cy}
-        innerRadius={outerRadius + 12}
-        outerRadius={outerRadius + 14}
+        innerRadius={outerRadius + 9}
+        outerRadius={outerRadius + 11}
         startAngle={startAngle}
         endAngle={endAngle}
         fill={fill}
         opacity={0.4}
       />
       {/* Center value */}
-      <text x={cx} y={cy - 6} textAnchor="middle" fill={fill} fontSize={16} fontWeight={700}>
+      <text x={cx} y={cy - 6} textAnchor="middle" fill={fill} fontSize={15} fontWeight={700}>
         {typeof value === 'number' ? (value < 1 ? '$' + value.toFixed(2) : value) : value}
       </text>
       {/* Center label */}
-      <text x={cx} y={cy + 10} textAnchor="middle" fill="#94a3b8" fontSize={10}>
+      <text x={cx} y={cy + 10} textAnchor="middle" fill="#94a3b8" fontSize={9}>
         {payload?.name}
       </text>
     </g>

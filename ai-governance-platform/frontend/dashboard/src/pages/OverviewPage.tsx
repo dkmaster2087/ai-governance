@@ -180,7 +180,7 @@ export function OverviewPage() {
         <div className={clsx('border rounded-xl p-5', card)}>
           <h2 className={clsx('text-sm font-semibold mb-5', heading)}>Model Distribution</h2>
           <div className="flex items-center gap-6">
-            <ResponsiveContainer width={180} height={180}>
+            <ResponsiveContainer width={200} height={200}>
               <PieChart>
                 <Pie
                   activeIndex={activeModelIndex}
@@ -188,8 +188,8 @@ export function OverviewPage() {
                   data={distribution}
                   cx="50%"
                   cy="50%"
-                  innerRadius={45}
-                  outerRadius={65}
+                  innerRadius={40}
+                  outerRadius={58}
                   dataKey="value"
                   paddingAngle={2}
                   stroke={isDark ? '#0f172a' : '#ffffff'}
