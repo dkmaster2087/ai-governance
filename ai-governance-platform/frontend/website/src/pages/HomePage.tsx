@@ -5,30 +5,30 @@ const features = [
   {
     icon: Shield,
     title: 'Policy Enforcement',
-    description: 'Define granular rules — block keywords, restrict models, enforce data classification — applied in real time to every AI request.',
+    description: 'Keyword blocking, model restrictions, PII detection, compliance frameworks — 6 standards built in. Evaluated in real time on every request.',
   },
   {
     icon: Lock,
     title: 'PII Protection',
-    description: 'Automatic detection and masking of sensitive data using Amazon Comprehend and regex-based rules before it ever reaches an AI model.',
+    description: 'Automatic detection and masking of sensitive data using Amazon Comprehend and regex rules. Scans both requests and responses.',
   },
   {
     icon: Eye,
     title: 'Full Audit Trail',
-    description: 'Immutable, encrypted logs of every prompt, response, and policy decision. Query with Athena. Export for compliance.',
+    description: 'Every prompt, response, and policy decision logged with per-user cost tracking. CSV/PDF export. Time-period filtering.',
   },
   {
     icon: Zap,
-    title: 'Multi-Model Routing',
-    description: 'Route requests to Amazon Bedrock, OpenAI, Anthropic, and more — with cost optimization, fallback handling, and per-tenant model restrictions.',
+    title: 'Managed + Proxy Mode',
+    description: 'Managed mode with API key storage, or transparent proxy mode for IDE traffic (Kiro, Copilot). Supports OpenAI, Anthropic, Bedrock, Cohere, Mistral.',
   },
 ];
 
 const stats = [
   { value: '< 50ms', label: 'Added latency' },
   { value: '99.9%', label: 'Uptime SLA' },
-  { value: '100%', label: 'Requests audited' },
-  { value: 'SOC2', label: 'Compliance ready' },
+  { value: '6', label: 'Compliance frameworks' },
+  { value: '4', label: 'AI providers supported' },
 ];
 
 const trustedBy = ['Fortune 500 Healthcare', 'Global Financial Services', 'Government Agencies', 'Legal & Compliance Teams'];
@@ -95,13 +95,15 @@ export function HomePage() {
           </div>
 
           {/* Flow diagram */}
-          <div className="flex flex-col md:flex-row items-center justify-center gap-4 mb-16">
-            {['Client App', 'AI Gateway', 'Policy Engine', 'AI Provider', 'Response Filter', 'Client'].map((step, i, arr) => (
+          <div className="flex flex-col md:flex-row items-center justify-center gap-4 mb-6">
+            {['Client / IDE', 'Aegis Gateway', 'Policy Engine', 'AI Provider', 'Response Scan', 'Client'].map((step, i, arr) => (
               <div key={step} className="flex items-center gap-4">
                 <div className={`px-4 py-3 rounded-xl text-sm font-medium text-center min-w-[120px] ${
-                  step === 'AI Gateway' || step === 'Policy Engine'
+                  step === 'Aegis Gateway' || step === 'Policy Engine'
                     ? 'bg-brand-600 text-white'
-                    : 'glass text-slate-300'
+                    : step === 'Response Scan'
+                      ? 'bg-accent-600/30 text-accent-300'
+                      : 'glass text-slate-300'
                 }`}>
                   {step}
                 </div>
@@ -111,6 +113,7 @@ export function HomePage() {
               </div>
             ))}
           </div>
+          <p className="text-center text-slate-500 text-xs mb-16">Works in managed mode (Aegis holds keys) or transparent proxy mode (client credentials pass through)</p>
 
           {/* Features grid */}
           <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">

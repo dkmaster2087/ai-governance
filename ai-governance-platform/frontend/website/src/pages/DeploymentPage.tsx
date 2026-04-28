@@ -12,34 +12,35 @@ const saasFeatures = [
 
 const onPremFeatures = [
   'Deploy in your own AWS account or data center',
-  'Complete data sovereignty',
+  'Complete data sovereignty — nothing leaves your environment',
   'Air-gapped deployment option',
-  'Integrate with existing VPN, proxy, MDM',
-  'Custom network topology support',
-  'Annual license with source code escrow option',
+  'License key management with user counts and validity periods',
+  'Configurable reporting — choose what syncs to SaaS platform',
+  'Integrate with existing VPN, proxy, MDM, Active Directory',
+  'Annual licensing with volume discounts',
 ];
 
 const phases = [
   {
     phase: 'Phase 1',
-    title: 'API Gateway Control',
-    description: 'Route all internal app and developer AI calls through the gateway. Immediate policy enforcement and logging.',
-    coverage: 'Internal apps, backend services, developer tooling',
+    title: 'Managed API Gateway',
+    description: 'Route internal app and developer AI calls through the managed gateway. Aegis holds API keys, enforces policies, and logs everything.',
+    coverage: 'Internal apps, backend services, governed AI chat',
     effort: 'Low',
   },
   {
     phase: 'Phase 2',
-    title: 'Network Enforcement',
-    description: 'Enforce VPN/proxy to route all employee traffic through the gateway. Block direct access to AI endpoints.',
-    coverage: '+ Browser usage, remote workers',
+    title: 'Transparent Proxy Mode',
+    description: 'Deploy Aegis as a transparent proxy. Corporate proxy redirects IDE traffic (Kiro, Copilot, Cursor) through Aegis. Zero client-side changes.',
+    coverage: '+ IDE traffic, developer tools, browser AI usage',
     effort: 'Medium',
   },
   {
     phase: 'Phase 3',
     title: 'Full Endpoint Control',
-    description: 'Deploy endpoint agents and browser extensions. DNS filtering. Complete visibility across all devices.',
-    coverage: '+ Personal devices, BYOD, shadow AI detection',
-    effort: 'High',
+    description: 'Deploy Shadow AI Guard browser extension. DNS filtering. Network-level enforcement. Complete visibility across all devices and AI tools.',
+    coverage: '+ Personal devices, BYOD, shadow AI detection and blocking',
+    effort: 'Medium',
   },
 ];
 

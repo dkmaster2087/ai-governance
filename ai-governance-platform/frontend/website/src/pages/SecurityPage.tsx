@@ -2,10 +2,10 @@ import { Shield, Lock, Key, FileCheck, Server, Eye } from 'lucide-react';
 
 const pillars = [
   { icon: Lock, title: 'Encryption at Rest & Transit', description: 'All data encrypted with AWS KMS customer-managed keys. TLS 1.3 enforced for all API traffic. S3 object lock for immutable audit logs.' },
-  { icon: Key, title: 'Identity & Access Control', description: 'Cognito for SaaS users with MFA. IAM roles for service-to-service. RBAC with admin, auditor, and developer roles.' },
+  { icon: Key, title: 'Identity & Access Control', description: 'Four roles: Platform Admin, Tenant Admin, Auditor, Chat-Only User. Route guards per role. License key management with user counts and validity periods.' },
   { icon: Server, title: 'Network Isolation', description: 'All services run in private VPC subnets. VPC endpoints for AWS services — no traffic traverses the public internet. Single NAT gateway with egress control.' },
   { icon: Eye, title: 'Audit & Monitoring', description: 'VPC Flow Logs, CloudTrail, and CloudWatch for full observability. Every API call logged. Alerts on anomalous usage patterns.' },
-  { icon: FileCheck, title: 'Compliance Frameworks', description: 'Architecture designed for SOC2 Type II, HIPAA, and PIPEDA (Canada). BAA available for healthcare customers. Data residency controls per tenant.' },
+  { icon: FileCheck, title: 'Compliance Frameworks', description: 'Six frameworks built in: NIST AI RMF, SOC 2, GDPR, HIPAA, ISO 42001, PIPEDA. Enable a framework to auto-create linked policies. 1:1 framework-policy linking with auto-enable/disable.' },
   { icon: Shield, title: 'Vulnerability Management', description: 'Automated dependency scanning in CI/CD. Container image scanning via ECR. Regular penetration testing.' },
 ];
 
