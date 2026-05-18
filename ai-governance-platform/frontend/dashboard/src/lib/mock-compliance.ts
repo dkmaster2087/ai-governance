@@ -106,3 +106,45 @@ export const mockCompliancePacks = [
     ],
   },
 ];
+
+
+// New frameworks added in 2026
+mockCompliancePacks.push(
+  {
+    framework: 'eu-ai-act',
+    name: 'EU AI Act',
+    version: '2024',
+    description: 'EU Artificial Intelligence Act — risk-based regulation. High-risk system obligations enforceable August 2, 2026. Fines up to €35M or 7% global revenue.',
+    category: 'AI Regulation',
+    status: 'disabled',
+    passedControls: 0,
+    totalControls: 7,
+    controls: [
+      { controlId: 'EUAIA-ART9', title: 'Risk Management System', severity: 'critical', automatable: true },
+      { controlId: 'EUAIA-ART10', title: 'Data Governance', severity: 'high', automatable: true },
+      { controlId: 'EUAIA-ART12', title: 'Record-Keeping & Logging', severity: 'critical', automatable: true },
+      { controlId: 'EUAIA-ART13', title: 'Transparency & Information', severity: 'high', automatable: true },
+      { controlId: 'EUAIA-ART14', title: 'Human Oversight', severity: 'critical', automatable: false },
+      { controlId: 'EUAIA-ART15', title: 'Accuracy, Robustness & Cybersecurity', severity: 'high', automatable: true },
+      { controlId: 'EUAIA-ART52', title: 'AI-Generated Content Marking', severity: 'medium', automatable: true },
+    ],
+  },
+  {
+    framework: 'colorado-sb205',
+    name: 'Colorado AI Act (SB 24-205)',
+    version: '2024',
+    description: 'First comprehensive US state AI law. Requires reasonable care to prevent algorithmic discrimination in consequential decisions.',
+    category: 'Consumer Protection',
+    status: 'disabled',
+    passedControls: 0,
+    totalControls: 6,
+    controls: [
+      { controlId: 'COSB205-SEC6-1', title: 'Algorithmic Discrimination Prevention', severity: 'critical', automatable: true },
+      { controlId: 'COSB205-SEC6-2', title: 'Risk Management Policy', severity: 'high', automatable: true },
+      { controlId: 'COSB205-SEC6-3', title: 'Impact Assessment', severity: 'high', automatable: false },
+      { controlId: 'COSB205-SEC6-4', title: 'Consumer Notification', severity: 'critical', automatable: true },
+      { controlId: 'COSB205-SEC6-5', title: 'Adverse Decision Explanation', severity: 'critical', automatable: true },
+      { controlId: 'COSB205-SEC5-1', title: 'Developer Documentation', severity: 'high', automatable: false },
+    ],
+  },
+);

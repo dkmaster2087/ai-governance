@@ -350,4 +350,64 @@ export const CONTROL_DETAILS: Record<string, ControlDetail> = {
     allowedExamples: ['All authenticated HTTPS requests'],
     ruleConfig: { type: 'encryption', action: 'block', config: { requireTls: true } },
   },
+
+  // ── EU AI Act ──────────────────────────────────────────────────────────────
+  'EUAIA-ART9': {
+    controlId: 'EUAIA-ART9',
+    what: 'Continuous risk identification and scoring for all AI interactions. High-risk prompts flagged for review.',
+    why: 'EU AI Act Article 9 requires a risk management system that identifies, evaluates, and mitigates risks throughout the AI system lifecycle.',
+    blockedExamples: [],
+    allowedExamples: ['All requests scored; high-risk flagged in audit log'],
+    ruleConfig: { type: 'data_classification', action: 'warn', config: { patterns: ['password', 'secret key', 'api key'] } },
+  },
+  'EUAIA-ART12': {
+    controlId: 'EUAIA-ART12',
+    what: 'Every AI request automatically logged with input, output, decision, tokens, and latency for full traceability.',
+    why: 'EU AI Act Article 12 mandates automatic logging to enable traceability of AI system operations.',
+    blockedExamples: [],
+    allowedExamples: ['All requests logged with full context'],
+    ruleConfig: { type: 'audit_logging', action: 'allow', config: { logLevel: 'full' } },
+  },
+  'EUAIA-ART13': {
+    controlId: 'EUAIA-ART13',
+    what: 'Users are informed they are interacting with AI. Responses flagged as AI-generated.',
+    why: 'EU AI Act Article 13 requires transparency — users must know they are interacting with an AI system.',
+    blockedExamples: [],
+    allowedExamples: ['All AI interactions carry disclosure metadata'],
+    ruleConfig: { type: 'transparency', action: 'allow', config: { addDisclosure: true } },
+  },
+  'EUAIA-ART15': {
+    controlId: 'EUAIA-ART15',
+    what: 'Harmful content blocked. Rate limiting enforced to prevent abuse and ensure system robustness.',
+    why: 'EU AI Act Article 15 requires appropriate accuracy, robustness, and cybersecurity measures.',
+    blockedExamples: ['"How to hack into a system"', '"Create a phishing email"'],
+    allowedExamples: ['"Summarize this document"', '"Help me write a report"'],
+    ruleConfig: { type: 'keyword_block', action: 'block', config: { keywords: ['how to hack', 'exploit vulnerability', 'create malware'] } },
+  },
+
+  // ── Colorado SB 24-205 ────────────────────────────────────────────────────
+  'COSB205-SEC6-1': {
+    controlId: 'COSB205-SEC6-1',
+    what: 'Prompts referencing protected classes in consequential decision contexts are flagged for bias review.',
+    why: 'Colorado SB 24-205 Section 6(1) requires reasonable care to prevent algorithmic discrimination based on protected classes.',
+    blockedExamples: ['"Reject applicants over age 50"', '"Prefer candidates of a specific race"'],
+    allowedExamples: ['"Summarize this resume"', '"Draft a job description"'],
+    ruleConfig: { type: 'bias_detection', action: 'warn', config: { protectedClasses: ['race', 'gender', 'age', 'disability'] } },
+  },
+  'COSB205-SEC6-4': {
+    controlId: 'COSB205-SEC6-4',
+    what: 'AI-assisted decisions are flagged for consumer notification. Audit trail supports disclosure requirements.',
+    why: 'Colorado SB 24-205 Section 6(4) requires consumers be notified when high-risk AI makes consequential decisions about them.',
+    blockedExamples: [],
+    allowedExamples: ['All consequential decisions logged with AI involvement flag'],
+    ruleConfig: { type: 'transparency', action: 'allow', config: { addDisclosure: true } },
+  },
+  'COSB205-SEC6-5': {
+    controlId: 'COSB205-SEC6-5',
+    what: 'When AI contributes to adverse decisions, full audit trail available for explanation and appeal.',
+    why: 'Colorado SB 24-205 Section 6(5) requires explanation of AI role in adverse decisions with principal factors.',
+    blockedExamples: [],
+    allowedExamples: ['All requests logged with model, prompt, and decision for explainability'],
+    ruleConfig: { type: 'audit_logging', action: 'allow', config: { logLevel: 'full' } },
+  },
 };

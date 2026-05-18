@@ -23,9 +23,9 @@ describe('ComplianceService', () => {
 
   // ── Pack definitions ────────────────────────────────────────────────
 
-  it('returns all 6 compliance packs', () => {
+  it('returns all 8 compliance packs', () => {
     const packs = service.getAllPacks();
-    expect(packs).toHaveLength(6);
+    expect(packs).toHaveLength(8);
   });
 
   it('includes all expected frameworks', () => {
