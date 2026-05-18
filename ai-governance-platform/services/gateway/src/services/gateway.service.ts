@@ -4,6 +4,7 @@ import { PolicyEngineClient } from '../clients/policy-engine.client';
 import { DataProtectionClient } from '../clients/data-protection.client';
 import { ProviderRouter } from './provider.router';
 import { AuditService } from './audit.service';
+import { ResponseScanner } from './response-scanner';
 
 const logger = createLogger('gateway');
 
@@ -22,6 +23,7 @@ export class GatewayService {
   private dataProtectionClient = new DataProtectionClient();
   private providerRouter = new ProviderRouter();
   private auditService = new AuditService();
+  private responseScanner = new ResponseScanner();
 
   async processRequest(input: ProcessRequestInput): Promise<NormalizedAIResponse> {
     const requestId = generateRequestId();
@@ -62,10 +64,13 @@ export class GatewayService {
     const response = await this.providerRouter.route(protectedRequest);
     const latencyMs = Date.now() - startTime;
 
-    // 5. Filter response for sensitive data
-    const filteredResponse = await this.dataProtectionClient.filterResponse(response);
+    // 5. Scan response for PII leakage
+    const scannedResponse = this.responseScanner.scanResponse(response, true);
 
-    // 6. Audit log
+    // 6. Filter response via external data protection service (if available)
+    const filteredResponse = await this.dataProtectionClient.filterResponse(scannedResponse);
+
+    // 7. Audit log
     await this.auditService.log(protectedRequest, filteredResponse, policyResult, latencyMs);
 
     return filteredResponse;
