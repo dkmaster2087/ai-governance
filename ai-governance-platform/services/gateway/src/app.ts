@@ -13,6 +13,7 @@ import { costRoutes } from './routes/cost.routes';
 import { proxyRoutes } from './routes/proxy.routes';
 import { apiKeyRoutes } from './routes/api-key.routes';
 import { alertRoutes } from './routes/alert.routes';
+import { reportingRoutes } from './routes/reporting.routes';
 import { errorHandler } from './middleware/error.handler';
 import { authMiddleware } from './middleware/auth.middleware';
 
@@ -47,6 +48,7 @@ export async function buildApp() {
   await app.register(proxyRoutes, { prefix: '/v1' });
   await app.register(apiKeyRoutes, { prefix: '/v1' });
   await app.register(alertRoutes, { prefix: '/v1' });
+  await app.register(reportingRoutes, { prefix: '/v1' });
 
   // Error handler
   app.setErrorHandler(errorHandler);
