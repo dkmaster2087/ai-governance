@@ -16,25 +16,35 @@ import { alertRoutes } from './routes/alert.routes';
 import { reportingRoutes } from './routes/reporting.routes';
 import { errorHandler } from './middleware/error.handler';
 import { authMiddleware } from './middleware/auth.middleware';
+import { inputValidation } from './middleware/input-validation';
+import { setupGracefulShutdown } from './middleware/graceful-shutdown';
+import { getSecurityConfig } from './config/security';
 
 export async function buildApp() {
+  const securityConfig = getSecurityConfig();
+
   const app = Fastify({
-    logger: false, // We use our own structured logger
+    logger: false,
     trustProxy: true,
+    bodyLimit: securityConfig.maxBodySize,
   });
 
   // Security plugins
-  await app.register(helmet);
+  await app.register(helmet, {
+    crossOriginResourcePolicy: { policy: 'cross-origin' },
+  });
   await app.register(cors, {
-    origin: process.env.ALLOWED_ORIGINS?.split(',') || false,
+    origin: securityConfig.allowedOrigins.length > 0 ? securityConfig.allowedOrigins : true,
+    credentials: true,
   });
   await app.register(rateLimit, {
-    max: 100,
+    max: securityConfig.globalRateLimit,
     timeWindow: '1 minute',
   });
 
-  // Auth
+  // Auth & validation
   await app.register(authMiddleware);
+  await app.register(inputValidation);
 
   // Routes
   await app.register(healthRoutes, { prefix: '/health' });
@@ -52,6 +62,9 @@ export async function buildApp() {
 
   // Error handler
   app.setErrorHandler(errorHandler);
+
+  // Graceful shutdown
+  setupGracefulShutdown(app);
 
   return app;
 }

@@ -15,6 +15,10 @@ export class StorageStack extends cdk.Stack {
   public readonly tenantsTable: dynamodb.Table;
   public readonly complianceTable: dynamodb.Table;
   public readonly modelsTable: dynamodb.Table;
+  public readonly apiKeysTable: dynamodb.Table;
+  public readonly alertsTable: dynamodb.Table;
+  public readonly shadowAiTable: dynamodb.Table;
+  public readonly auditLogsTable: dynamodb.Table;
   public readonly auditLogBucket: s3.Bucket;
   public readonly athenaBucket: s3.Bucket;
 
@@ -85,6 +89,59 @@ export class StorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // API Keys table (tenantId + keyId) with GSI on keyHash for auth lookups
+    this.apiKeysTable = new dynamodb.Table(this, 'ApiKeysTable', {
+      tableName: `${prefix}-api-keys-${stage}`,
+      partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'keyId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: kmsKey,
+      pointInTimeRecovery: true,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+    this.apiKeysTable.addGlobalSecondaryIndex({
+      indexName: 'keyHash-index',
+      partitionKey: { name: 'keyHash', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
+    });
+
+    // Alerts table (tenantId + ruleId)
+    this.alertsTable = new dynamodb.Table(this, 'AlertsTable', {
+      tableName: `${prefix}-alerts-${stage}`,
+      partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'ruleId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: kmsKey,
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // Shadow AI events table (tenantId + eventId)
+    this.shadowAiTable = new dynamodb.Table(this, 'ShadowAiTable', {
+      tableName: `${prefix}-shadow-ai-${stage}`,
+      partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'eventId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: kmsKey,
+      timeToLiveAttribute: 'ttl',
+      removalPolicy: cdk.RemovalPolicy.DESTROY,
+    });
+
+    // Audit logs table (tenantId + requestId) with TTL for retention
+    this.auditLogsTable = new dynamodb.Table(this, 'AuditLogsTable', {
+      tableName: `${prefix}-audit-logs-${stage}`,
+      partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'requestId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: kmsKey,
+      timeToLiveAttribute: 'ttl',
+      pointInTimeRecovery: true,
       removalPolicy: cdk.RemovalPolicy.DESTROY,
     });
 

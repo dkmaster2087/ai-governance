@@ -56,6 +56,13 @@ const servicesStack = new ServicesStack(app, `${prefix}-services-${stage}`, {
   metricsTable: storageStack.metricsTable,
   auditLogBucket: storageStack.auditLogBucket,
   userPool: authStack.userPool,
+  apiKeysTable: storageStack.apiKeysTable,
+  alertsTable: storageStack.alertsTable,
+  shadowAiTable: storageStack.shadowAiTable,
+  auditLogsTable: storageStack.auditLogsTable,
+  modelsTable: storageStack.modelsTable,
+  complianceTable: storageStack.complianceTable,
+  tenantsTable: storageStack.tenantsTable,
 });
 
 // 6. API Gateway

@@ -18,6 +18,13 @@ interface ServicesStackProps extends cdk.StackProps {
   metricsTable: dynamodb.Table;
   auditLogBucket: s3.Bucket;
   userPool: cognito.UserPool;
+  apiKeysTable: dynamodb.Table;
+  alertsTable: dynamodb.Table;
+  shadowAiTable: dynamodb.Table;
+  auditLogsTable: dynamodb.Table;
+  modelsTable: dynamodb.Table;
+  complianceTable: dynamodb.Table;
+  tenantsTable: dynamodb.Table;
 }
 
 export class ServicesStack extends cdk.Stack {
@@ -29,6 +36,7 @@ export class ServicesStack extends cdk.Stack {
     super(scope, id, props);
 
     const { prefix, stage, vpc, policiesTable, metricsTable, auditLogBucket } = props;
+    const { apiKeysTable, alertsTable, shadowAiTable, auditLogsTable, modelsTable, complianceTable, tenantsTable } = props;
 
     // ECS Cluster
     this.cluster = new ecs.Cluster(this, 'Cluster', {
@@ -130,13 +138,27 @@ export class ServicesStack extends cdk.Stack {
       memory: 2048,
       environment: {
         ...commonEnv,
+        TENANTS_TABLE: tenantsTable.tableName,
+        MODELS_TABLE: modelsTable.tableName,
+        COMPLIANCE_TABLE: complianceTable.tableName,
+        API_KEYS_TABLE: apiKeysTable.tableName,
+        ALERTS_TABLE: alertsTable.tableName,
+        SHADOW_AI_TABLE: shadowAiTable.tableName,
+        AUDIT_LOGS_TABLE: auditLogsTable.tableName,
         POLICY_ENGINE_URL: `http://${internalAlb.loadBalancerDnsName}:3001`,
         DATA_PROTECTION_URL: `http://${internalAlb.loadBalancerDnsName}:3002`,
+        ALLOWED_ORIGINS: '', // Set per environment
       },
     });
 
     // Grant gateway permissions
     auditLogBucket.grantWrite(this.gatewayService.taskDefinition.taskRole);
+    tenantsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
+    modelsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
+    apiKeysTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
+    alertsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
+    shadowAiTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
+    auditLogsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
