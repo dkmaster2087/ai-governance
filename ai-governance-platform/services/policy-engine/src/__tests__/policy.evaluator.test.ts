@@ -128,4 +128,155 @@ describe('PolicyEvaluator', () => {
     const result = await evaluator.evaluate(makeRequest('bad content'));
     expect(result.riskScore).toBeLessThanOrEqual(100);
   });
+
+  // ── PII Detection ──────────────────────────────────────────────────────────
+
+  it('blocks request containing email PII', async () => {
+    MockRepo.prototype.getPoliciesForTenant.mockResolvedValue([
+      makePolicy([{
+        ruleId: 'rule_pii',
+        type: 'pii_detection',
+        action: 'block',
+        priority: 1,
+        enabled: true,
+        config: {},
+        description: 'Block PII in prompts',
+      }]),
+    ]);
+
+    const result = await evaluator.evaluate(makeRequest('Send email to john@company.com'));
+    expect(result.allowed).toBe(false);
+    expect(result.triggeredRules).toContain('rule_pii');
+  });
+
+  it('blocks request containing SSN', async () => {
+    MockRepo.prototype.getPoliciesForTenant.mockResolvedValue([
+      makePolicy([{
+        ruleId: 'rule_pii',
+        type: 'pii_detection',
+        action: 'block',
+        priority: 1,
+        enabled: true,
+        config: {},
+        description: 'Block PII',
+      }]),
+    ]);
+
+    const result = await evaluator.evaluate(makeRequest('SSN is 123-45-6789'));
+    expect(result.allowed).toBe(false);
+  });
+
+  it('allows request without PII', async () => {
+    MockRepo.prototype.getPoliciesForTenant.mockResolvedValue([
+      makePolicy([{
+        ruleId: 'rule_pii',
+        type: 'pii_detection',
+        action: 'block',
+        priority: 1,
+        enabled: true,
+        config: {},
+        description: 'Block PII',
+      }]),
+    ]);
+
+    const result = await evaluator.evaluate(makeRequest('What is the weather today?'));
+    expect(result.allowed).toBe(true);
+  });
+
+  it('detects specific PII types when configured', async () => {
+    MockRepo.prototype.getPoliciesForTenant.mockResolvedValue([
+      makePolicy([{
+        ruleId: 'rule_phi',
+        type: 'pii_detection',
+        action: 'block',
+        priority: 1,
+        enabled: true,
+        config: { piiTypes: ['MEDICAL_RECORD_NUMBER'] },
+        description: 'Block PHI',
+      }]),
+    ]);
+
+    const result = await evaluator.evaluate(makeRequest('Patient MRN: 1234567'));
+    expect(result.allowed).toBe(false);
+  });
+
+  // ── Bias Detection ─────────────────────────────────────────────────────────
+
+  it('flags prompt with protected class in decision context', async () => {
+    MockRepo.prototype.getPoliciesForTenant.mockResolvedValue([
+      makePolicy([{
+        ruleId: 'rule_bias',
+        type: 'bias_detection',
+        action: 'block',
+        priority: 1,
+        enabled: true,
+        config: { protectedClasses: ['race', 'gender', 'age'] },
+        description: 'Block biased prompts',
+      }]),
+    ]);
+
+    const result = await evaluator.evaluate(makeRequest('Reject applicants over age 50'));
+    expect(result.allowed).toBe(false);
+    expect(result.triggeredRules).toContain('rule_bias');
+  });
+
+  it('allows prompt mentioning protected class without decision context', async () => {
+    MockRepo.prototype.getPoliciesForTenant.mockResolvedValue([
+      makePolicy([{
+        ruleId: 'rule_bias',
+        type: 'bias_detection',
+        action: 'block',
+        priority: 1,
+        enabled: true,
+        config: { protectedClasses: ['race', 'gender', 'age'] },
+        description: 'Block biased prompts',
+      }]),
+    ]);
+
+    const result = await evaluator.evaluate(makeRequest('What is the average age of employees?'));
+    expect(result.allowed).toBe(true);
+  });
+
+  // ── Region Restriction ─────────────────────────────────────────────────────
+
+  it('blocks request when provider region not in allowed list', async () => {
+    MockRepo.prototype.getPoliciesForTenant.mockResolvedValue([
+      makePolicy([{
+        ruleId: 'rule_region',
+        type: 'region_restriction',
+        action: 'block',
+        priority: 1,
+        enabled: true,
+        config: { allowedRegions: ['eu-west-1', 'eu-central-1'] },
+        description: 'EU only',
+      }]),
+    ]);
+
+    // Default AWS_REGION is us-east-1, which is not in the allowed list
+    const result = await evaluator.evaluate(makeRequest('Hello'));
+    expect(result.allowed).toBe(false);
+    expect(result.triggeredRules).toContain('rule_region');
+  });
+
+  it('allows request when provider region is in allowed list', async () => {
+    const originalRegion = process.env.AWS_REGION;
+    process.env.AWS_REGION = 'eu-west-1';
+
+    MockRepo.prototype.getPoliciesForTenant.mockResolvedValue([
+      makePolicy([{
+        ruleId: 'rule_region',
+        type: 'region_restriction',
+        action: 'block',
+        priority: 1,
+        enabled: true,
+        config: { allowedRegions: ['eu-west-1', 'eu-central-1'] },
+        description: 'EU only',
+      }]),
+    ]);
+
+    const result = await evaluator.evaluate(makeRequest('Hello'));
+    expect(result.allowed).toBe(true);
+
+    process.env.AWS_REGION = originalRegion;
+  });
 });

@@ -6,7 +6,11 @@ export type PolicyRuleType =
   | 'rate_limit'
   | 'data_classification'
   | 'region_restriction'
-  | 'cost_limit';
+  | 'cost_limit'
+  | 'bias_detection'
+  | 'transparency'
+  | 'audit_logging'
+  | 'access_control';
 
 export interface PolicyRule {
   ruleId: string;

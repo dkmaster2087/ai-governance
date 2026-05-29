@@ -72,6 +72,55 @@ export class PolicyEvaluator {
         const forbiddenPatterns = (rule.config.patterns as string[]) || [];
         return forbiddenPatterns.some((p) => new RegExp(p, 'i').test(promptText));
       }
+      case 'pii_detection': {
+        // Detect PII patterns in prompt text
+        const piiPatterns = [
+          /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/,          // email
+          /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/,                                // SSN
+          /\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}\b/,  // phone
+          /\b(?:\d{4}[-\s]?){3}\d{4}\b/,                                    // credit card
+        ];
+        const customPiiTypes = (rule.config.piiTypes as string[]) || [];
+        // If specific PII types configured, only check those
+        if (customPiiTypes.length > 0) {
+          const typePatterns: Record<string, RegExp> = {
+            EMAIL: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/i,
+            SSN: /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/,
+            PHONE: /\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}\b/,
+            CREDIT_CARD: /\b(?:\d{4}[-\s]?){3}\d{4}\b/,
+            NAME: /\b[A-Z][a-z]+ [A-Z][a-z]+\b/,
+            DATE_OF_BIRTH: /\b(?:\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/,
+            MEDICAL_RECORD_NUMBER: /\bMRN[:\s]*\d{6,}\b/i,
+          };
+          const patterns = customPiiTypes.map((t) => typePatterns[t]).filter(Boolean);
+          return patterns.some((p) => p.test(promptText));
+        }
+        return piiPatterns.some((p) => p.test(promptText));
+      }
+      case 'region_restriction': {
+        // Block if the request targets a model/provider outside allowed regions
+        const allowedRegions = (rule.config.allowedRegions as string[]) || [];
+        if (allowedRegions.length === 0) return false;
+        // Check provider — OpenAI is US-based, Bedrock uses the configured AWS region
+        const providerRegion = request.provider === 'bedrock'
+          ? (process.env.AWS_REGION || 'us-east-1')
+          : 'us-east-1'; // OpenAI/Anthropic default to US
+        return !allowedRegions.some((r) => providerRegion.startsWith(r.split('-').slice(0, 2).join('-')) || providerRegion === r);
+      }
+      case 'bias_detection': {
+        // Flag prompts that reference protected classes in decision-making contexts
+        const protectedClasses = (rule.config.protectedClasses as string[]) || [
+          'race', 'gender', 'age', 'disability', 'religion', 'national origin', 'sexual orientation',
+        ];
+        const decisionKeywords = ['reject', 'deny', 'approve', 'hire', 'fire', 'promote', 'demote', 'score', 'rank', 'prefer', 'exclude', 'discriminate'];
+        const hasProtectedClass = protectedClasses.some((pc) => promptText.includes(pc.toLowerCase()));
+        const hasDecisionContext = decisionKeywords.some((dk) => promptText.includes(dk.toLowerCase()));
+        return hasProtectedClass && hasDecisionContext;
+      }
+      case 'rate_limit': {
+        // Rate limiting is handled at the Fastify level — this is a pass-through
+        return false;
+      }
       default:
         return false;
     }
