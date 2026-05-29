@@ -18,7 +18,9 @@ import { errorHandler } from './middleware/error.handler';
 import { authMiddleware } from './middleware/auth.middleware';
 import { inputValidation } from './middleware/input-validation';
 import { setupGracefulShutdown } from './middleware/graceful-shutdown';
+import { requestTracing } from './middleware/request-tracing';
 import { getSecurityConfig } from './config/security';
+import { metricsRoutes } from './routes/metrics.routes';
 
 export async function buildApp() {
   const securityConfig = getSecurityConfig();
@@ -43,6 +45,7 @@ export async function buildApp() {
   });
 
   // Auth & validation
+  await app.register(requestTracing);
   await app.register(authMiddleware);
   await app.register(inputValidation);
 
@@ -59,6 +62,7 @@ export async function buildApp() {
   await app.register(apiKeyRoutes, { prefix: '/v1' });
   await app.register(alertRoutes, { prefix: '/v1' });
   await app.register(reportingRoutes, { prefix: '/v1' });
+  await app.register(metricsRoutes, { prefix: '/internal' });
 
   // Error handler
   app.setErrorHandler(errorHandler);

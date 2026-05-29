@@ -65,6 +65,48 @@ export class ObservabilityStack extends cdk.Stack {
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
+    // Policy violation spike alarm
+    new cloudwatch.Alarm(this, 'PolicyViolationAlarm', {
+      alarmName: `${prefix}-policy-violations-${stage}`,
+      metric: new cloudwatch.Metric({
+        namespace: `${prefix}/${stage}`,
+        metricName: 'PolicyViolations',
+        statistic: 'Sum',
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 50,
+      evaluationPeriods: 2,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // High latency alarm
+    new cloudwatch.Alarm(this, 'HighLatencyAlarm', {
+      alarmName: `${prefix}-high-latency-${stage}`,
+      metric: new cloudwatch.Metric({
+        namespace: `${prefix}/${stage}`,
+        metricName: 'RequestLatency',
+        statistic: 'p95',
+        period: cdk.Duration.minutes(5),
+      }),
+      threshold: 5000, // 5 seconds p95
+      evaluationPeriods: 3,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
+    // Circuit breaker open alarm
+    new cloudwatch.Alarm(this, 'CircuitBreakerAlarm', {
+      alarmName: `${prefix}-circuit-open-${stage}`,
+      metric: new cloudwatch.Metric({
+        namespace: `${prefix}/${stage}`,
+        metricName: 'CircuitBreakerOpen',
+        statistic: 'Sum',
+        period: cdk.Duration.minutes(1),
+      }),
+      threshold: 1,
+      evaluationPeriods: 1,
+      treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
+    });
+
     // Glue Database for Athena queries on audit logs
     const glueDatabase = new glue.CfnDatabase(this, 'AuditLogsDatabase', {
       catalogId: this.account,

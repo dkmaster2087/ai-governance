@@ -19,9 +19,13 @@ describe('Health Routes', () => {
     expect(body.service).toBe('gateway');
   });
 
-  it('GET /health/ready returns ready status', async () => {
+  it('GET /health/ready returns status with dependencies', async () => {
     const response = await app.inject({ method: 'GET', url: '/health/ready' });
     expect(response.statusCode).toBe(200);
-    expect(JSON.parse(response.body).status).toBe('ready');
+    const body = JSON.parse(response.body);
+    // In test env without real dependencies, status will be 'degraded'
+    expect(['ready', 'degraded']).toContain(body.status);
+    expect(body.dependencies).toBeDefined();
+    expect(Array.isArray(body.dependencies)).toBe(true);
   });
 });
