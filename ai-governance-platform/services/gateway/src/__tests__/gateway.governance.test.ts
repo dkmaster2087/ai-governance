@@ -4,20 +4,21 @@ import { PolicyEngineClient } from '../clients/policy-engine.client';
 import { DataProtectionClient } from '../clients/data-protection.client';
 import { ProviderRouter } from '../services/provider.router';
 import { AuditService } from '../services/audit.service';
-import { TenantSettingsService } from '../services/tenant-settings.service';
 import { extractMessages } from '../routes/proxy.routes';
 
 jest.mock('../clients/policy-engine.client');
 jest.mock('../clients/data-protection.client');
 jest.mock('../services/provider.router');
 jest.mock('../services/audit.service');
-jest.mock('../services/tenant-settings.service');
+const mockGetFailMode = jest.fn();
+jest.mock('../services/tenant-settings.service', () => ({
+  tenantSettings: () => ({ getFailMode: (...args: unknown[]) => mockGetFailMode(...args) }),
+}));
 
 const Policy = PolicyEngineClient as jest.MockedClass<typeof PolicyEngineClient>;
 const DataProtection = DataProtectionClient as jest.MockedClass<typeof DataProtectionClient>;
 const Router = ProviderRouter as jest.MockedClass<typeof ProviderRouter>;
 const Audit = AuditService as jest.MockedClass<typeof AuditService>;
-const Settings = TenantSettingsService as jest.MockedClass<typeof TenantSettingsService>;
 
 const input = {
   tenantId: 'tenant_acme', userId: 'u1', appId: 'app',
@@ -41,7 +42,7 @@ describe('GatewayService governance', () => {
     DataProtection.prototype.filterResponse.mockImplementation(async (r) => r);
     Policy.prototype.evaluate.mockResolvedValue(allow);
     Audit.prototype.log.mockResolvedValue(undefined);
-    Settings.prototype.getFailMode.mockResolvedValue('closed');
+    mockGetFailMode.mockResolvedValue('closed');
   });
 
   it('evaluates policy on the original prompt and sends only the masked prompt to the provider', async () => {
@@ -71,7 +72,7 @@ describe('GatewayService governance', () => {
   });
 
   describe('fail open (tenant opt-in)', () => {
-    beforeEach(() => Settings.prototype.getFailMode.mockResolvedValue('open'));
+    beforeEach(() => mockGetFailMode.mockResolvedValue('open'));
 
     it('continues and flags the audit record when the policy engine is down', async () => {
       Policy.prototype.evaluate.mockRejectedValue(new GovernanceUnavailableError('policy-engine'));

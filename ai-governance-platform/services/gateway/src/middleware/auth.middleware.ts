@@ -5,7 +5,7 @@ import { createLogger } from '@ai-governance/utils';
 import { ApiKey, ApiKeyRepository, hashApiKey } from '../repositories/api-key.repository';
 import { getSecurityConfig } from '../config/security';
 import { Principal, isUserRole } from '../auth/principal';
-import { TenantSettingsService } from '../services/tenant-settings.service';
+import { tenantSettings } from '../services/tenant-settings.service';
 
 const logger = createLogger('gateway:auth');
 
@@ -201,7 +201,7 @@ function defaultDeps(): AuthDeps {
     userTokens = { verify: async (token) => (await verifier.verify(token)) as unknown as UserTokenClaims };
   }
   if (config.devAuth) logger.warn('AUTH_DEV_MODE is on: `Bearer test-key` is accepted. Never enable this in production.');
-  const tenants = new TenantSettingsService();
+  const tenants = tenantSettings();
   return {
     keys: new ApiKeyRepository(),
     userTokens,

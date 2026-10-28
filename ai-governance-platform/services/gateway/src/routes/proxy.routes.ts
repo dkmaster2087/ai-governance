@@ -5,12 +5,12 @@ import { NormalizedAIRequest, PolicyEvaluationResult } from '@ai-governance/type
 import { PolicyEngineClient } from '../clients/policy-engine.client';
 import { AuditService } from '../services/audit.service';
 import { requireAccess } from '../auth/guards';
-import { TenantSettingsService } from '../services/tenant-settings.service';
+import { tenantSettings } from '../services/tenant-settings.service';
 
 const logger = createLogger('gateway:proxy');
 const policyClient = new PolicyEngineClient();
 const auditService = new AuditService();
-const tenantSettings = new TenantSettingsService();
+const settings = tenantSettings();
 
 /** Known AI provider targets — maps a slug to the real base URL */
 const PROVIDER_TARGETS: Record<string, string> = {
@@ -125,7 +125,7 @@ export async function proxyRoutes(app: FastifyInstance) {
       try {
         policyResult = await policyClient.evaluate(normalizedRequest);
       } catch (err) {
-        if (!(err instanceof GovernanceUnavailableError) || (await tenantSettings.getFailMode(tenantId)) !== 'open') {
+        if (!(err instanceof GovernanceUnavailableError) || (await settings.getFailMode(tenantId)) !== 'open') {
           logger.error('Proxy request blocked: policy engine unavailable', { requestId, tenantId });
           return reply.status(503).send({ error: 'Governance check unavailable', code: 'GOVERNANCE_UNAVAILABLE', requestId });
         }

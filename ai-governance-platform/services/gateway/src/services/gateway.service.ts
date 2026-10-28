@@ -5,7 +5,7 @@ import { DataProtectionClient } from '../clients/data-protection.client';
 import { ProviderRouter } from './provider.router';
 import { AuditService } from './audit.service';
 import { ResponseScanner } from './response-scanner';
-import { TenantSettingsService } from './tenant-settings.service';
+import { tenantSettings } from './tenant-settings.service';
 
 const logger = createLogger('gateway');
 
@@ -25,7 +25,7 @@ export class GatewayService {
   private providerRouter = new ProviderRouter();
   private auditService = new AuditService();
   private responseScanner = new ResponseScanner();
-  private tenantSettings = new TenantSettingsService();
+  private tenantSettings = tenantSettings();
 
   async processRequest(input: ProcessRequestInput): Promise<NormalizedAIResponse> {
     const requestId = generateRequestId();

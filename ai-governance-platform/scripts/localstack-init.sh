@@ -61,6 +61,54 @@ aws --endpoint-url=$ENDPOINT dynamodb create-table \
     AttributeName=modelConfigId,KeyType=RANGE \
   --billing-mode PAY_PER_REQUEST || true
 
+aws --endpoint-url=$ENDPOINT dynamodb create-table \
+  --region $REGION \
+  --table-name $PREFIX-api-keys-$STAGE \
+  --attribute-definitions \
+    AttributeName=tenantId,AttributeType=S \
+    AttributeName=keyId,AttributeType=S \
+    AttributeName=keyHash,AttributeType=S \
+  --key-schema \
+    AttributeName=tenantId,KeyType=HASH \
+    AttributeName=keyId,KeyType=RANGE \
+  --global-secondary-indexes '[{"IndexName":"keyHash-index","KeySchema":[{"AttributeName":"keyHash","KeyType":"HASH"}],"Projection":{"ProjectionType":"ALL"}}]' \
+  --billing-mode PAY_PER_REQUEST || true
+
+aws --endpoint-url=$ENDPOINT dynamodb create-table \
+  --region $REGION \
+  --table-name $PREFIX-alerts-$STAGE \
+  --attribute-definitions \
+    AttributeName=tenantId,AttributeType=S \
+    AttributeName=ruleId,AttributeType=S \
+  --key-schema \
+    AttributeName=tenantId,KeyType=HASH \
+    AttributeName=ruleId,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST || true
+
+aws --endpoint-url=$ENDPOINT dynamodb create-table \
+  --region $REGION \
+  --table-name $PREFIX-shadow-ai-$STAGE \
+  --attribute-definitions \
+    AttributeName=tenantId,AttributeType=S \
+    AttributeName=eventId,AttributeType=S \
+  --key-schema \
+    AttributeName=tenantId,KeyType=HASH \
+    AttributeName=eventId,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST || true
+
+aws --endpoint-url=$ENDPOINT dynamodb create-table \
+  --region $REGION \
+  --table-name $PREFIX-audit-logs-$STAGE \
+  --attribute-definitions \
+    AttributeName=tenantId,AttributeType=S \
+    AttributeName=requestId,AttributeType=S \
+    AttributeName=timestamp,AttributeType=S \
+  --key-schema \
+    AttributeName=tenantId,KeyType=HASH \
+    AttributeName=requestId,KeyType=RANGE \
+  --global-secondary-indexes '[{"IndexName":"tenantId-timestamp-index","KeySchema":[{"AttributeName":"tenantId","KeyType":"HASH"},{"AttributeName":"timestamp","KeyType":"RANGE"}],"Projection":{"ProjectionType":"ALL"}}]' \
+  --billing-mode PAY_PER_REQUEST || true
+
 echo "==> Creating S3 buckets..."
 
 aws --endpoint-url=$ENDPOINT s3 mb s3://$PREFIX-audit-logs-$STAGE-$ACCOUNT --region $REGION || true

@@ -43,10 +43,22 @@ export class TenantSettingsService {
     return (await this.load(tenantId)).status;
   }
 
+  /** Drop the cached copy so the next request sees changes (suspension, settings) immediately. */
+  invalidate(tenantId: string) {
+    this.cache.delete(tenantId);
+  }
+
   /** Fail mode for this tenant; falls back to the deployment default (closed unless configured). */
   async getFailMode(tenantId: string): Promise<FailMode> {
     const settings = await this.getSettings(tenantId);
     const mode = settings?.governanceFailMode;
     return mode === 'open' || mode === 'closed' ? mode : this.defaultFailMode;
   }
+}
+
+/** Shared instance so every part of the gateway sees the same cache (and invalidations). */
+let shared: TenantSettingsService | null = null;
+export function tenantSettings(): TenantSettingsService {
+  if (!shared) shared = new TenantSettingsService();
+  return shared;
 }

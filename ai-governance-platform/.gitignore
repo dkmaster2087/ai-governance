@@ -10,3 +10,4 @@ cdk.out/
 *.js.map
 *.d.ts
 .DS_Store
+.dev-logs/

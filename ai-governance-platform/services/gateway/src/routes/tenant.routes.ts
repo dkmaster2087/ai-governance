@@ -7,6 +7,7 @@ import {
 import { createLogger } from '@ai-governance/utils';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
+import { tenantSettings } from '../services/tenant-settings.service';
 import { ApiKeyRepository, generateApiKey } from '../repositories/api-key.repository';
 import { requireAccess, requireTenantParam, PLATFORM_ADMIN } from '../auth/guards';
 
@@ -88,6 +89,7 @@ export async function tenantRoutes(app: FastifyInstance) {
       },
     }));
 
+    tenantSettings().invalidate(tenantId);
     return reply.send({ tenantId, ...body, updatedAt });
   });
 
@@ -101,6 +103,7 @@ export async function tenantRoutes(app: FastifyInstance) {
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: { ':status': 'suspended', ':updatedAt': new Date().toISOString() },
     }));
+    tenantSettings().invalidate(tenantId);
     logger.info('Tenant suspended', { tenantId });
     return reply.send({ tenantId, status: 'suspended' });
   });
@@ -115,6 +118,7 @@ export async function tenantRoutes(app: FastifyInstance) {
       ExpressionAttributeNames: { '#status': 'status' },
       ExpressionAttributeValues: { ':status': 'active', ':updatedAt': new Date().toISOString() },
     }));
+    tenantSettings().invalidate(tenantId);
     logger.info('Tenant activated', { tenantId });
     return reply.send({ tenantId, status: 'active' });
   });
