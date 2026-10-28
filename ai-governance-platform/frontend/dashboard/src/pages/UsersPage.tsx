@@ -3,7 +3,7 @@ import { Plus, Trash2, UserPlus, Shield, Eye, MessageSquare } from 'lucide-react
 import clsx from 'clsx';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
-import { useAuth, getTenantUsers, registerTenantAccount, deleteUserAccount, UserRole, AuthUser } from '../lib/auth';
+import { useAuth, getTenantUsers, registerTenantAccount, deleteUserAccount, usersManagedExternally, UserRole, AuthUser } from '../lib/auth';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 
 const ROLE_CONFIG: Record<string, { label: string; icon: typeof Shield; color: string; description: string }> = {
@@ -52,6 +52,19 @@ export function UsersPage() {
       setRefreshKey((k) => k + 1);
     }
   };
+
+  if (usersManagedExternally) {
+    return (
+      <div className={clsx('border rounded-xl p-6 space-y-3', t.card)}>
+        <h3 className={clsx('text-sm font-semibold', t.heading)}>Users are managed in your identity provider</h3>
+        <p className={clsx('text-sm', t.sub)}>
+          Sign-in for {tenantName || 'this tenant'} runs through Amazon Cognito. Invite people from the Cognito
+          console or CLI and set two attributes on each user: <code>custom:tenantId</code> = <code>{tenantId}</code> and{' '}
+          <code>custom:role</code> = <code>tenant_admin</code>, <code>tenant_auditor</code> or <code>tenant_user</code>.
+        </p>
+      </div>
+    );
+  }
 
   return (
     <div className="space-y-5" key={refreshKey}>

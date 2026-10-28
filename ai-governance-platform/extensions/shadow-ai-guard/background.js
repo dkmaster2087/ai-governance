@@ -6,6 +6,7 @@
 
 const DEFAULT_CONFIG = {
   tenantId: null,
+  apiKey: null, // Aegis API key with the 'shadow_ai:ingest' scope
   gatewayUrl: 'http://localhost:3000',
   platformUrl: 'http://localhost:5174',
   mode: 'monitor', // 'monitor' | 'block'
@@ -37,22 +38,43 @@ const DEFAULT_CONFIG = {
 
 let config = { ...DEFAULT_CONFIG };
 let eventLog = [];
+let managedKeys = [];
+
+/**
+ * Settings pushed by IT through Chrome policy (managed storage) win over anything set in the popup,
+ * so employees can't switch monitoring off or point the extension at another tenant.
+ */
+async function loadConfig() {
+  const stored = await chrome.storage.local.get(['config', 'eventLog']);
+  let managed = {};
+  try {
+    managed = (await chrome.storage.managed.get(null)) || {};
+  } catch {
+    managed = {};
+  }
+  managedKeys = Object.keys(managed);
+  config = { ...DEFAULT_CONFIG, ...(stored.config || {}), ...managed };
+  if (stored.eventLog) eventLog = stored.eventLog;
+}
+
+// Service workers are restarted when idle, which resets globals; reload settings on every wake.
+const configReady = loadConfig();
+
+function authHeaders() {
+  return config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {};
+}
 
 // ── Init ──────────────────────────────────────────────────────────────────────
 
 chrome.runtime.onInstalled.addListener(async () => {
-  const stored = await chrome.storage.local.get(['config', 'eventLog']);
-  if (stored.config) config = { ...DEFAULT_CONFIG, ...stored.config };
-  if (stored.eventLog) eventLog = stored.eventLog;
+  await loadConfig();
   await applyRules();
   setupSyncAlarm();
   console.log('[Aegis] Shadow AI Guard installed', { mode: config.mode, tenant: config.tenantId });
 });
 
 chrome.runtime.onStartup.addListener(async () => {
-  const stored = await chrome.storage.local.get(['config', 'eventLog']);
-  if (stored.config) config = { ...DEFAULT_CONFIG, ...stored.config };
-  if (stored.eventLog) eventLog = stored.eventLog;
+  await loadConfig();
   await applyRules();
   setupSyncAlarm();
 });
@@ -65,15 +87,18 @@ function setupSyncAlarm() {
 
 chrome.alarms.onAlarm.addListener(async (alarm) => {
   if (alarm.name === 'config-sync') {
+    await configReady;
     await syncConfig();
     await flushEvents();
   }
 });
 
 async function syncConfig() {
-  if (!config.tenantId || !config.gatewayUrl) return;
+  if (!config.tenantId || !config.gatewayUrl || !config.apiKey) return;
   try {
-    const resp = await fetch(`${config.gatewayUrl}/v1/shadow-ai/config/${config.tenantId}`);
+    const resp = await fetch(`${config.gatewayUrl}/v1/shadow-ai/config/${encodeURIComponent(config.tenantId)}`, {
+      headers: authHeaders(),
+    });
     if (resp.ok) {
       const remote = await resp.json();
       config = { ...config, ...remote };
@@ -127,8 +152,15 @@ async function applyRules() {
 // ── Event logging ─────────────────────────────────────────────────────────────
 
 // Listen for web requests to monitored domains (works in both modes)
-chrome.webRequest?.onBeforeRequest?.addListener(
+chrome.webRequest.onBeforeRequest.addListener(
   (details) => {
+    configReady.then(() => recordRequest(details));
+  },
+  { urls: ['<all_urls>'] }
+);
+
+function recordRequest(details) {
+  {
     const url = new URL(details.url);
     const domain = url.hostname;
 
@@ -162,22 +194,22 @@ chrome.webRequest?.onBeforeRequest?.addListener(
     chrome.action.setBadgeBackgroundColor({ color: config.mode === 'block' ? '#ef4444' : '#f59e0b' });
 
     console.log(`[Aegis] ${config.mode === 'block' ? 'BLOCKED' : 'DETECTED'}: ${domain} (${details.type})`);
-  },
-  { urls: ['<all_urls>'] }
-);
+  }
+}
 
 // ── Flush events to server ────────────────────────────────────────────────────
 
 async function flushEvents() {
-  if (!config.tenantId || !config.gatewayUrl || eventLog.length === 0) return;
+  if (!config.tenantId || !config.gatewayUrl || !config.apiKey || eventLog.length === 0) return;
   try {
     const resp = await fetch(`${config.gatewayUrl}/v1/shadow-ai/events`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ tenantId: config.tenantId, events: eventLog }),
+      headers: { 'Content-Type': 'application/json', ...authHeaders() },
+      // The server accepts at most 500 events per call.
+      body: JSON.stringify({ tenantId: config.tenantId, events: eventLog.slice(0, 500) }),
     });
     if (resp.ok) {
-      eventLog = [];
+      eventLog = eventLog.slice(500);
       await chrome.storage.local.set({ eventLog });
       chrome.action.setBadgeText({ text: '' });
       console.log('[Aegis] Events flushed to server');
@@ -192,12 +224,16 @@ async function flushEvents() {
 chrome.runtime.onMessage.addListener((msg, sender, sendResponse) => {
   if (msg.type === 'GET_STATUS') {
     sendResponse({
-      config,
+      config: { ...config, apiKey: config.apiKey ? '********' : null },
+      managedKeys,
       eventCount: eventLog.length,
       recentEvents: eventLog.slice(-10).reverse(),
     });
   } else if (msg.type === 'UPDATE_CONFIG') {
-    config = { ...config, ...msg.config };
+    // Ignore changes to anything IT manages through policy.
+    const update = { ...msg.config };
+    for (const k of managedKeys) delete update[k];
+    config = { ...config, ...update };
     chrome.storage.local.set({ config });
     applyRules();
     sendResponse({ ok: true });

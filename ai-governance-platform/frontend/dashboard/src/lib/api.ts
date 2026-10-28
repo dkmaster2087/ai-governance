@@ -1,9 +1,9 @@
-import axios from 'axios';
+import { createApiClient } from './http';
 
 // In dev, Vite proxies /api → gateway, /analytics → analytics, /api/policies → policy-engine
-const gateway = axios.create({ baseURL: '/api' });
-const analytics = axios.create({ baseURL: '/analytics' });
-const policyApi = axios.create({ baseURL: '/api/policies' });
+const gateway = createApiClient('/api');
+const analytics = createApiClient('/analytics');
+const policyApi = createApiClient('/api/policies');
 
 /** Gateway base URL for direct (non-proxied) requests */
 export function getGatewayUrl(): string {
@@ -21,7 +21,6 @@ export function getAuthTenantId(): string {
 
 const headers = () => ({
   'x-tenant-id': getAuthTenantId(),
-  authorization: 'Bearer test-key',
 });
 
 // ── Metrics ──────────────────────────────────────────────────────────────────

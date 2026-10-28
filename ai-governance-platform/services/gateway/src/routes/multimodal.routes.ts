@@ -4,6 +4,7 @@ import { GatewayService } from '../services/gateway.service';
 import { ContentScannerClient } from '../clients/content-scanner.client';
 import { PolicyViolationError } from '@ai-governance/utils';
 import { createLogger } from '@ai-governance/utils';
+import { requireAccess } from '../auth/guards';
 
 const logger = createLogger('gateway:multimodal');
 
@@ -30,7 +31,7 @@ export async function multimodalRoutes(app: FastifyInstance) {
    *   - model: text field
    *   - files: one or more file attachments
    */
-  app.post('/chat/multimodal', async (request, reply) => {
+  app.post('/chat/multimodal', { preHandler: requireAccess({ roles: ['tenant_admin', 'tenant_auditor', 'tenant_user'], scopes: ['chat'] }) }, async (request, reply) => {
     const parts = request.parts();
     let prompt = '';
     let model = 'anthropic.claude-3-haiku-20240307-v1:0';

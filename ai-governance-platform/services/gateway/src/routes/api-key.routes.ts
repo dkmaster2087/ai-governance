@@ -2,12 +2,14 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { ApiKeyRepository, generateApiKey } from '../repositories/api-key.repository';
 import { createLogger } from '@ai-governance/utils';
+import { requireAccess, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
+import { API_KEY_SCOPES, ApiKeyScope } from '../auth/principal';
 
 const logger = createLogger('gateway:api-key-routes');
 
 const createKeySchema = z.object({
   name: z.string().min(1).max(100),
-  scopes: z.array(z.string()).optional().default(['chat', 'models']),
+  scopes: z.array(z.enum(API_KEY_SCOPES as [ApiKeyScope, ...ApiKeyScope[]])).min(1).optional().default(['chat', 'models']),
   rateLimit: z.number().min(1).max(10000).optional().default(100),
   expiresInDays: z.number().min(1).max(3650).optional(),
 });
@@ -16,7 +18,7 @@ export async function apiKeyRoutes(app: FastifyInstance) {
   const repo = new ApiKeyRepository();
 
   /** List all API keys for the tenant (hashes hidden) */
-  app.get('/api-keys', async (request) => {
+  app.get('/api-keys', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
     const keys = await repo.getForTenant(request.tenantId);
     // Never return the hash — only prefix, name, status, etc.
     return keys.map((k) => ({
@@ -34,8 +36,12 @@ export async function apiKeyRoutes(app: FastifyInstance) {
   });
 
   /** Generate a new API key */
-  app.post('/api-keys', async (request, reply) => {
+  app.post('/api-keys', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const body = createKeySchema.parse(request.body);
+    // License keys (reporting:ingest) are issued by the platform through /tenants/:tenantId/licenses.
+    if (body.scopes.includes('reporting:ingest')) {
+      return reply.status(403).send({ error: 'License keys are issued by the platform operator', code: 'FORBIDDEN_SCOPE' });
+    }
     const { raw, hash, prefix, keyId } = generateApiKey(request.tenantId);
 
     const expiresAt = body.expiresInDays
@@ -70,14 +76,14 @@ export async function apiKeyRoutes(app: FastifyInstance) {
   });
 
   /** Revoke an API key */
-  app.post('/api-keys/:keyId/revoke', async (request, reply) => {
+  app.post('/api-keys/:keyId/revoke', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const { keyId } = request.params as { keyId: string };
     await repo.revoke(request.tenantId, keyId);
     return reply.send({ keyId, status: 'revoked' });
   });
 
   /** Rotate an API key (revoke old, create new with same config) */
-  app.post('/api-keys/:keyId/rotate', async (request, reply) => {
+  app.post('/api-keys/:keyId/rotate', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const { keyId: oldKeyId } = request.params as { keyId: string };
     const keys = await repo.getForTenant(request.tenantId);
     const oldKey = keys.find((k) => k.keyId === oldKeyId);
@@ -114,7 +120,7 @@ export async function apiKeyRoutes(app: FastifyInstance) {
   });
 
   /** Delete an API key permanently */
-  app.delete('/api-keys/:keyId', async (request, reply) => {
+  app.delete('/api-keys/:keyId', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const { keyId } = request.params as { keyId: string };
     await repo.delete(request.tenantId, keyId);
     return reply.send({ keyId, deleted: true });

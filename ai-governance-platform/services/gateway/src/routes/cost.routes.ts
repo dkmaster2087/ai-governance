@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { createLogger } from '@ai-governance/utils';
+import { requireAccess, requireTenantParam, TENANT_READ } from '../auth/guards';
 
 const logger = createLogger('gateway:cost');
 
@@ -39,7 +40,7 @@ export async function costRoutes(app: FastifyInstance) {
   }
 
   // GET /v1/cost/summary/:tenantId
-  app.get('/cost/summary/:tenantId', async (request, reply) => {
+  app.get('/cost/summary/:tenantId', { preHandler: [requireAccess(TENANT_READ), requireTenantParam] }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
     const { from, to, period } = request.query as { from?: string; to?: string; period?: string };
 
@@ -93,7 +94,7 @@ export async function costRoutes(app: FastifyInstance) {
   });
 
   // GET /v1/cost/breakdown/:tenantId
-  app.get('/cost/breakdown/:tenantId', async (request, reply) => {
+  app.get('/cost/breakdown/:tenantId', { preHandler: [requireAccess(TENANT_READ), requireTenantParam] }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
     const { from, to, period } = request.query as { from?: string; to?: string; period?: string };
 
@@ -122,7 +123,7 @@ export async function costRoutes(app: FastifyInstance) {
   });
 
   // GET /v1/cost/users/:tenantId
-  app.get('/cost/users/:tenantId', async (request, reply) => {
+  app.get('/cost/users/:tenantId', { preHandler: [requireAccess(TENANT_READ), requireTenantParam] }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
     const { from, to, period } = request.query as { from?: string; to?: string; period?: string };
 

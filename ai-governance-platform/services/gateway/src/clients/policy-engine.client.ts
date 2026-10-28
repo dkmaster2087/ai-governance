@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { NormalizedAIRequest, PolicyEvaluationResult } from '@ai-governance/types';
-import { createLogger } from '@ai-governance/utils';
+import { createLogger, GovernanceUnavailableError } from '@ai-governance/utils';
 import { CircuitBreaker } from '../services/circuit-breaker';
 import { withRetry } from '../services/retry';
 import { metrics, METRIC } from '../services/metrics';
@@ -16,12 +16,15 @@ export class PolicyEngineClient {
     halfOpenMaxAttempts: 2,
   });
 
+  /**
+   * Ask the policy engine for a decision. Throws GovernanceUnavailableError if it can't be reached;
+   * the caller decides whether to block or continue based on the tenant's fail mode.
+   */
   async evaluate(request: NormalizedAIRequest): Promise<PolicyEvaluationResult> {
     const start = Date.now();
-
     try {
-      const result = await this.circuitBreaker.execute(
-        () => withRetry(
+      const result = await this.circuitBreaker.execute(() =>
+        withRetry(
           () => axios.post<PolicyEvaluationResult>(
             `${this.baseUrl}/v1/evaluate`,
             request,
@@ -29,31 +32,14 @@ export class PolicyEngineClient {
           ).then((r) => r.data),
           { maxAttempts: 2, baseDelayMs: 100, maxDelayMs: 1000 },
           'policy-evaluate'
-        ),
-        // Fallback when circuit is open — fail open with warning
-        () => ({
-          allowed: true,
-          action: 'allow' as const,
-          triggeredRules: [],
-          riskScore: 0,
-          reason: 'Policy engine unavailable (circuit open) - fail open',
-        })
+        )
       );
-
       metrics.recordHistogram(METRIC.POLICY_EVAL_LATENCY, Date.now() - start, { tenantId: request.tenantId });
       return result;
     } catch (err: any) {
       logger.error('Policy engine call failed', { error: err.message, requestId: request.requestId });
       metrics.increment(METRIC.PROVIDER_ERROR, { service: 'policy-engine' });
-
-      // Fail open with warning — configurable per tenant in production
-      return {
-        allowed: true,
-        action: 'allow',
-        triggeredRules: [],
-        riskScore: 0,
-        reason: 'Policy engine unavailable - fail open',
-      };
+      throw new GovernanceUnavailableError('policy-engine');
     }
   }
 

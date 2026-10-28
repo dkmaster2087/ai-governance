@@ -31,4 +31,9 @@ export interface TenantSettings {
   piiMaskingEnabled: boolean;
   auditLogRetentionDays: number;
   allowExternalProviders: boolean;
+  /**
+   * What happens when the policy engine or data protection service is unreachable.
+   * 'closed' (default) blocks the request; 'open' lets it through and flags it in the audit log.
+   */
+  governanceFailMode?: 'open' | 'closed';
 }

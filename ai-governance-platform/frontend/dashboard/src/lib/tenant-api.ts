@@ -1,12 +1,10 @@
-import axios from 'axios';
+import { createApiClient } from './http';
 
-const gatewayApi = axios.create({ baseURL: '/api' });
+const gatewayApi = createApiClient('/api');
 
 function headers(tenantId: string) {
   return {
     'x-tenant-id': tenantId,
-    'x-user-id': 'admin',
-    authorization: 'Bearer test-key',
   };
 }
 

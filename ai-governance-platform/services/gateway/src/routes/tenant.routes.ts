@@ -6,6 +6,9 @@ import {
 } from '@aws-sdk/lib-dynamodb';
 import { createLogger } from '@ai-governance/utils';
 import { randomUUID } from 'crypto';
+import { z } from 'zod';
+import { ApiKeyRepository, generateApiKey } from '../repositories/api-key.repository';
+import { requireAccess, requireTenantParam, PLATFORM_ADMIN } from '../auth/guards';
 
 const logger = createLogger('gateway:tenants');
 
@@ -15,7 +18,7 @@ export async function tenantRoutes(app: FastifyInstance) {
   const table = process.env.TENANTS_TABLE || 'ai-gov-tenants-dev';
 
   // List all tenants (platform admin only in production)
-  app.get('/tenants', async (_request, reply) => {
+  app.get('/tenants', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (_request, reply) => {
     try {
       const result = await client.send(new ScanCommand({ TableName: table }));
       return reply.send(result.Items || []);
@@ -26,7 +29,7 @@ export async function tenantRoutes(app: FastifyInstance) {
   });
 
   // Get single tenant
-  app.get('/tenants/:tenantId', async (request, reply) => {
+  app.get('/tenants/:tenantId', { preHandler: [requireAccess({ roles: ['tenant_admin', 'tenant_auditor', 'tenant_user'] }), requireTenantParam] }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
     try {
       const result = await client.send(new GetCommand({ TableName: table, Key: { tenantId } }));
@@ -38,7 +41,7 @@ export async function tenantRoutes(app: FastifyInstance) {
   });
 
   // Create / onboard tenant
-  app.post('/tenants', async (request, reply) => {
+  app.post('/tenants', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
     const body = request.body as any;
     const tenant = {
       tenantId: `tenant_${randomUUID().replace(/-/g, '').slice(0, 12)}`,
@@ -67,7 +70,7 @@ export async function tenantRoutes(app: FastifyInstance) {
   });
 
   // Update tenant
-  app.put('/tenants/:tenantId', async (request, reply) => {
+  app.put('/tenants/:tenantId', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
     const body = request.body as any;
     const updatedAt = new Date().toISOString();
@@ -89,7 +92,7 @@ export async function tenantRoutes(app: FastifyInstance) {
   });
 
   // Suspend tenant
-  app.post('/tenants/:tenantId/suspend', async (request, reply) => {
+  app.post('/tenants/:tenantId/suspend', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
     await client.send(new UpdateCommand({
       TableName: table,
@@ -103,7 +106,7 @@ export async function tenantRoutes(app: FastifyInstance) {
   });
 
   // Activate tenant
-  app.post('/tenants/:tenantId/activate', async (request, reply) => {
+  app.post('/tenants/:tenantId/activate', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
     await client.send(new UpdateCommand({
       TableName: table,
@@ -114,5 +117,47 @@ export async function tenantRoutes(app: FastifyInstance) {
     }));
     logger.info('Tenant activated', { tenantId });
     return reply.send({ tenantId, status: 'active' });
+  });
+
+  // ── On-prem licenses ──────────────────────────────────────────────────────
+  // A license is a hashed, expiring credential with the 'reporting:ingest' scope, used by the on-prem agent.
+  const licenseKeys = new ApiKeyRepository();
+  const issueLicenseSchema = z.object({
+    name: z.string().min(1).max(100).default('On-prem license'),
+    validityDays: z.number().int().min(1).max(3650).default(365),
+  });
+
+  app.get('/tenants/:tenantId/licenses', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request) => {
+    const { tenantId } = request.params as { tenantId: string };
+    const keys = await licenseKeys.getForTenant(tenantId);
+    return keys
+      .filter((k) => k.scopes?.includes('reporting:ingest'))
+      .map(({ keyHash: _hash, ...rest }) => rest);
+  });
+
+  app.post('/tenants/:tenantId/licenses', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
+    const { tenantId } = request.params as { tenantId: string };
+    const body = issueLicenseSchema.parse(request.body ?? {});
+    const tenant = await client.send(new GetCommand({ TableName: table, Key: { tenantId } }));
+    if (!tenant.Item) return reply.status(404).send({ error: 'Tenant not found' });
+
+    const { raw, hash, prefix, keyId } = generateApiKey(tenantId);
+    const expiresAt = new Date(Date.now() + body.validityDays * 86400000).toISOString();
+    await licenseKeys.create({
+      tenantId, keyId, keyHash: hash, keyPrefix: prefix, name: body.name,
+      scopes: ['reporting:ingest'], status: 'active', rateLimit: 60,
+      createdAt: new Date().toISOString(), expiresAt, createdBy: request.userId,
+    });
+    logger.info('License issued', { tenantId, keyId, expiresAt });
+    return reply.status(201).send({
+      licenseId: keyId, licenseKey: raw, keyPrefix: prefix, tenantId, expiresAt,
+      message: 'Store this license key securely. It will not be shown again.',
+    });
+  });
+
+  app.post('/tenants/:tenantId/licenses/:licenseId/revoke', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
+    const { tenantId, licenseId } = request.params as { tenantId: string; licenseId: string };
+    await licenseKeys.revoke(tenantId, licenseId);
+    return reply.send({ licenseId, status: 'revoked' });
   });
 }

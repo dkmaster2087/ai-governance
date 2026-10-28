@@ -1,6 +1,7 @@
 import { NormalizedAIRequest, PolicyEvaluationResult, PolicyRule } from '@ai-governance/types';
 import { createLogger } from '@ai-governance/utils';
 import { PolicyRepository } from '../repositories/policy.repository';
+import { compileTenantPattern } from './pattern-safety';
 
 const logger = createLogger('policy-engine:evaluator');
 
@@ -14,7 +15,9 @@ export class PolicyEvaluator {
     let blocked = false;
     let blockReason = '';
 
-    const promptText = request.messages.map((m) => m.content).join(' ').toLowerCase();
+    // Original-case text for pattern rules (e.g. names need capitals); lower-case copy for keyword matching.
+    const originalText = request.messages.map((m) => m.content).join(' ');
+    const promptText = originalText.toLowerCase();
 
     for (const policy of policies) {
       if (!policy.enabled) continue;
@@ -24,7 +27,7 @@ export class PolicyEvaluator {
 
       for (const rule of sortedRules) {
         if (!rule.enabled) continue;
-        const triggered = await this.evaluateRule(rule, request, promptText);
+        const triggered = await this.evaluateRule(rule, request, promptText, originalText);
 
         if (triggered) {
           triggeredRules.push(rule.ruleId);
@@ -57,7 +60,8 @@ export class PolicyEvaluator {
   private async evaluateRule(
     rule: PolicyRule,
     request: NormalizedAIRequest,
-    promptText: string
+    promptText: string,
+    originalText: string
   ): Promise<boolean> {
     switch (rule.type) {
       case 'keyword_block': {
@@ -70,7 +74,14 @@ export class PolicyEvaluator {
       }
       case 'data_classification': {
         const forbiddenPatterns = (rule.config.patterns as string[]) || [];
-        return forbiddenPatterns.some((p) => new RegExp(p, 'i').test(promptText));
+        return forbiddenPatterns.some((p) => {
+          const re = compileTenantPattern(p);
+          if (!re) {
+            logger.warn('Skipping unsafe or invalid pattern', { ruleId: rule.ruleId, tenantId: request.tenantId });
+            return false;
+          }
+          return re.test(originalText);
+        });
       }
       case 'pii_detection': {
         // Detect PII patterns in prompt text
@@ -93,9 +104,9 @@ export class PolicyEvaluator {
             MEDICAL_RECORD_NUMBER: /\bMRN[:\s]*\d{6,}\b/i,
           };
           const patterns = customPiiTypes.map((t) => typePatterns[t]).filter(Boolean);
-          return patterns.some((p) => p.test(promptText));
+          return patterns.some((p) => p.test(originalText));
         }
-        return piiPatterns.some((p) => p.test(promptText));
+        return piiPatterns.some((p) => p.test(originalText));
       }
       case 'region_restriction': {
         // Block if the request targets a model/provider outside allowed regions

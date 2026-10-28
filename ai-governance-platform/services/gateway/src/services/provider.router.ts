@@ -3,6 +3,7 @@ import { ProviderError } from '@ai-governance/utils';
 import { BedrockProvider } from '../providers/bedrock.provider';
 import { OpenAIProvider } from '../providers/openai.provider';
 import { ModelConfigRepository } from '../repositories/model-config.repository';
+import { ModelConfigService } from './model-config.service';
 
 const MODEL_PROVIDER_MAP: Record<string, AIProvider> = {
   'anthropic.claude': 'bedrock',
@@ -16,6 +17,7 @@ export class ProviderRouter {
   private bedrockProvider = new BedrockProvider();
   private openaiProvider = new OpenAIProvider();
   private modelConfigRepo = new ModelConfigRepository();
+  private modelConfigService = new ModelConfigService(this.modelConfigRepo);
 
   resolveProvider(modelId: string): AIProvider {
     for (const [prefix, provider] of Object.entries(MODEL_PROVIDER_MAP)) {
@@ -25,10 +27,10 @@ export class ProviderRouter {
   }
 
   async route(request: NormalizedAIRequest): Promise<NormalizedAIResponse> {
-    // Look up model config to get the stored API key
+    // Look up model config to get the tenant's provider key (held in Secrets Manager)
     const configs = await this.modelConfigRepo.getForTenant(request.tenantId);
     const modelConfig = configs.find((c) => c.modelId === request.modelId);
-    const storedKey = (modelConfig as any)?.apiKeyStored;
+    const storedKey = await this.modelConfigService.resolveProviderKey(modelConfig);
 
     if (request.provider === 'openai') {
       return this.openaiProvider.complete(request, storedKey);

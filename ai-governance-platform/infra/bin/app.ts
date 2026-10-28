@@ -56,6 +56,7 @@ const servicesStack = new ServicesStack(app, `${prefix}-services-${stage}`, {
   metricsTable: storageStack.metricsTable,
   auditLogBucket: storageStack.auditLogBucket,
   userPool: authStack.userPool,
+  userPoolClient: authStack.userPoolClient,
   apiKeysTable: storageStack.apiKeysTable,
   alertsTable: storageStack.alertsTable,
   shadowAiTable: storageStack.shadowAiTable,

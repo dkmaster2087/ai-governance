@@ -12,10 +12,10 @@ import { fetchTenants } from '../lib/tenant-api';
 import { mockTenants } from '../lib/mock-tenants';
 import { useAuth } from '../lib/auth';
 import { getLicenseList } from '../lib/license';
-import axios from 'axios';
+import { createApiClient } from '../lib/http';
 
-const policyApi = axios.create({ baseURL: '/api/policies' });
-const complianceApi = axios.create({ baseURL: '/api/compliance' });
+const policyApi = createApiClient('/api/policies');
+const complianceApi = createApiClient('/api/compliance');
 
 export function PlatformDashboardPage() {
   const { isDark } = useTheme();

@@ -4,7 +4,7 @@ import { useQuery } from '@tanstack/react-query';
 import { BarChart, Bar, AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer } from 'recharts';
 import { ArrowLeft, Building2, Cpu, Shield, ShieldCheck, ScrollText, Users, Key, DollarSign, Eye, Activity, BarChart3 } from 'lucide-react';
 import clsx from 'clsx';
-import axios from 'axios';
+import { createApiClient } from '../lib/http';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
 import { getTenantLicense } from '../lib/license';
@@ -24,12 +24,12 @@ const TABS: { id: Tab; label: string; icon: typeof Building2 }[] = [
   { id: 'license',    label: 'License',     icon: Key },
 ];
 
-const api = axios.create({ baseURL: '/api' });
-const policyApi = axios.create({ baseURL: '/api/policies' });
-const complianceApi = axios.create({ baseURL: '/api/compliance' });
+const api = createApiClient('/api');
+const policyApi = createApiClient('/api/policies');
+const complianceApi = createApiClient('/api/compliance');
 
 function tenantHeaders(tenantId: string) {
-  return { 'x-tenant-id': tenantId, 'x-user-id': 'admin', authorization: 'Bearer test-key' };
+  return { 'x-tenant-id': tenantId };
 }
 
 export function TenantDetailPage() {

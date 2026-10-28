@@ -1,109 +1,216 @@
-import { FastifyInstance } from 'fastify';
+import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import fp from 'fastify-plugin';
-import { ApiKeyRepository, hashApiKey } from '../repositories/api-key.repository';
+import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { createLogger } from '@ai-governance/utils';
+import { ApiKey, ApiKeyRepository, hashApiKey } from '../repositories/api-key.repository';
+import { getSecurityConfig } from '../config/security';
+import { Principal, isUserRole } from '../auth/principal';
+import { TenantSettingsService } from '../services/tenant-settings.service';
 
 const logger = createLogger('gateway:auth');
 
-// Extend FastifyRequest to carry tenant/user context
 declare module 'fastify' {
   interface FastifyRequest {
+    principal: Principal | null;
+    /** The tenant this request acts on. Always set from verified credentials, never trusted from headers alone. */
     tenantId: string;
     userId: string;
     appId: string;
   }
 }
 
-const keyRepo = new ApiKeyRepository();
+/** Routes that need no credentials. */
+const PUBLIC_PREFIXES = ['/health', '/public/'];
+/** On-prem agent routes authenticate with the license key in the request body instead. */
+const LICENSE_AUTH_ROUTES = ['/v1/reporting/validate-license', '/v1/reporting/ingest'];
+const PROXY_PREFIX = '/v1/proxy/';
 
-// In-memory cache for validated keys (TTL 60s) to avoid hitting DynamoDB on every request
-const keyCache = new Map<string, { tenantId: string; keyId: string; scopes: string[]; rateLimit: number; expiresAt: number }>();
-const CACHE_TTL_MS = 60_000;
+/** Claims we read from a verified Cognito ID token. */
+export interface UserTokenClaims {
+  sub: string;
+  email?: string;
+  'custom:tenantId'?: string;
+  'custom:role'?: string;
+}
 
-async function authPlugin(app: FastifyInstance) {
-  app.addHook('preHandler', async (request, reply) => {
-    // Skip health checks, public routes, shadow-ai, and reporting (license-based auth)
-    if (request.url.startsWith('/health') || request.url.startsWith('/public') || request.url.startsWith('/v1/shadow-ai') || request.url.startsWith('/v1/reporting')) return;
+export interface UserTokenVerifier {
+  verify(token: string): Promise<UserTokenClaims>;
+}
 
-    const tenantId = request.headers['x-tenant-id'] as string;
-    const userId = request.headers['x-user-id'] as string;
-    const appId = request.headers['x-app-id'] as string;
-    const authHeader = request.headers['authorization'] as string;
+export interface ApiKeyLookup {
+  findByHash(keyHash: string): Promise<ApiKey | null>;
+  touchLastUsed(tenantId: string, keyId: string): Promise<void>;
+}
 
-    if (!tenantId || !authHeader) {
-      return reply.status(401).send({ error: 'Unauthorized', code: 'MISSING_AUTH' });
-    }
+export interface AuthDeps {
+  keys: ApiKeyLookup;
+  /** Tenant status lookup; suspended tenants are refused. */
+  tenantStatus?: (tenantId: string) => Promise<string | null>;
+  userTokens?: UserTokenVerifier;
+  devAuth: boolean;
+  keyCacheTtlMs: number;
+}
 
-    // Extract bearer token
-    const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7) : authHeader;
+function header(request: FastifyRequest, name: string): string | undefined {
+  const value = request.headers[name];
+  return Array.isArray(value) ? value[0] : value;
+}
 
-    // Allow legacy "test-key" for development
-    if (token === 'test-key' && process.env.STAGE === 'dev') {
-      request.tenantId = tenantId;
-      request.userId = userId || 'anonymous';
-      request.appId = appId || 'unknown';
-      return;
-    }
+function looksLikeJwt(token: string): boolean {
+  return token.split('.').length === 3;
+}
 
-    // Validate against API key store
+function deny(reply: FastifyReply, status: 401 | 403, code: string, error: string) {
+  return reply.status(status).send({ error, code });
+}
+
+export function createAuthPlugin(deps: AuthDeps) {
+  const keyCache = new Map<string, { key: ApiKey; cachedUntil: number }>();
+
+  async function resolveApiKey(token: string): Promise<ApiKey | null> {
     const keyHash = hashApiKey(token);
-
-    // Check cache first
     const cached = keyCache.get(keyHash);
-    if (cached && cached.expiresAt > Date.now()) {
-      if (cached.tenantId !== tenantId) {
-        return reply.status(403).send({ error: 'API key does not belong to this tenant', code: 'TENANT_MISMATCH' });
-      }
-      request.tenantId = tenantId;
-      request.userId = userId || 'anonymous';
-      request.appId = appId || 'unknown';
-      // Touch last used async (non-blocking)
-      keyRepo.touchLastUsed(cached.tenantId, cached.keyId).catch(() => {});
-      return;
-    }
+    if (cached && cached.cachedUntil > Date.now()) return cached.key;
 
-    // Lookup in DynamoDB
-    const apiKey = await keyRepo.findByHash(keyHash);
+    const key = await deps.keys.findByHash(keyHash);
+    if (key) keyCache.set(keyHash, { key, cachedUntil: Date.now() + deps.keyCacheTtlMs });
+    return key;
+  }
 
-    if (!apiKey) {
-      // If API keys table isn't set up yet, fall through (dev mode)
-      if (process.env.STAGE === 'dev') {
-        request.tenantId = tenantId;
-        request.userId = userId || 'anonymous';
-        request.appId = appId || 'unknown';
+  return fp(async function authPlugin(app: FastifyInstance) {
+    app.decorateRequest('principal', null);
+
+    app.addHook('preHandler', async (request, reply) => {
+      if (PUBLIC_PREFIXES.some((p) => request.url.startsWith(p))) return;
+      const path = request.url.split('?')[0];
+      if (LICENSE_AUTH_ROUTES.includes(path)) return;
+      // CORS preflight never carries credentials
+      if (request.method === 'OPTIONS') return;
+
+      // In proxy mode the client's Authorization header carries its own provider key and is forwarded
+      // untouched, so the Aegis credential travels in x-aegis-key (injected by the corporate proxy).
+      const isProxyRoute = request.url.startsWith(PROXY_PREFIX);
+      const authHeader = isProxyRoute ? header(request, 'x-aegis-key') : header(request, 'authorization');
+      if (!authHeader) return deny(reply, 401, 'MISSING_AUTH', 'Unauthorized');
+      const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
+      if (!token) return deny(reply, 401, 'MISSING_AUTH', 'Unauthorized');
+
+      const requestedTenant = header(request, 'x-tenant-id');
+
+      // ── Local development shortcut (explicit opt-in, never in prod) ──────────
+      if (deps.devAuth && token === 'test-key') {
+        if (!requestedTenant) return deny(reply, 401, 'MISSING_TENANT', 'x-tenant-id header required in dev mode');
+        const devRole = header(request, 'x-dev-role') ?? 'tenant_admin';
+        if (!isUserRole(devRole)) return deny(reply, 401, 'INVALID_ROLE', 'Unknown x-dev-role');
+        const homeTenantId = devRole === 'platform_admin' ? 'tenant_platform' : requestedTenant;
+        request.principal = {
+          kind: 'user',
+          homeTenantId,
+          userId: header(request, 'x-user-id') ?? 'dev-user',
+          role: devRole,
+        };
+        request.tenantId = requestedTenant;
+        request.userId = request.principal.userId;
+        request.appId = header(request, 'x-app-id') ?? 'dashboard';
         return;
       }
-      return reply.status(401).send({ error: 'Invalid API key', code: 'INVALID_KEY' });
-    }
 
-    if (apiKey.status === 'revoked') {
-      return reply.status(401).send({ error: 'API key has been revoked', code: 'KEY_REVOKED' });
-    }
+      // ── Dashboard users (Cognito ID token) ──────────────────────────────────
+      if (looksLikeJwt(token)) {
+        if (!deps.userTokens) return deny(reply, 401, 'USER_AUTH_DISABLED', 'User sign-in is not configured');
+        let claims: UserTokenClaims;
+        try {
+          claims = await deps.userTokens.verify(token);
+        } catch (err) {
+          logger.info('Rejected user token', { error: (err as Error).message });
+          return deny(reply, 401, 'INVALID_TOKEN', 'Invalid or expired token');
+        }
+        const homeTenantId = claims['custom:tenantId'];
+        const role = claims['custom:role'];
+        if (!homeTenantId || !isUserRole(role)) {
+          return deny(reply, 403, 'INCOMPLETE_PROFILE', 'User has no tenant or role assigned');
+        }
+        // Only platform admins may act on a tenant other than their own.
+        const tenantId = requestedTenant ?? homeTenantId;
+        if (tenantId !== homeTenantId && role !== 'platform_admin') {
+          return deny(reply, 403, 'TENANT_MISMATCH', 'You do not have access to this tenant');
+        }
+        request.principal = { kind: 'user', homeTenantId, userId: claims.sub, email: claims.email, role };
+        request.tenantId = tenantId;
+        request.userId = claims.sub;
+        request.appId = header(request, 'x-app-id') ?? 'dashboard';
+        return;
+      }
 
-    if (apiKey.status === 'expired' || (apiKey.expiresAt && new Date(apiKey.expiresAt) < new Date())) {
-      return reply.status(401).send({ error: 'API key has expired', code: 'KEY_EXPIRED' });
-    }
+      // ── Machine callers (tenant API key) ────────────────────────────────────
+      let apiKey: ApiKey | null;
+      try {
+        apiKey = await resolveApiKey(token);
+      } catch (err) {
+        logger.error('API key lookup failed', { error: (err as Error).message });
+        return reply.status(503).send({ error: 'Authentication temporarily unavailable', code: 'AUTH_UNAVAILABLE' });
+      }
+      if (!apiKey) return deny(reply, 401, 'INVALID_KEY', 'Invalid API key');
+      if (apiKey.status === 'revoked') return deny(reply, 401, 'KEY_REVOKED', 'API key has been revoked');
+      if (apiKey.status === 'expired' || (apiKey.expiresAt && new Date(apiKey.expiresAt) < new Date())) {
+        return deny(reply, 401, 'KEY_EXPIRED', 'API key has expired');
+      }
+      if (requestedTenant && requestedTenant !== apiKey.tenantId) {
+        return deny(reply, 403, 'TENANT_MISMATCH', 'API key does not belong to this tenant');
+      }
 
-    if (apiKey.tenantId !== tenantId) {
-      return reply.status(403).send({ error: 'API key does not belong to this tenant', code: 'TENANT_MISMATCH' });
-    }
+      // x-user-id from an app is attribution for the app's own end users, not proof of identity.
+      const userId = header(request, 'x-user-id') ?? 'anonymous';
+      const appId = header(request, 'x-app-id') ?? apiKey.name ?? 'unknown';
+      request.principal = {
+        kind: 'api_key',
+        tenantId: apiKey.tenantId,
+        keyId: apiKey.keyId,
+        scopes: apiKey.scopes?.length ? apiKey.scopes : ['chat', 'models'],
+        userId,
+        appId,
+      };
+      request.tenantId = apiKey.tenantId;
+      request.userId = userId;
+      request.appId = appId;
 
-    // Cache the validated key
-    keyCache.set(keyHash, {
-      tenantId: apiKey.tenantId,
-      keyId: apiKey.keyId,
-      scopes: apiKey.scopes,
-      rateLimit: apiKey.rateLimit,
-      expiresAt: Date.now() + CACHE_TTL_MS,
+      deps.keys.touchLastUsed(apiKey.tenantId, apiKey.keyId).catch(() => {});
     });
 
-    request.tenantId = tenantId;
-    request.userId = userId || 'anonymous';
-    request.appId = appId || 'unknown';
-
-    // Touch last used async
-    keyRepo.touchLastUsed(apiKey.tenantId, apiKey.keyId).catch(() => {});
+    // Suspended tenants lose access (platform admins keep it, so they can reactivate).
+    app.addHook('preHandler', async (request, reply) => {
+      const principal = request.principal;
+      if (!principal || !deps.tenantStatus) return;
+      if (principal.kind === 'user' && principal.role === 'platform_admin') return;
+      if ((await deps.tenantStatus(request.tenantId)) === 'suspended') {
+        return deny(reply, 403, 'TENANT_SUSPENDED', 'This tenant is suspended');
+      }
+    });
   });
 }
 
-export const authMiddleware = fp(authPlugin);
+function defaultDeps(): AuthDeps {
+  const config = getSecurityConfig();
+  let userTokens: UserTokenVerifier | undefined;
+  if (config.cognito) {
+    const verifier = CognitoJwtVerifier.create({
+      userPoolId: config.cognito.userPoolId,
+      clientId: config.cognito.clientId,
+      tokenUse: 'id',
+    });
+    userTokens = { verify: async (token) => (await verifier.verify(token)) as unknown as UserTokenClaims };
+  }
+  if (config.devAuth) logger.warn('AUTH_DEV_MODE is on: `Bearer test-key` is accepted. Never enable this in production.');
+  const tenants = new TenantSettingsService();
+  return {
+    keys: new ApiKeyRepository(),
+    userTokens,
+    tenantStatus: (tenantId) => tenants.getStatus(tenantId),
+    devAuth: config.devAuth,
+    keyCacheTtlMs: config.keyCacheTtlMs,
+  };
+}
+
+export const authMiddleware = fp(async (app: FastifyInstance) => {
+  await app.register(createAuthPlugin(defaultDeps()));
+});

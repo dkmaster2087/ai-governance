@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { PolicyRepository } from '../repositories/policy.repository';
 import { ComplianceService } from '../compliance/compliance.service';
 import { ComplianceFramework } from '@ai-governance/types';
+import { validatePolicyPatterns } from '../services/pattern-safety';
 
 export async function policyRoutes(app: FastifyInstance) {
   const repo = new PolicyRepository();
@@ -15,14 +16,18 @@ export async function policyRoutes(app: FastifyInstance) {
 
   // Create policy
   app.post('/', async (request, reply) => {
+    const problems = validatePolicyPatterns((request.body as any)?.rules);
+    if (problems.length > 0) return reply.status(400).send({ error: 'Invalid policy rules', code: 'INVALID_RULES', problems });
     const policy = await repo.createPolicy(request.body as any);
     return reply.status(201).send(policy);
   });
 
   // Update policy — requires tenantId in body
-  app.put('/:tenantId/:policyId', async (request) => {
+  app.put('/:tenantId/:policyId', async (request, reply) => {
     const { tenantId, policyId } = request.params as { tenantId: string; policyId: string };
     const body = request.body as any;
+    const problems = validatePolicyPatterns(body?.rules);
+    if (problems.length > 0) return reply.status(400).send({ error: 'Invalid policy rules', code: 'INVALID_RULES', problems });
 
     // Look up existing policy to check framework link before updating
     const existing = (await repo.getPoliciesForTenant(tenantId)).find((p) => p.policyId === policyId);

@@ -82,7 +82,7 @@ export class ModelConfigRepository {
       provider:             { expr: '#provider',          alias: '#provider', value: (data as any).provider },
       endpoint:             { expr: 'endpoint',           alias: '',        value: data.endpoint },
       apiKeyHint:           { expr: 'apiKeyHint',         alias: '',        value: (data as any).apiKeyHint },
-      apiKeyStored:         { expr: 'apiKeyStored',       alias: '',        value: (data as any).apiKeyStored },
+      apiKeySecretArn:      { expr: 'apiKeySecretArn',    alias: '',        value: data.apiKeySecretArn },
     };
 
     const updates: string[] = ['updatedAt = :updatedAt'];
@@ -108,6 +108,25 @@ export class ModelConfigRepository {
       })
     );
     return { ...data, tenantId, modelConfigId, updatedAt } as ModelConfig;
+  }
+
+  /**
+   * Point a model config at its Secrets Manager secret and delete any plaintext key left by
+   * older versions (the `apiKeyStored` attribute).
+   */
+  async setApiKeySecret(tenantId: string, modelConfigId: string, secretArn: string, hint?: string): Promise<void> {
+    await this.client.send(
+      new UpdateCommand({
+        TableName: this.table,
+        Key: { tenantId, modelConfigId },
+        UpdateExpression: `SET apiKeySecretArn = :arn, updatedAt = :t${hint ? ', apiKeyHint = :hint' : ''} REMOVE apiKeyStored`,
+        ExpressionAttributeValues: {
+          ':arn': secretArn,
+          ':t': new Date().toISOString(),
+          ...(hint ? { ':hint': hint } : {}),
+        },
+      })
+    );
   }
 
   async updateTestResult(tenantId: string, modelConfigId: string, success: boolean): Promise<void> {

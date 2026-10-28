@@ -56,3 +56,24 @@ describe('generateTenantId', () => {
     expect(generateTenantId()).toMatch(/^tenant_/);
   });
 });
+
+describe('maskPII card numbers', () => {
+  const { maskPII } = require('../crypto');
+  it.each([
+    '4111111111111111',
+    '4111 1111 1111 1111',
+    '4111-1111-1111-1111',
+    '378282246310005', // 15-digit Amex
+  ])('fully masks %s', (card) => {
+    const out = maskPII(`card ${card} ok`, '[X]');
+    expect(out).toBe('card [X] ok');
+  });
+
+  it('leaves long non-card numbers alone', () => {
+    expect(maskPII('ts 1700000000001 done', '[X]')).toBe('ts 1700000000001 done');
+  });
+
+  it('still masks phone numbers and SSNs', () => {
+    expect(maskPII('call (555) 123-4567, ssn 123-45-6789', '[X]')).toBe('call [X], ssn [X]');
+  });
+});

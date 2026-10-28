@@ -42,3 +42,19 @@ Admins can customize per-tenant:
 - Sync interval for config updates
 
 Config syncs from the governance platform every 5 minutes.
+
+## Authentication and managed deployment
+
+The extension authenticates to the gateway with an Aegis API key that has the `shadow_ai:ingest` scope.
+Create one from the dashboard (API Keys → scope `shadow_ai:ingest`); the tenant is taken from the key.
+
+For company-wide rollout, push settings through Chrome policy (Google Admin, Intune, Jamf) instead of the popup.
+Values set by policy override the popup and can't be changed by the user. Supported keys (see `schema.json`):
+
+| Key | Meaning |
+|-----|---------|
+| `tenantId` | Aegis tenant ID |
+| `apiKey` | API key with the `shadow_ai:ingest` scope |
+| `gatewayUrl` | Gateway base URL |
+| `platformUrl` | Dashboard URL |
+| `mode` | `monitor` or `block` |

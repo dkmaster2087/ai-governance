@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { GatewayService } from '../services/gateway.service';
+import { requireAccess } from '../auth/guards';
 
 const chatRequestSchema = z.object({
   model: z.string(),
@@ -19,7 +20,7 @@ export async function aiRoutes(app: FastifyInstance) {
   const gatewayService = new GatewayService();
 
   // OpenAI-compatible chat completions endpoint
-  app.post('/chat/completions', async (request, reply) => {
+  app.post('/chat/completions', { preHandler: requireAccess({ roles: ['tenant_admin', 'tenant_auditor', 'tenant_user'], scopes: ['chat'] }) }, async (request, reply) => {
     const body = chatRequestSchema.parse(request.body);
 
     const result = await gatewayService.processRequest({
@@ -36,7 +37,7 @@ export async function aiRoutes(app: FastifyInstance) {
   });
 
   // List available models for this tenant
-  app.get('/models', async (request) => {
+  app.get('/models', { preHandler: requireAccess({ roles: ['tenant_admin', 'tenant_auditor', 'tenant_user'], scopes: ['chat', 'models'] }) }, async (request) => {
     return gatewayService.getAvailableModels(request.tenantId);
   });
 }

@@ -57,14 +57,22 @@ export class AuthStack extends cdk.Stack {
         scopes: [cognito.OAuthScope.EMAIL, cognito.OAuthScope.OPENID, cognito.OAuthScope.PROFILE],
         callbackUrls: [
           `https://dashboard.${prefix}.com/callback`,
-          'http://localhost:5173/callback', // Local dev
+          'http://localhost:5174/callback', // Local dev (dashboard)
         ],
         logoutUrls: [
           `https://dashboard.${prefix}.com`,
-          'http://localhost:5173',
+          'http://localhost:5174',
         ],
       },
+      // Users must never be able to change their own tenant or role (that would be privilege escalation),
+      // so the client can read those claims but only write name fields.
+      readAttributes: new cognito.ClientAttributes()
+        .withStandardAttributes({ email: true, emailVerified: true, givenName: true, familyName: true })
+        .withCustomAttributes('tenantId', 'role', 'deploymentMode'),
+      writeAttributes: new cognito.ClientAttributes()
+        .withStandardAttributes({ givenName: true, familyName: true }),
       accessTokenValidity: cdk.Duration.hours(1),
+      idTokenValidity: cdk.Duration.hours(1),
       refreshTokenValidity: cdk.Duration.days(30),
       preventUserExistenceErrors: true,
     });

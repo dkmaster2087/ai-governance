@@ -4,13 +4,14 @@ import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContaine
 import { AlertTriangle, Eye, ShieldX, TrendingUp, Globe, User, Clock, RefreshCw, Building2 } from 'lucide-react';
 import clsx from 'clsx';
 import { format } from 'date-fns';
-import axios from 'axios';
+import { createApiClient } from '../lib/http';
+
+const gatewayApi = createApiClient('/api');
 import { mockShadowAIData } from '../lib/mock-shadow-ai';
 import { StatCard } from '../components/ui/StatCard';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
 import { useAuth } from '../lib/auth';
-import { getGatewayUrl } from '../lib/api';
 
 type TimePeriod = '1h' | '3h' | '24h' | '3d' | '7d' | '30d';
 
@@ -24,15 +25,13 @@ const TIME_OPTIONS: { value: TimePeriod; label: string }[] = [
 ];
 
 async function fetchShadowAIData(tenantId: string) {
-  const { data } = await axios.get(`${getGatewayUrl()}/v1/shadow-ai/data/${tenantId}`);
+  const { data } = await gatewayApi.get(`/v1/shadow-ai/data/${encodeURIComponent(tenantId)}`, { headers: { 'x-tenant-id': tenantId } });
   return data;
 }
 
 async function fetchAllTenants() {
   try {
-    const { data } = await axios.get(`${getGatewayUrl()}/v1/tenants`, {
-      headers: { 'x-tenant-id': 'tenant_platform', authorization: 'Bearer test-key' },
-    });
+    const { data } = await gatewayApi.get('/v1/tenants');
     return Array.isArray(data) ? data : [];
   } catch { return []; }
 }

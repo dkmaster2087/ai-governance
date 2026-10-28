@@ -71,6 +71,10 @@
       <input type="text" id="tenantId" placeholder="tenant_xxx">
     </div>
     <div class="config-row">
+      <label>API Key</label>
+      <input type="password" id="apiKey" placeholder="aegis_..." autocomplete="off">
+    </div>
+    <div class="config-row">
       <label>Mode</label>
       <select id="modeSelect">
         <option value="monitor">Monitor</option>
@@ -81,6 +85,7 @@
       <label>Gateway URL</label>
       <input type="text" id="gatewayUrl" placeholder="http://localhost:3000">
     </div>
+    <div class="config-row" id="managedNote" style="display:none">Managed by your organization</div>
     <button class="btn btn-primary" id="saveBtn">Save & Apply</button>
   </div>
 

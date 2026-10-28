@@ -2,11 +2,11 @@ import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { Shield, Eye, EyeOff, AlertCircle, Sun, Moon, ArrowRight } from 'lucide-react';
-import { useAuth, getRegisteredAccounts } from '../lib/auth';
+import { useAuth, getRegisteredAccounts, AUTH_MODE } from '../lib/auth';
 import { useTheme } from '../lib/theme';
 
 export function LoginPage() {
-  const { login } = useAuth();
+  const { login, completeChallenge } = useAuth();
   const { isDark, toggle: toggleTheme } = useTheme();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
@@ -15,18 +15,28 @@ export function LoginPage() {
   const accounts = getRegisteredAccounts();
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
+  /** Set when Cognito needs one more step to finish signing in. */
+  const [challenge, setChallenge] = useState<'new_password' | 'mfa' | null>(null);
+  const [challengeValue, setChallengeValue] = useState('');
+
+  const handleResult = (result: { success: boolean; error?: string; challenge?: 'new_password' | 'mfa' }) => {
+    if (result.success) {
+      navigate('/overview');
+    } else if (result.challenge) {
+      setChallenge(result.challenge);
+      setChallengeValue('');
+    } else {
+      setError(result.error || 'Login failed');
+    }
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
     setError('');
     setLoading(true);
-    const result = await login(email, password);
+    const result = challenge ? await completeChallenge(challenge, challengeValue) : await login(email, password);
     setLoading(false);
-    if (result.success) {
-      navigate('/overview');
-    } else {
-      setError(result.error || 'Login failed');
-    }
+    handleResult(result);
   };
 
   const fillDemo = (acc: { email: string; password: string }) => {
@@ -82,7 +92,37 @@ export function LoginPage() {
         )}>
           <h2 className={clsx('text-lg font-semibold mb-6', isDark ? 'text-white' : 'text-gray-900')}>Sign in to your account</h2>
 
+          {AUTH_MODE === 'unconfigured' && (
+            <div className="flex items-center gap-2 text-amber-400 text-sm bg-amber-500/10 border border-amber-500/20 rounded-xl px-3 py-2.5 mb-4">
+              <AlertCircle className="w-4 h-4 flex-shrink-0" />
+              Sign-in isn't configured for this deployment (missing Cognito settings).
+            </div>
+          )}
           <form onSubmit={handleSubmit} className="space-y-4">
+            {challenge && (
+              <div>
+                <label className={clsx('block text-xs font-medium mb-1.5', isDark ? 'text-slate-400' : 'text-gray-500')} htmlFor="challenge">
+                  {challenge === 'new_password' ? 'Choose a new password' : 'Code from your authenticator app'}
+                </label>
+                <input
+                  id="challenge"
+                  type={challenge === 'new_password' ? 'password' : 'text'}
+                  inputMode={challenge === 'mfa' ? 'numeric' : undefined}
+                  autoComplete={challenge === 'new_password' ? 'new-password' : 'one-time-code'}
+                  value={challengeValue}
+                  onChange={(e) => setChallengeValue(e.target.value)}
+                  required
+                  autoFocus
+                  className={inputClass}
+                />
+                {challenge === 'new_password' && (
+                  <p className={clsx('text-[11px] mt-1.5', isDark ? 'text-slate-500' : 'text-gray-400')}>
+                    At least 12 characters, with upper and lower case letters, a number and a symbol.
+                  </p>
+                )}
+              </div>
+            )}
+            {!challenge && (<>
             <div>
               <label className={clsx('block text-xs font-medium mb-1.5', isDark ? 'text-slate-400' : 'text-gray-500')} htmlFor="email">
                 Email address
@@ -125,6 +165,8 @@ export function LoginPage() {
               </div>
             </div>
 
+            </>)}
+
             {error && (
               <div className="flex items-center gap-2 text-red-400 text-sm bg-red-500/10 border border-red-500/20 rounded-xl px-3 py-2.5 animate-slide-up">
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
@@ -137,12 +179,13 @@ export function LoginPage() {
               disabled={loading}
               className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-60 text-white font-semibold transition-all duration-200 mt-2 shadow-glow-brand"
             >
-              {loading ? 'Signing in...' : 'Sign In'}
+              {loading ? 'Signing in...' : challenge === 'new_password' ? 'Set Password' : challenge === 'mfa' ? 'Verify' : 'Sign In'}
             </button>
           </form>
         </div>
 
-        {/* Demo accounts */}
+        {/* Demo accounts (local development only) */}
+        {accounts.length > 0 && (
         <div className="mt-8">
           <p className={clsx('text-[11px] text-center mb-3 uppercase tracking-widest font-medium', isDark ? 'text-slate-600' : 'text-gray-400')}>Quick access</p>
           <div className="space-y-2">
@@ -171,6 +214,7 @@ export function LoginPage() {
             ))}
           </div>
         </div>
+        )}
       </div>
     </div>
   );

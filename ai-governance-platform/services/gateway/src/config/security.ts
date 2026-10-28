@@ -22,9 +22,21 @@ export interface SecurityConfig {
   logRequestBodies: boolean;
   /** API key cache TTL in milliseconds */
   keyCacheTtlMs: number;
+  /**
+   * Dev-only sign-in shortcut: accepts `Bearer test-key` with x-tenant-id / x-dev-role headers.
+   * Opt-in via AUTH_DEV_MODE=true and refused outside dev/local/test stages.
+   */
+  devAuth: boolean;
+  /** Cognito settings for verifying dashboard user tokens. Unset = user tokens are rejected. */
+  cognito?: { userPoolId: string; clientId: string };
+  /**
+   * What to do when the policy engine or data protection service can't be reached.
+   * 'closed' blocks the request (default); 'open' lets it through unchecked. Tenants can override.
+   */
+  governanceFailMode: 'open' | 'closed';
 }
 
-const stage = process.env.STAGE || 'dev';
+const DEV_AUTH_STAGES = ['dev', 'local', 'test'];
 
 const DEV_CONFIG: SecurityConfig = {
   enforceApiKeys: false,
@@ -36,6 +48,8 @@ const DEV_CONFIG: SecurityConfig = {
   requireTenantId: true,
   logRequestBodies: false,
   keyCacheTtlMs: 60000,
+  devAuth: false,
+  governanceFailMode: 'closed',
 };
 
 const PROD_CONFIG: SecurityConfig = {
@@ -48,9 +62,12 @@ const PROD_CONFIG: SecurityConfig = {
   requireTenantId: true,
   logRequestBodies: false,
   keyCacheTtlMs: 60000,
+  devAuth: false,
+  governanceFailMode: 'closed',
 };
 
 export function getSecurityConfig(): SecurityConfig {
+  const stage = process.env.STAGE || 'dev';
   const config = stage === 'prod' || stage === 'production' ? { ...PROD_CONFIG } : { ...DEV_CONFIG };
 
   // Override from environment
@@ -63,6 +80,26 @@ export function getSecurityConfig(): SecurityConfig {
   if (process.env.ENFORCE_API_KEYS === 'true') {
     config.enforceApiKeys = true;
     config.allowTestKey = false;
+  }
+
+  if (process.env.AUTH_DEV_MODE === 'true') {
+    if (!DEV_AUTH_STAGES.includes(stage)) {
+      throw new Error(`AUTH_DEV_MODE=true is not allowed when STAGE=${stage}`);
+    }
+    config.devAuth = true;
+  }
+  config.allowTestKey = config.devAuth;
+
+  if (process.env.COGNITO_USER_POOL_ID && process.env.COGNITO_CLIENT_ID) {
+    config.cognito = {
+      userPoolId: process.env.COGNITO_USER_POOL_ID,
+      clientId: process.env.COGNITO_CLIENT_ID,
+    };
+  }
+
+  const failMode = process.env.GOVERNANCE_FAIL_MODE;
+  if (failMode === 'open' || failMode === 'closed') {
+    config.governanceFailMode = failMode;
   }
 
   return config;

@@ -1,9 +1,7 @@
-import axios from 'axios';
+import { createApiClient } from './http';
 
-const scannerApi = axios.create({
-  baseURL: '/scanner',
-  timeout: 600_000, // 10 min timeout for large files
-});
+const scannerApi = createApiClient('/scanner');
+scannerApi.defaults.timeout = 600_000; // 10 min timeout for large files
 
 function getTenantId(): string {
   try {
@@ -20,7 +18,6 @@ export async function scanFiles(files: File[], onProgress?: (pct: number) => voi
   const { data } = await scannerApi.post('/v1/scan/upload', form, {
     headers: {
       'x-tenant-id': getTenantId(),
-      'x-user-id': 'admin',
     },
     onUploadProgress: (e) => {
       if (onProgress && e.total) {

@@ -1,13 +1,16 @@
 import { FastifyInstance } from 'fastify';
 import axios from 'axios';
-import { generateRequestId, createLogger } from '@ai-governance/utils';
-import { NormalizedAIRequest } from '@ai-governance/types';
+import { generateRequestId, createLogger, GovernanceUnavailableError } from '@ai-governance/utils';
+import { NormalizedAIRequest, PolicyEvaluationResult } from '@ai-governance/types';
 import { PolicyEngineClient } from '../clients/policy-engine.client';
 import { AuditService } from '../services/audit.service';
+import { requireAccess } from '../auth/guards';
+import { TenantSettingsService } from '../services/tenant-settings.service';
 
 const logger = createLogger('gateway:proxy');
 const policyClient = new PolicyEngineClient();
 const auditService = new AuditService();
+const tenantSettings = new TenantSettingsService();
 
 /** Known AI provider targets — maps a slug to the real base URL */
 const PROVIDER_TARGETS: Record<string, string> = {
@@ -17,25 +20,49 @@ const PROVIDER_TARGETS: Record<string, string> = {
   mistral: 'https://api.mistral.ai',
 };
 
-/** Try to extract messages/prompt from various AI provider request formats */
-function extractMessages(body: any): { role: 'user' | 'assistant' | 'system'; content: string }[] {
-  // OpenAI / standard format
-  if (body?.messages && Array.isArray(body.messages)) {
-    return body.messages.map((m: any) => ({ role: (m.role || 'user') as 'user' | 'assistant' | 'system', content: String(m.content || '') }));
+type Role = 'user' | 'assistant' | 'system';
+
+/**
+ * Flatten message content to text. Providers accept either a string or an array of content blocks
+ * (e.g. [{ type: 'text', text }, { type: 'image', ... }, { type: 'tool_result', content: [...] }]).
+ */
+export function contentToText(content: unknown): string {
+  if (content == null) return '';
+  if (typeof content === 'string') return content;
+  if (Array.isArray(content)) return content.map(contentToText).filter(Boolean).join('\n');
+  if (typeof content === 'object') {
+    const block = content as Record<string, unknown>;
+    if (typeof block.text === 'string') return block.text;
+    if (block.content !== undefined) return contentToText(block.content);
+    if (block.input !== undefined) return contentToText(typeof block.input === 'string' ? block.input : JSON.stringify(block.input));
+    return '';
   }
-  // Anthropic format
-  if (body?.prompt) {
-    return [{ role: 'user' as const, content: String(body.prompt) }];
+  return String(content);
+}
+
+/** Extract the text a policy should see from the common AI provider request formats. */
+export function extractMessages(body: any): { role: Role; content: string }[] {
+  const out: { role: Role; content: string }[] = [];
+  // Anthropic Messages API puts the system prompt at the top level
+  if (body?.system !== undefined) {
+    const system = contentToText(body.system);
+    if (system) out.push({ role: 'system', content: system });
   }
-  // Single content field
-  if (body?.content) {
-    return [{ role: 'user' as const, content: String(body.content) }];
+  if (Array.isArray(body?.messages)) {
+    for (const m of body.messages) {
+      const role: Role = m?.role === 'assistant' || m?.role === 'system' ? m.role : 'user';
+      out.push({ role, content: contentToText(m?.content) });
+    }
+    return out;
   }
-  // Cohere format
-  if (body?.message) {
-    return [{ role: 'user' as const, content: String(body.message) }];
+  // Legacy completions / single-field formats
+  for (const field of ['prompt', 'input', 'content', 'message']) {
+    if (body?.[field] !== undefined) {
+      out.push({ role: 'user', content: contentToText(body[field]) });
+      return out;
+    }
   }
-  return [];
+  return out;
 }
 
 function extractModel(body: any): string {
@@ -54,7 +81,7 @@ export async function proxyRoutes(app: FastifyInstance) {
    * but through Aegis. Aegis inspects, governs, logs, and forwards.
    * The client's own Authorization header is forwarded to the provider.
    */
-  app.all('/proxy/:provider/*', async (request, reply) => {
+  app.all('/proxy/:provider/*', { preHandler: requireAccess({ scopes: ['chat'] }) }, async (request, reply) => {
     const provider = (request.params as any).provider as string;
     const path = (request.params as any)['*'] as string;
     const targetBase = PROVIDER_TARGETS[provider.toLowerCase()];
@@ -78,6 +105,7 @@ export async function proxyRoutes(app: FastifyInstance) {
     // --- 1. Extract prompt for policy evaluation ---
     const messages = extractMessages(body);
     const modelId = extractModel(body);
+    const auditMetadata: Record<string, string> = { proxyMode: 'true' };
 
     if (messages.length > 0) {
       const normalizedRequest: NormalizedAIRequest = {
@@ -92,8 +120,19 @@ export async function proxyRoutes(app: FastifyInstance) {
         timestamp: new Date().toISOString(),
       };
 
-      // --- 2. Policy evaluation ---
-      const policyResult = await policyClient.evaluate(normalizedRequest);
+      // --- 2. Policy evaluation (respecting the tenant's fail mode if the engine is down) ---
+      let policyResult: PolicyEvaluationResult;
+      try {
+        policyResult = await policyClient.evaluate(normalizedRequest);
+      } catch (err) {
+        if (!(err instanceof GovernanceUnavailableError) || (await tenantSettings.getFailMode(tenantId)) !== 'open') {
+          logger.error('Proxy request blocked: policy engine unavailable', { requestId, tenantId });
+          return reply.status(503).send({ error: 'Governance check unavailable', code: 'GOVERNANCE_UNAVAILABLE', requestId });
+        }
+        logger.warn('Policy check skipped (tenant fails open)', { requestId, tenantId });
+        auditMetadata.governanceDegraded = 'policy_evaluation';
+        policyResult = { allowed: true, action: 'allow', triggeredRules: [], riskScore: 0 };
+      }
 
       if (!policyResult.allowed) {
         logger.info('Proxy request blocked by policy', { requestId, tenantId, reason: policyResult.reason });
@@ -131,12 +170,14 @@ export async function proxyRoutes(app: FastifyInstance) {
 
       // --- 4. Log to audit ---
       if (messages.length > 0) {
-        const inputTokens = providerResponse.data?.usage?.prompt_tokens || 0;
-        const outputTokens = providerResponse.data?.usage?.completion_tokens || 0;
+        // OpenAI reports prompt/completion tokens; Anthropic reports input/output tokens.
+        const usage = providerResponse.data?.usage ?? {};
+        const inputTokens = usage.prompt_tokens ?? usage.input_tokens ?? 0;
+        const outputTokens = usage.completion_tokens ?? usage.output_tokens ?? 0;
         const auditReq: NormalizedAIRequest = {
           requestId, tenantId, userId, appId: request.appId || 'proxy',
           provider: provider as any, modelId, messages,
-          metadata: { proxyMode: 'true' }, timestamp: new Date().toISOString(),
+          metadata: auditMetadata, timestamp: new Date().toISOString(),
         };
         await auditService.log(
           auditReq,
@@ -167,7 +208,7 @@ export async function proxyRoutes(app: FastifyInstance) {
   });
 
   /** List supported proxy providers */
-  app.get('/proxy/providers', async () => ({
+  app.get('/proxy/providers', { preHandler: requireAccess({ roles: ['tenant_admin', 'tenant_auditor', 'tenant_user'], scopes: ['chat'] }) }, async () => ({
     providers: Object.keys(PROVIDER_TARGETS),
     usage: 'POST /v1/proxy/:provider/<original-api-path>',
     example: 'POST /v1/proxy/openai/v1/chat/completions',

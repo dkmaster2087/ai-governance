@@ -50,7 +50,10 @@ function RequireAuditAccess({ children }: { children: React.ReactNode }) {
 }
 
 export default function App() {
-  const { user, isChatOnly, isPlatformAdmin } = useAuth();
+  const { user, restoring, isChatOnly, isPlatformAdmin } = useAuth();
+
+  // Don't redirect to sign-in while an existing session is still being restored.
+  if (restoring) return null;
 
   if (!user) {
     return (

@@ -1,6 +1,6 @@
 import axios from 'axios';
 import { NormalizedAIRequest, NormalizedAIResponse } from '@ai-governance/types';
-import { createLogger } from '@ai-governance/utils';
+import { createLogger, GovernanceUnavailableError } from '@ai-governance/utils';
 
 const logger = createLogger('gateway:data-protection-client');
 
@@ -16,10 +16,8 @@ export class DataProtectionClient {
       );
       return response.data;
     } catch (err) {
-      logger.warn('Data protection service unavailable, proceeding without masking', {
-        requestId: request.requestId,
-      });
-      return request;
+      logger.error('Data protection service unavailable', { requestId: request.requestId });
+      throw new GovernanceUnavailableError('data-protection');
     }
   }
 
@@ -32,8 +30,8 @@ export class DataProtectionClient {
       );
       return result.data;
     } catch (err) {
-      logger.warn('Response filtering unavailable', { requestId: response.requestId });
-      return response;
+      logger.error('Response filtering unavailable', { requestId: response.requestId });
+      throw new GovernanceUnavailableError('data-protection');
     }
   }
 }

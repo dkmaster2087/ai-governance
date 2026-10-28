@@ -1,4 +1,11 @@
-import { createContext, useContext, useState, ReactNode } from 'react';
+import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
+import type { CognitoUserSession } from 'amazon-cognito-identity-js';
+import { AUTH_MODE, DEV_AUTH } from './auth-mode';
+import { createApiClient, setAuthHeaderProvider, UNAUTHORIZED_EVENT } from './http';
+import * as cognito from './cognito';
+import * as devAccounts from './dev-accounts';
+
+export { AUTH_MODE } from './auth-mode';
 
 export type UserRole = 'platform_admin' | 'tenant_admin' | 'tenant_auditor' | 'tenant_user';
 
@@ -11,9 +18,20 @@ export interface AuthUser {
   tenantName: string;
 }
 
+/** Result of a sign-in step. `challenge` means the user must provide something else to finish. */
+export interface LoginResult {
+  success: boolean;
+  error?: string;
+  challenge?: 'new_password' | 'mfa';
+}
+
 interface AuthContextValue {
   user: AuthUser | null;
-  login: (email: string, password: string) => Promise<{ success: boolean; error?: string }>;
+  /** True while an existing session is being restored on page load. */
+  restoring: boolean;
+  login: (email: string, password: string) => Promise<LoginResult>;
+  /** Answer a sign-in challenge (a new password, or an authenticator code). */
+  completeChallenge: (challenge: 'new_password' | 'mfa', value: string) => Promise<LoginResult>;
   logout: () => void;
   isPlatformAdmin: boolean;
   isTenantAdmin: boolean;
@@ -26,36 +44,13 @@ interface AuthContextValue {
   isChatOnly: boolean;
 }
 
-const BUILTIN_ACCOUNTS: Record<string, { password: string; user: AuthUser }> = {
-  'admin@platform.com': {
-    password: 'admin123',
-    user: { userId: 'user_platform_admin', name: 'Platform Admin', email: 'admin@platform.com', role: 'platform_admin', tenantId: 'tenant_platform', tenantName: 'Aegis AI Platform' },
-  },
-  'admin@democorp.com': {
-    password: 'demo123',
-    user: { userId: 'user_demo_admin', name: 'Demo Corp Admin', email: 'admin@democorp.com', role: 'tenant_admin', tenantId: 'tenant_demo', tenantName: 'Demo Corp' },
-  },
-  'admin@healthco.com': {
-    password: 'health123',
-    user: { userId: 'user_healthco_admin', name: 'HealthCo Admin', email: 'admin@healthco.com', role: 'tenant_admin', tenantId: 'tenant_healthco', tenantName: 'HealthCo Systems' },
-  },
-};
-
+const ROLES: UserRole[] = ['platform_admin', 'tenant_admin', 'tenant_auditor', 'tenant_user'];
 const STORAGE_KEY = 'aegis_auth_user';
-const DYNAMIC_ACCOUNTS_KEY = 'aegis_dynamic_accounts';
 
-function getAllAccounts(): Record<string, { password: string; user: AuthUser }> {
-  return { ...BUILTIN_ACCOUNTS, ...getDynamicAccounts() };
-}
+/** Users live in the identity provider, not in this app, unless we're on local demo accounts. */
+export const usersManagedExternally = !DEV_AUTH;
 
-function getDynamicAccounts(): Record<string, { password: string; user: AuthUser }> {
-  try {
-    const stored = localStorage.getItem(DYNAMIC_ACCOUNTS_KEY);
-    if (!stored) return {};
-    const accounts = JSON.parse(stored) as Record<string, { password: string; user: AuthUser }>;
-    return accounts;
-  } catch { return {}; }
-}
+// ── Demo-account helpers (no-ops outside local dev) ─────────────────────────
 
 export function registerTenantAccount(opts: {
   email: string;
@@ -64,83 +59,150 @@ export function registerTenantAccount(opts: {
   role: UserRole;
   tenantId: string;
   tenantName: string;
-}) {
-  const accounts = getDynamicAccounts();
-  accounts[opts.email.toLowerCase()] = {
-    password: opts.password,
-    user: {
-      userId: `user_${Date.now().toString(36)}`,
-      name: opts.name,
-      email: opts.email,
-      role: opts.role,
-      tenantId: opts.tenantId,
-      tenantName: opts.tenantName,
-    },
-  };
-  localStorage.setItem(DYNAMIC_ACCOUNTS_KEY, JSON.stringify(accounts));
+}): boolean {
+  if (!DEV_AUTH) return false;
+  devAccounts.registerDevAccount(opts);
+  return true;
 }
 
-/** Get users for a specific tenant */
 export function getTenantUsers(tenantId: string): AuthUser[] {
-  const all = getAllAccounts();
-  return Object.values(all)
-    .filter((a) => a.user.tenantId === tenantId)
-    .map((a) => a.user);
+  return DEV_AUTH ? devAccounts.getDevTenantUsers(tenantId) : [];
 }
 
-/** Delete a user account */
 export function deleteUserAccount(email: string) {
-  const accounts = getDynamicAccounts();
-  delete accounts[email.toLowerCase()];
-  localStorage.setItem(DYNAMIC_ACCOUNTS_KEY, JSON.stringify(accounts));
+  if (DEV_AUTH) devAccounts.deleteDevAccount(email);
 }
 
 export function getRegisteredAccounts(): Array<{ email: string; password: string; role: string; badge: string }> {
-  const roleLabels: Record<UserRole, string> = {
-    platform_admin: 'Platform Admin',
-    tenant_admin: 'Tenant Admin',
-    tenant_auditor: 'Auditor',
-    tenant_user: 'User',
+  return DEV_AUTH ? devAccounts.getDevAccounts() : [];
+}
+
+// ── Session plumbing ────────────────────────────────────────────────────────
+
+function readStoredUser(): AuthUser | null {
+  try {
+    const stored = localStorage.getItem(STORAGE_KEY);
+    return stored ? (JSON.parse(stored) as AuthUser) : null;
+  } catch {
+    return null;
+  }
+}
+
+function userFromSession(session: CognitoUserSession): AuthUser | null {
+  const claims = session.getIdToken().decodePayload() as Record<string, string>;
+  const role = claims['custom:role'] as UserRole;
+  const tenantId = claims['custom:tenantId'];
+  if (!tenantId || !ROLES.includes(role)) return null;
+  const name = [claims.given_name, claims.family_name].filter(Boolean).join(' ') || claims.email || 'User';
+  return {
+    userId: claims.sub,
+    name,
+    email: claims.email ?? '',
+    role,
+    tenantId,
+    tenantName: role === 'platform_admin' ? 'Aegis AI Platform' : tenantId,
   };
-  const all = getAllAccounts();
-  return Object.entries(all).map(([email, acc]) => ({
-    email,
-    password: acc.password,
-    role: roleLabels[acc.user.role] || acc.user.role,
-    badge: acc.user.tenantName,
-  }));
+}
+
+// Every API client asks this for credentials before each request.
+setAuthHeaderProvider(async () => {
+  if (AUTH_MODE === 'cognito') {
+    const session = await cognito.currentSession();
+    return session ? { authorization: `Bearer ${session.getIdToken().getJwtToken()}` } : {};
+  }
+  if (AUTH_MODE === 'dev') {
+    const user = readStoredUser();
+    if (!user) return {};
+    // Matches the gateway's AUTH_DEV_MODE, which only exists in dev/local stages.
+    return {
+      authorization: 'Bearer test-key',
+      'x-tenant-id': user.tenantId,
+      'x-dev-role': user.role,
+      'x-user-id': user.userId,
+    };
+  }
+  return {};
+});
+
+const gatewayApi = createApiClient('/api');
+
+/** Best-effort lookup of the tenant's display name (the token only carries the ID). */
+async function withTenantName(user: AuthUser): Promise<AuthUser> {
+  if (user.role === 'platform_admin') return user;
+  try {
+    const { data } = await gatewayApi.get(`/v1/tenants/${encodeURIComponent(user.tenantId)}`);
+    return data?.name ? { ...user, tenantName: data.name } : user;
+  } catch {
+    return user;
+  }
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [user, setUser] = useState<AuthUser | null>(() => {
-    try {
-      const stored = localStorage.getItem(STORAGE_KEY);
-      if (!stored) return null;
-      const parsed = JSON.parse(stored);
-      // Re-check against current accounts to pick up role migrations
-      const accounts = getAllAccounts();
-      const current = accounts[parsed.email?.toLowerCase()];
-      if (current && current.user.role !== parsed.role) {
-        const updated = { ...parsed, role: current.user.role };
-        localStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
-        return updated;
-      }
-      return parsed;
-    } catch { return null; }
-  });
+  const [user, setUser] = useState<AuthUser | null>(() => (AUTH_MODE === 'dev' ? readStoredUser() : null));
+  const [restoring, setRestoring] = useState(AUTH_MODE === 'cognito');
 
-  const login = async (email: string, password: string) => {
-    const account = getAllAccounts()[email.toLowerCase()];
-    if (!account) return { success: false, error: 'No account found with that email' };
-    if (account.password !== password) return { success: false, error: 'Incorrect password' };
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(account.user));
-    setUser(account.user);
+  const signedIn = useCallback(async (session: CognitoUserSession): Promise<LoginResult> => {
+    const base = userFromSession(session);
+    if (!base) {
+      cognito.signOut();
+      return { success: false, error: 'Your account has no tenant or role assigned. Contact your administrator.' };
+    }
+    setUser(base);
+    setUser(await withTenantName(base));
     return { success: true };
+  }, []);
+
+  // Restore an existing Cognito session on load.
+  useEffect(() => {
+    if (AUTH_MODE !== 'cognito') return;
+    let cancelled = false;
+    cognito.currentSession().then(async (session) => {
+      if (!cancelled && session) await signedIn(session);
+      if (!cancelled) setRestoring(false);
+    });
+    return () => { cancelled = true; };
+  }, [signedIn]);
+
+  const logout = useCallback(() => {
+    if (AUTH_MODE === 'cognito') cognito.signOut();
+    localStorage.removeItem(STORAGE_KEY);
+    setUser(null);
+  }, []);
+
+  // The backend rejected our credentials (expired or revoked): sign out.
+  useEffect(() => {
+    window.addEventListener(UNAUTHORIZED_EVENT, logout);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, logout);
+  }, [logout]);
+
+  const fromStep = async (step: cognito.SignInStep): Promise<LoginResult> => {
+    switch (step.status) {
+      case 'signed_in': return signedIn(step.session);
+      case 'new_password_required': return { success: false, challenge: 'new_password' };
+      case 'mfa_required': return { success: false, challenge: 'mfa' };
+      default: return { success: false, error: step.error };
+    }
   };
 
-  const logout = () => { localStorage.removeItem(STORAGE_KEY); setUser(null); };
+  const login = async (email: string, password: string): Promise<LoginResult> => {
+    if (AUTH_MODE === 'cognito') return fromStep(await cognito.signIn(email, password));
+    if (AUTH_MODE === 'dev') {
+      const account = devAccounts.getAllAccounts()[email.toLowerCase()];
+      if (!account || account.password !== password) return { success: false, error: 'Incorrect email or password' };
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(account.user));
+      setUser(account.user);
+      return { success: true };
+    }
+    return { success: false, error: 'Sign-in is not configured for this deployment.' };
+  };
+
+  const completeChallenge = async (challenge: 'new_password' | 'mfa', value: string): Promise<LoginResult> => {
+    if (AUTH_MODE !== 'cognito') return { success: false, error: 'Not supported' };
+    const step = challenge === 'new_password' ? await cognito.completeNewPassword(value) : await cognito.submitMfaCode(value);
+    return fromStep(step);
+  };
 
   const role = user?.role;
   const isPlatformAdmin = role === 'platform_admin';
@@ -150,7 +212,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   return (
     <AuthContext.Provider value={{
-      user, login, logout,
+      user, restoring, login, completeChallenge, logout,
       isPlatformAdmin,
       isTenantAdmin,
       isAuditor,

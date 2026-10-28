@@ -2,6 +2,8 @@ import { FastifyInstance } from 'fastify';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { createLogger } from '@ai-governance/utils';
+import { z } from 'zod';
+import { requireAccess, requireTenantParam, TENANT_READ } from '../auth/guards';
 
 const logger = createLogger('gateway:shadow-ai');
 
@@ -17,22 +19,41 @@ interface ShadowAIEvent {
   userId?: string;
 }
 
+const eventsBodySchema = z.object({
+  tenantId: z.string().optional(),
+  events: z.array(z.object({
+    id: z.string().max(128).optional(),
+    timestamp: z.string().max(64).optional(),
+    domain: z.string().min(1).max(255),
+    url: z.string().max(2048).optional(),
+    type: z.string().max(64).optional(),
+    method: z.string().max(32).optional(),
+    blocked: z.boolean(),
+    userId: z.string().max(256).optional(),
+  })).min(1).max(500),
+});
+
 export async function shadowAIRoutes(app: FastifyInstance) {
   const dynamo = DynamoDBDocumentClient.from(
     new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' })
   );
   const table = process.env.SHADOW_AI_TABLE || 'ai-gov-shadow-ai-dev';
 
-  // Receive events from browser extension
-  app.post('/shadow-ai/events', async (request, reply) => {
-    const { tenantId, events } = request.body as { tenantId: string; events: ShadowAIEvent[] };
-    if (!tenantId || !events?.length) {
-      return reply.status(400).send({ error: 'tenantId and events required' });
+  // Receive events from the browser extension. The tenant comes from the extension's API key.
+  app.post('/shadow-ai/events', { preHandler: requireAccess({ scopes: ['shadow_ai:ingest'] }) }, async (request, reply) => {
+    const parsed = eventsBodySchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'Invalid events payload', code: 'INVALID_EVENTS', issues: parsed.error.issues });
+    }
+    const { tenantId: bodyTenantId, events } = parsed.data;
+    const tenantId = request.tenantId;
+    if (bodyTenantId && bodyTenantId !== tenantId) {
+      return reply.status(403).send({ error: 'API key does not belong to this tenant', code: 'TENANT_MISMATCH' });
     }
 
     logger.info('Receiving shadow AI events', { tenantId, count: events.length });
 
-    // Store each event
+    let stored = 0;
     for (const evt of events) {
       try {
         await dynamo.send(new PutCommand({
@@ -50,16 +71,17 @@ export async function shadowAIRoutes(app: FastifyInstance) {
             ttl: Math.floor(Date.now() / 1000) + 30 * 86400, // 30 day TTL
           },
         }));
+        stored++;
       } catch (err) {
         logger.warn('Failed to store shadow AI event', { error: err });
       }
     }
 
-    return reply.status(200).send({ received: events.length });
+    return reply.status(200).send({ received: events.length, stored });
   });
 
   // Get shadow AI config for a tenant (used by extension)
-  app.get('/shadow-ai/config/:tenantId', async (request) => {
+  app.get('/shadow-ai/config/:tenantId', { preHandler: [requireAccess({ roles: ['tenant_admin', 'tenant_auditor'], scopes: ['shadow_ai:ingest'] }), requireTenantParam] }, async (request) => {
     const { tenantId } = request.params as { tenantId: string };
     // In production this would come from a config table
     // For now return defaults that the extension can override
@@ -78,7 +100,7 @@ export async function shadowAIRoutes(app: FastifyInstance) {
   });
 
   // Get aggregated shadow AI data for dashboard
-  app.get('/shadow-ai/data/:tenantId', async (request) => {
+  app.get('/shadow-ai/data/:tenantId', { preHandler: [requireAccess(TENANT_READ), requireTenantParam] }, async (request) => {
     const { tenantId } = request.params as { tenantId: string };
 
     let events: ShadowAIEvent[] = [];

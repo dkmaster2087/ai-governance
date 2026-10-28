@@ -37,3 +37,11 @@ export class RateLimitError extends AppError {
     this.name = 'RateLimitError';
   }
 }
+
+/** A governance dependency (policy engine, data protection) could not be reached, and the tenant fails closed. */
+export class GovernanceUnavailableError extends AppError {
+  constructor(public readonly dependency: 'policy-engine' | 'data-protection', message?: string) {
+    super('GOVERNANCE_UNAVAILABLE', message ?? `Request blocked: ${dependency} is unavailable`, 503);
+    this.name = 'GovernanceUnavailableError';
+  }
+}

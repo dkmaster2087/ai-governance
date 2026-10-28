@@ -3,11 +3,15 @@ import { createLogger } from '@ai-governance/utils';
 import { ModelConfigRepository } from '../repositories/model-config.repository';
 import { BedrockProvider } from '../providers/bedrock.provider';
 import { OpenAIProvider } from '../providers/openai.provider';
+import { ProviderKeyStore, apiKeyHint } from './provider-key.store';
 
 const logger = createLogger('gateway:model-config-service');
 
 export class ModelConfigService {
-  private repo = new ModelConfigRepository();
+  constructor(
+    private repo = new ModelConfigRepository(),
+    private keys = new ProviderKeyStore(),
+  ) {}
 
   async getModelsForTenant(tenantId: string): Promise<ModelConfig[]> {
     const configs = await this.repo.getForTenant(tenantId);
@@ -18,30 +22,68 @@ export class ModelConfigService {
   async createModel(
     tenantId: string,
     data: Omit<ModelConfig, 'modelConfigId' | 'createdAt' | 'updatedAt' | 'tenantId'>,
-    createdBy: string
+    createdBy: string,
+    apiKey?: string
   ): Promise<ModelConfig> {
     // If this is set as default, unset any existing default
     if (data.isDefault) {
       await this.clearDefaultForTenant(tenantId);
     }
-    const config = await this.repo.create({ ...data, tenantId, createdBy });
+    const { apiKeySecretArn: _ignored, ...safeData } = data as typeof data & { apiKeySecretArn?: string };
+    const config = await this.repo.create({ ...safeData, tenantId, createdBy });
+    if (apiKey) {
+      const arn = await this.keys.save(tenantId, config.modelConfigId, apiKey);
+      const hint = apiKeyHint(apiKey);
+      await this.repo.setApiKeySecret(tenantId, config.modelConfigId, arn, hint);
+      return this.sanitize({ ...config, apiKeySecretArn: arn, apiKeyHint: hint });
+    }
     return this.sanitize(config);
   }
 
   async updateModel(
     tenantId: string,
     modelConfigId: string,
-    data: Partial<ModelConfig>
+    data: Partial<ModelConfig>,
+    apiKey?: string
   ): Promise<ModelConfig> {
     if (data.isDefault) {
       await this.clearDefaultForTenant(tenantId);
     }
-    const updated = await this.repo.update(tenantId, modelConfigId, data);
+    // Secret references are only ever set by this service, never from client input.
+    const { apiKeySecretArn: _ignored, ...safeData } = data;
+    const updated = await this.repo.update(tenantId, modelConfigId, safeData);
+    if (apiKey) {
+      const arn = await this.keys.save(tenantId, modelConfigId, apiKey);
+      await this.repo.setApiKeySecret(tenantId, modelConfigId, arn, apiKeyHint(apiKey));
+      return this.sanitize({ ...updated, apiKeyHint: apiKeyHint(apiKey) });
+    }
     return this.sanitize(updated);
   }
 
   async deleteModel(tenantId: string, modelConfigId: string): Promise<void> {
+    const existing = await this.repo.getById(tenantId, modelConfigId);
     await this.repo.delete(tenantId, modelConfigId);
+    await this.keys.remove(existing);
+  }
+
+  /**
+   * The provider API key for a model config. Plaintext keys left by older versions are moved
+   * into Secrets Manager the first time they're used.
+   */
+  async resolveProviderKey(config: ModelConfig | undefined): Promise<string | undefined> {
+    if (!config) return undefined;
+    const legacyKey = (config as ModelConfig & { apiKeyStored?: string }).apiKeyStored;
+    if (legacyKey && !config.apiKeySecretArn) {
+      try {
+        const arn = await this.keys.save(config.tenantId, config.modelConfigId, legacyKey);
+        await this.repo.setApiKeySecret(config.tenantId, config.modelConfigId, arn);
+        logger.info('Moved legacy provider key into Secrets Manager', { modelConfigId: config.modelConfigId });
+      } catch (err) {
+        logger.error('Failed to move legacy provider key into Secrets Manager', { modelConfigId: config.modelConfigId, error: (err as Error).message });
+      }
+      return legacyKey;
+    }
+    return this.keys.resolve(config);
   }
 
   async testModel(tenantId: string, modelConfigId: string): Promise<ModelTestResult> {
@@ -68,7 +110,7 @@ export class ModelConfigService {
       if (config.provider === 'bedrock') {
         await new BedrockProvider().complete(testRequest);
       } else if (config.provider === 'openai' || config.provider === 'anthropic') {
-        const storedKey = (config as any).apiKeyStored;
+        const storedKey = await this.resolveProviderKey(config);
         await new OpenAIProvider().complete(testRequest, storedKey);
       }
 

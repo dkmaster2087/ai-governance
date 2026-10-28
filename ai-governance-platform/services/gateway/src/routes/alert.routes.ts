@@ -2,6 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { AlertingService, AlertType, AlertSeverity, AlertChannel } from '../services/alerting.service';
 import { randomUUID } from 'crypto';
+import { requireAccess, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
 
 const createRuleSchema = z.object({
   name: z.string().min(1),
@@ -17,12 +18,12 @@ export async function alertRoutes(app: FastifyInstance) {
   const alerting = new AlertingService();
 
   /** List alert rules for tenant */
-  app.get('/alerts/rules', async (request) => {
+  app.get('/alerts/rules', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
     return alerting.getRules(request.tenantId);
   });
 
   /** Create a new alert rule */
-  app.post('/alerts/rules', async (request, reply) => {
+  app.post('/alerts/rules', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const body = createRuleSchema.parse(request.body);
     const rule = {
       ruleId: `alert_${randomUUID().slice(0, 8)}`,
@@ -42,12 +43,12 @@ export async function alertRoutes(app: FastifyInstance) {
   });
 
   /** Get default rules template */
-  app.get('/alerts/defaults', async (request) => {
+  app.get('/alerts/defaults', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
     return alerting.getDefaultRules(request.tenantId, 'https://your-webhook-url.com/alerts');
   });
 
   /** Manually trigger a test alert */
-  app.post('/alerts/test', async (request, reply) => {
+  app.post('/alerts/test', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const body = request.body as any;
     const event = await alerting.trigger(request.tenantId, body.type || 'budget_threshold', {
       title: body.title || 'Test Alert',

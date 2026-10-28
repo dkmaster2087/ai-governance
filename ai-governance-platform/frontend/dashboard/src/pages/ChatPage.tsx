@@ -5,9 +5,11 @@ import clsx from 'clsx';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
 import { useAuth } from '../lib/auth';
-import { fetchModelConfigs, getGatewayUrl } from '../lib/api';
+import { fetchModelConfigs } from '../lib/api';
 import { mockModelConfigs } from '../lib/mock-data';
-import axios from 'axios';
+import { createApiClient } from '../lib/http';
+
+const gatewayApi = createApiClient('/api');
 
 interface Message {
   id: string;
@@ -65,20 +67,15 @@ export function ChatPage() {
     setSending(true);
 
     try {
-      const resp = await axios.post(
-        `${getGatewayUrl()}/v1/chat/completions`,
+      const resp = await gatewayApi.post(
+        '/v1/chat/completions',
         {
           model: selectedModel,
           messages: [...messages, userMsg].map((m) => ({ role: m.role, content: m.content })),
           max_tokens: 2048,
         },
         {
-          headers: {
-            'Content-Type': 'application/json',
-            'x-tenant-id': user?.tenantId || 'tenant_demo',
-            'x-user-id': user?.userId || 'anonymous',
-            authorization: 'Bearer test-key',
-          },
+          headers: { 'Content-Type': 'application/json' },
           timeout: 60000,
         }
       );

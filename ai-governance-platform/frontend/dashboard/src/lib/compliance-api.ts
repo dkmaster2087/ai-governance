@@ -1,6 +1,6 @@
-import axios from 'axios';
+import { createApiClient } from './http';
 
-const complianceApi = axios.create({ baseURL: '/api/compliance' });
+const complianceApi = createApiClient('/api/compliance');
 
 function getTenantId(): string {
   try {

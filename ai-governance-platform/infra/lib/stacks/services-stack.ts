@@ -18,6 +18,7 @@ interface ServicesStackProps extends cdk.StackProps {
   metricsTable: dynamodb.Table;
   auditLogBucket: s3.Bucket;
   userPool: cognito.UserPool;
+  userPoolClient: cognito.UserPoolClient;
   apiKeysTable: dynamodb.Table;
   alertsTable: dynamodb.Table;
   shadowAiTable: dynamodb.Table;
@@ -125,6 +126,9 @@ export class ServicesStack extends cdk.Stack {
     metricsTable.grantReadData(analyticsService.taskDefinition.taskRole);
     auditLogBucket.grantRead(analyticsService.taskDefinition.taskRole);
 
+    // Customers' provider API keys live in Secrets Manager under this prefix.
+    const providerKeysPrefix = `${prefix}/${stage}/provider-keys`;
+
     // --- Gateway Service (public-facing) ---
     this.gatewayService = this.createService({
       id: 'Gateway',
@@ -148,10 +152,26 @@ export class ServicesStack extends cdk.Stack {
         POLICY_ENGINE_URL: `http://${internalAlb.loadBalancerDnsName}:3001`,
         DATA_PROTECTION_URL: `http://${internalAlb.loadBalancerDnsName}:3002`,
         ALLOWED_ORIGINS: '', // Set per environment
+        COGNITO_USER_POOL_ID: props.userPool.userPoolId,
+        COGNITO_CLIENT_ID: props.userPoolClient.userPoolClientId,
+        PROVIDER_KEYS_SECRET_PREFIX: providerKeysPrefix,
+        GOVERNANCE_FAIL_MODE: 'closed',
       },
     });
 
     // Grant gateway permissions
+    this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(
+      new iam.PolicyStatement({
+        actions: [
+          'secretsmanager:CreateSecret',
+          'secretsmanager:PutSecretValue',
+          'secretsmanager:GetSecretValue',
+          'secretsmanager:DeleteSecret',
+          'secretsmanager:TagResource',
+        ],
+        resources: [`arn:aws:secretsmanager:${this.region}:${this.account}:secret:${providerKeysPrefix}/*`],
+      })
+    );
     auditLogBucket.grantWrite(this.gatewayService.taskDefinition.taskRole);
     tenantsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     modelsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);

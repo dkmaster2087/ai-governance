@@ -1,7 +1,9 @@
 document.addEventListener('DOMContentLoaded', async () => {
   // Read directly from storage first (more reliable than messaging)
   const stored = await chrome.storage.local.get(['config', 'eventLog']);
-  const config = stored.config || {};
+  let managed = {};
+  try { managed = (await chrome.storage.managed.get(null)) || {}; } catch { managed = {}; }
+  const config = { ...(stored.config || {}), ...managed };
   const eventLog = stored.eventLog || [];
 
   // Mode badge
@@ -21,6 +23,16 @@ document.addEventListener('DOMContentLoaded', async () => {
   document.getElementById('tenantId').value = config.tenantId || '';
   document.getElementById('modeSelect').value = mode;
   document.getElementById('gatewayUrl').value = config.gatewayUrl || 'http://localhost:3000';
+  // Never echo the stored key back into the page; leave blank to keep the current one.
+  document.getElementById('apiKey').placeholder = config.apiKey ? 'Saved (enter to replace)' : 'aegis_...';
+
+  // Fields pushed by IT policy are read-only here.
+  const fieldIds = { tenantId: 'tenantId', mode: 'modeSelect', gatewayUrl: 'gatewayUrl', apiKey: 'apiKey' };
+  const managedKeys = Object.keys(managed);
+  for (const k of managedKeys) {
+    if (fieldIds[k]) document.getElementById(fieldIds[k]).disabled = true;
+  }
+  if (managedKeys.length > 0) document.getElementById('managedNote').style.display = '';
 
   // Dashboard link
   const platformUrl = config.platformUrl || 'http://localhost:5174';
@@ -41,8 +53,8 @@ document.addEventListener('DOMContentLoaded', async () => {
       const ago = formatAgo(time);
       return `<div class="event">
         <span class="dot ${evt.blocked ? 'blocked' : 'detected'}"></span>
-        <span class="domain">${evt.domain}</span>
-        <span>${evt.type || ''}</span>
+        <span class="domain">${escapeHtml(evt.domain)}</span>
+        <span>${escapeHtml(evt.type || '')}</span>
         <span class="time">${ago}</span>
       </div>`;
     }).join('');
@@ -56,6 +68,9 @@ document.addEventListener('DOMContentLoaded', async () => {
       mode: document.getElementById('modeSelect').value,
       gatewayUrl: document.getElementById('gatewayUrl').value.trim(),
     };
+    const newKey = document.getElementById('apiKey').value.trim();
+    if (newKey) newConfig.apiKey = newKey;
+    for (const k of managedKeys) delete newConfig[k];
     await chrome.storage.local.set({ config: newConfig });
     // Also notify background worker
     chrome.runtime.sendMessage({ type: 'UPDATE_CONFIG', config: newConfig });
@@ -82,4 +97,8 @@ function formatAgo(date) {
   const hours = Math.floor(minutes / 60);
   if (hours < 24) return `${hours}h ago`;
   return `${Math.floor(hours / 24)}d ago`;
+}
+
+function escapeHtml(value) {
+  return String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 }
