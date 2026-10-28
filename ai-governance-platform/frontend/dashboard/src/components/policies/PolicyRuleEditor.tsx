@@ -15,7 +15,6 @@ export type RuleType =
   | 'data_classification'
   | 'rate_limit'
   | 'cost_limit'
-  | 'region_restriction'
   | 'audit_logging';
 
 export type RuleAction = 'block' | 'mask' | 'warn' | 'allow';
@@ -42,7 +41,6 @@ const RULE_TYPES: { value: RuleType; label: string; defaultAction: RuleAction; d
   { value: 'data_classification', label: 'Data Classification', defaultAction: 'warn',  description: 'Flag prompts matching sensitive patterns' },
   { value: 'rate_limit',          label: 'Rate Limit',          defaultAction: 'block', description: 'Enforce request rate limits' },
   { value: 'cost_limit',          label: 'Cost Limit',          defaultAction: 'warn',  description: 'Alert when cost thresholds are exceeded' },
-  { value: 'region_restriction',  label: 'Region Restriction',  defaultAction: 'block', description: 'Restrict which AWS regions can be used' },
   { value: 'audit_logging',       label: 'Audit Logging',       defaultAction: 'allow', description: 'Configure audit logging behaviour' },
 ];
 
@@ -60,7 +58,6 @@ const DEFAULT_CONFIGS: Record<RuleType, Record<string, unknown>> = {
   data_classification: { patterns: [] },
   rate_limit:          { requestsPerMinute: 60, requestsPerDay: 10000 },
   cost_limit:          { monthlyLimitUSD: 500, alertThresholdPercent: 80 },
-  region_restriction:  { allowedRegions: ['us-east-1'] },
   audit_logging:       { logLevel: 'full' },
 };
 
@@ -380,19 +377,6 @@ function RuleRow({
                   onChange={(e) => setConfig('alertThresholdPercent', +e.target.value)}
                   className={clsx('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500', t.card, t.border, t.heading)} />
               </div>
-            </div>
-          )}
-
-          {rule.type === 'region_restriction' && (
-            <div>
-              <p className={clsx('text-xs mb-2', t.muted)}>Allowed AWS regions (comma-separated)</p>
-              <input
-                type="text"
-                value={((rule.config.allowedRegions as string[]) ?? []).join(', ')}
-                onChange={(e) => setConfig('allowedRegions', e.target.value.split(',').map((s) => s.trim()).filter(Boolean))}
-                placeholder="us-east-1, eu-west-1"
-                className={clsx('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500', t.card, t.border, t.heading)}
-              />
             </div>
           )}
 

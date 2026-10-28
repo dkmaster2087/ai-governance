@@ -7,7 +7,7 @@ import { CONTROL_DETAILS } from '../../lib/control-details';
 import { useTheme } from '../../lib/theme';
 import { themeClasses } from '../../lib/theme-classes';
 
-type RuleType = 'keyword_block' | 'pii_detection' | 'model_restriction' | 'data_classification' | 'rate_limit' | 'cost_limit' | 'audit_logging' | 'region_restriction' | 'encryption' | 'access_control';
+type RuleType = 'keyword_block' | 'pii_detection' | 'model_restriction' | 'data_classification' | 'rate_limit' | 'cost_limit' | 'audit_logging' | 'encryption' | 'access_control';
 type RuleAction = 'block' | 'mask' | 'warn' | 'allow';
 
 interface CustomRule {
@@ -35,7 +35,6 @@ const RULE_TYPE_OPTIONS: { value: RuleType; label: string; description: string }
   { value: 'data_classification',label: 'Data Classification', description: 'Flag prompts matching sensitive data patterns' },
   { value: 'rate_limit',         label: 'Rate Limit',          description: 'Enforce request rate limits' },
   { value: 'cost_limit',         label: 'Cost Limit',          description: 'Alert or block when cost thresholds are exceeded' },
-  { value: 'region_restriction', label: 'Region Restriction',  description: 'Restrict which AWS regions AI requests can use' },
   { value: 'audit_logging',      label: 'Audit Logging',       description: 'Configure what gets logged for compliance' },
 ];
 
@@ -46,7 +45,6 @@ const DEFAULT_CONFIGS: Record<RuleType, Record<string, unknown>> = {
   data_classification: { patterns: [] },
   rate_limit:          { requestsPerMinute: 60 },
   cost_limit:          { monthlyLimitUSD: 500 },
-  region_restriction:  { allowedRegions: ['us-east-1'] },
   audit_logging:       { logLevel: 'full' },
   encryption:          { requireTls: true },
   access_control:      { requireApiKey: true },
@@ -159,7 +157,7 @@ export function CustomPolicyBuilder({ preloadedControlIds = [], onClose, onSaved
                 type="text"
                 value={name}
                 onChange={(e) => setName(e.target.value)}
-                placeholder="e.g. GDPR + Custom Controls"
+                placeholder="e.g. HIPAA + Custom Controls"
                 className={clsx('w-full border rounded-lg px-4 py-2.5 text-sm focus:outline-none focus:border-brand-500', t.input)}
               />
             </div>
@@ -352,22 +350,6 @@ export function CustomPolicyBuilder({ preloadedControlIds = [], onClose, onSaved
                       type="number"
                       value={(newRule.config?.requestsPerMinute as number) ?? 60}
                       onChange={(e) => setNewRule((r) => ({ ...r, config: { requestsPerMinute: +e.target.value } }))}
-                      className={clsx('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500', t.card, t.border, t.heading)}
-                    />
-                  </div>
-                )}
-
-                {newRule.type === 'region_restriction' && (
-                  <div>
-                    <label className={clsx('block text-xs mb-1.5', t.muted)}>Allowed regions (comma-separated)</label>
-                    <input
-                      type="text"
-                      value={((newRule.config?.allowedRegions as string[]) ?? []).join(', ')}
-                      onChange={(e) => setNewRule((r) => ({
-                        ...r,
-                        config: { allowedRegions: e.target.value.split(',').map((s) => s.trim()).filter(Boolean) },
-                      }))}
-                      placeholder="us-east-1, eu-west-1"
                       className={clsx('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500', t.card, t.border, t.heading)}
                     />
                   </div>

@@ -6,7 +6,6 @@ import { aiRoutes } from './routes/ai.routes';
 import { healthRoutes } from './routes/health.routes';
 import { contactRoutes } from './routes/contact.routes';
 import { modelConfigRoutes } from './routes/model-config.routes';
-import { multimodalRoutes } from './routes/multimodal.routes';
 import { tenantRoutes } from './routes/tenant.routes';
 import { shadowAIRoutes } from './routes/shadow-ai.routes';
 import { costRoutes } from './routes/cost.routes';
@@ -54,7 +53,6 @@ export async function buildApp() {
   await app.register(contactRoutes, { prefix: '/public' });
   await app.register(aiRoutes, { prefix: '/v1' });
   await app.register(modelConfigRoutes, { prefix: '/v1' });
-  await app.register(multimodalRoutes, { prefix: '/v1' });
   await app.register(tenantRoutes, { prefix: '/v1' });
   await app.register(shadowAIRoutes, { prefix: '/v1' });
   await app.register(costRoutes, { prefix: '/v1' });

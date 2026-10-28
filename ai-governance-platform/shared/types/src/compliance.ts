@@ -1,4 +1,4 @@
-export type ComplianceFramework = 'nist-ai-rmf' | 'soc2' | 'iso-42001' | 'gdpr' | 'hipaa' | 'pipeda' | 'eu-ai-act' | 'colorado-sb205';
+export type ComplianceFramework = 'soc2' | 'hipaa' | 'eu-ai-act';
 
 export type ComplianceStatus = 'enabled' | 'disabled' | 'partial';
 

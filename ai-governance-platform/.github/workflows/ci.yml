@@ -94,7 +94,7 @@ jobs:
     if: github.ref == 'refs/heads/main'
     strategy:
       matrix:
-        service: [gateway, policy-engine, analytics, content-scanner, data-protection, reporting-agent]
+        service: [gateway, policy-engine, analytics, data-protection, reporting-agent]
     steps:
       - uses: actions/checkout@v4
 

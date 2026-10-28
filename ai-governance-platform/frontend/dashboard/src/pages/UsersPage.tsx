@@ -9,7 +9,7 @@ import { ConfirmDialog } from '../components/ui/ConfirmDialog';
 const ROLE_CONFIG: Record<string, { label: string; icon: typeof Shield; color: string; description: string }> = {
   tenant_admin:   { label: 'Admin',   icon: Shield,         color: 'text-brand-400 bg-brand-600/20', description: 'Full access to tenant dashboard' },
   tenant_auditor: { label: 'Auditor', icon: Eye,            color: 'text-yellow-400 bg-yellow-500/20', description: 'View audit logs and compliance' },
-  tenant_user:    { label: 'User',    icon: MessageSquare,  color: 'text-accent-400 bg-accent-500/20', description: 'AI chat access only' },
+  tenant_user:    { label: 'User',    icon: MessageSquare,  color: 'text-accent-400 bg-accent-500/20', description: 'Uses AI through approved apps; no dashboard access' },
 };
 
 export function UsersPage() {

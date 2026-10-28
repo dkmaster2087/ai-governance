@@ -5,7 +5,6 @@ import react from '@vitejs/plugin-react';
 const GATEWAY = process.env.DEV_GATEWAY_URL || 'http://localhost:3000';
 const POLICY_ENGINE = process.env.DEV_POLICY_ENGINE_URL || 'http://localhost:3001';
 const ANALYTICS = process.env.DEV_ANALYTICS_URL || 'http://localhost:3003';
-const SCANNER = process.env.DEV_SCANNER_URL || 'http://localhost:3004';
 
 export default defineConfig({
   plugins: [react()],
@@ -35,11 +34,6 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/analytics/, ''),
       },
-      '/scanner': {
-        target: SCANNER,
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/scanner/, ''),
-      },
       // Health check proxies for Platform Health page
       '/health/gateway': {
         target: GATEWAY,
@@ -53,11 +47,6 @@ export default defineConfig({
       },
       '/health/analytics': {
         target: ANALYTICS,
-        changeOrigin: true,
-        rewrite: () => '/health',
-      },
-      '/health/content-scanner': {
-        target: SCANNER,
         changeOrigin: true,
         rewrite: () => '/health',
       },

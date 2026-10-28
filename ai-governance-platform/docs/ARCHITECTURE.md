@@ -9,8 +9,8 @@ In managed mode, Aegis owns the AI provider credentials. Clients authenticate wi
 │                           CLIENT LAYER                                  │
 │                                                                         │
 │   ┌──────────────┐   ┌──────────────┐   ┌──────────────┐               │
-│   │  Web App /   │   │  Aegis AI    │   │  Backend     │               │
-│   │  Dashboard   │   │  Chat UI     │   │  Service     │               │
+│   │  Web App /   │   │  Your        │   │  Backend     │               │
+│   │  Dashboard   │   │  Internal    │   │  Service     │               │
 │   └──────┬───────┘   └──────┬───────┘   └──────┬───────┘               │
 │          │                  │                   │                        │
 │          │   POST /v1/chat/completions          │                        │
@@ -261,9 +261,4 @@ Both modes share the same backend infrastructure for governance:
                │   │   │  :5174   │    │    :5173      │   │
                │   │   └──────────┘    └──────────────┘   │
                │   └──────────────────────────────────────┘
-               │
-               │   ┌──────────────────────────────────────┐
-               └──▶│      CONTENT SCANNER :3004            │
-                   │  (Standalone file scanning service)   │
-                   └──────────────────────────────────────┘
 ```

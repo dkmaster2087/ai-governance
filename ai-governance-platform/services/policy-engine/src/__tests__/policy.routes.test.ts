@@ -28,7 +28,7 @@ describe('Policy Routes — Framework Auto-Disable', () => {
       const repo = new PolicyRepository();
       const compliance = new ComplianceService();
 
-      // Policy linked to gdpr
+      // Policy linked to hipaa
       MockRepo.prototype.getPoliciesForTenant.mockResolvedValue([
         {
           policyId: 'p1',
@@ -40,7 +40,7 @@ describe('Policy Routes — Framework Auto-Disable', () => {
           createdAt: '',
           updatedAt: '',
           createdBy: 'admin',
-          sourceFramework: 'gdpr',
+          sourceFramework: 'hipaa',
         } as any,
       ]);
       MockRepo.prototype.deletePolicy.mockResolvedValue();
@@ -56,7 +56,7 @@ describe('Policy Routes — Framework Auto-Disable', () => {
       }
 
       expect(MockRepo.prototype.deletePolicy).toHaveBeenCalledWith('p1', 'tenant_1');
-      expect(MockCompliance.prototype.disableFramework).toHaveBeenCalledWith('tenant_1', 'gdpr');
+      expect(MockCompliance.prototype.disableFramework).toHaveBeenCalledWith('tenant_1', 'hipaa');
     });
 
     it('does NOT disable any framework when a non-linked policy is deleted', async () => {

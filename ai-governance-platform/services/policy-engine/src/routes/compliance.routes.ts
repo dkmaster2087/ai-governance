@@ -1,9 +1,18 @@
 import { FastifyInstance } from 'fastify';
 import { ComplianceFramework } from '@ai-governance/types';
-import { ComplianceService } from '../compliance/compliance.service';
+import { ComplianceService, ALL_PACKS } from '../compliance/compliance.service';
 
 export async function complianceRoutes(app: FastifyInstance) {
   const service = new ComplianceService();
+
+  // Unknown frameworks (including ones removed from the product) get a 404 instead of a crash.
+  // Disabling is still allowed so old state can be cleaned up.
+  app.addHook('preHandler', async (request, reply) => {
+    const { framework } = (request.params ?? {}) as { framework?: string };
+    if (framework && !(framework in ALL_PACKS) && !request.url.includes('/disable/')) {
+      return reply.status(404).send({ error: 'Unknown compliance framework', code: 'UNKNOWN_FRAMEWORK', framework });
+    }
+  });
 
   // List all available compliance packs
   app.get('/packs', async () => {

@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
 import {
   LayoutDashboard, ScrollText, ShieldCheck, Cpu, Settings,
-  Shield, Menu, Bell, BadgeCheck, ScanLine,
-  Building2, Eye, LogOut, Sun, Moon, MessageSquare, Users, DollarSign,
+  Shield, Menu, Bell, BadgeCheck,
+  Building2, Eye, LogOut, Sun, Moon, Users, DollarSign,
   ChevronLeft, Search, Key, BarChart3, Activity,
 } from 'lucide-react';
 import clsx from 'clsx';
@@ -25,11 +25,9 @@ const platformAdminNav = [
 // Tenant admin — full governance dashboard
 const tenantAdminNav = [
   { label: 'Overview',        href: '/overview',        icon: LayoutDashboard },
-  { label: 'AI Chat',         href: '/chat',            icon: MessageSquare },
   { label: 'Audit Logs',      href: '/audit-logs',      icon: ScrollText },
   { label: 'Policies',        href: '/policies',        icon: ShieldCheck },
   { label: 'Compliance',      href: '/compliance',      icon: BadgeCheck },
-  { label: 'Content Scanner', href: '/content-scanner', icon: ScanLine },
   { label: 'Shadow AI',       href: '/shadow-ai',       icon: Eye },
   { label: 'Models',          href: '/models',          icon: Cpu },
   { label: 'Cost & Billing',  href: '/cost',            icon: DollarSign },
@@ -40,12 +38,7 @@ const tenantAdminNav = [
 
 const auditorNav = [
   { label: 'Overview',        href: '/overview',        icon: LayoutDashboard },
-  { label: 'AI Chat',         href: '/chat',            icon: MessageSquare },
   { label: 'Audit Logs',      href: '/audit-logs',      icon: ScrollText },
-];
-
-const userNav = [
-  { label: 'AI Chat',         href: '/chat',            icon: MessageSquare },
 ];
 
 function getNavForRole(role: string) {
@@ -53,7 +46,7 @@ function getNavForRole(role: string) {
     case 'platform_admin': return platformAdminNav;
     case 'tenant_admin':   return tenantAdminNav;
     case 'tenant_auditor': return auditorNav;
-    default:               return userNav;
+    default:               return [];
   }
 }
 

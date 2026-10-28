@@ -79,7 +79,7 @@ describe('CustomPolicyBuilder', () => {
   });
 
   it('shows preloaded control count when controls provided', () => {
-    wrap(<CustomPolicyBuilder {...baseProps} preloadedControlIds={['SOC2-P3.1', 'GDPR-ART25']} />);
+    wrap(<CustomPolicyBuilder {...baseProps} preloadedControlIds={['SOC2-P3.1', 'HIPAA-164.312A']} />);
     expect(screen.getByText(/2 controls? pre-loaded/i)).toBeInTheDocument();
   });
 
@@ -122,8 +122,8 @@ describe('PolicyModal', () => {
   });
 
   it('shows framework warning banner when policy has sourceFramework', () => {
-    wrap(<PolicyModal policy={{ policyId: 'p1', name: 'GDPR Controls', description: '', enabled: true, rules: [], sourceFramework: 'gdpr' }} {...baseProps} />);
-    expect(screen.getByText(/linked to the gdpr compliance framework/i)).toBeInTheDocument();
+    wrap(<PolicyModal policy={{ policyId: 'p1', name: 'HIPAA Controls', description: '', enabled: true, rules: [], sourceFramework: 'hipaa' }} {...baseProps} />);
+    expect(screen.getByText(/linked to the hipaa compliance framework/i)).toBeInTheDocument();
   });
 
   it('does not show framework warning for non-linked policies', () => {

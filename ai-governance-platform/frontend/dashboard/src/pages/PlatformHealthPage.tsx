@@ -20,7 +20,6 @@ const SERVICE_DEFS = [
   { name: 'Gateway',         port: 3000, icon: Shield,   proxyPath: '/health/gateway' },
   { name: 'Policy Engine',   port: 3001, icon: Shield,   proxyPath: '/health/policy-engine' },
   { name: 'Analytics',       port: 3003, icon: Activity,  proxyPath: '/health/analytics' },
-  { name: 'Content Scanner', port: 3004, icon: Server,   proxyPath: '/health/content-scanner' },
 ];
 
 async function checkAllServices(): Promise<ServiceHealth[]> {

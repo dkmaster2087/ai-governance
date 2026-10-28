@@ -74,3 +74,16 @@ describe('policy routes', () => {
     await app.close();
   });
 });
+
+describe('compliance routes', () => {
+  it('returns 404 for frameworks that are not in v1', async () => {
+    const { complianceRoutes } = await import('../routes/compliance.routes');
+    const app = Fastify();
+    await app.register(complianceRoutes, { prefix: '/v1/compliance' });
+    const removed = await app.inject({ method: 'GET', url: '/v1/compliance/packs/gdpr' });
+    expect(removed.statusCode).toBe(404);
+    const kept = await app.inject({ method: 'GET', url: '/v1/compliance/packs/hipaa' });
+    expect(kept.statusCode).toBe(200);
+    await app.close();
+  });
+});

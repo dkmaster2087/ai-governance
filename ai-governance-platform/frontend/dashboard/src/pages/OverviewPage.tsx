@@ -116,7 +116,7 @@ export function OverviewPage() {
           icon={ScanEye}
           color="yellow"
           sub="Masked before AI"
-          href="/content-scanner"
+          href="/audit-logs"
         />
         <StatCard
           label="Compliance Frameworks"

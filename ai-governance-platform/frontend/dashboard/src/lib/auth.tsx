@@ -40,8 +40,8 @@ interface AuthContextValue {
   isAdmin: boolean;
   /** Can view audit logs */
   canViewAudit: boolean;
-  /** Can only access chat */
-  isChatOnly: boolean;
+  /** False for tenant_user, who uses AI through apps and has no dashboard. */
+  hasDashboardAccess: boolean;
 }
 
 const ROLES: UserRole[] = ['platform_admin', 'tenant_admin', 'tenant_auditor', 'tenant_user'];
@@ -208,7 +208,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const isPlatformAdmin = role === 'platform_admin';
   const isTenantAdmin = role === 'tenant_admin';
   const isAuditor = role === 'tenant_auditor';
-  const isChatOnly = role === 'tenant_user';
+  const hasDashboardAccess = !!role && role !== 'tenant_user';
 
   return (
     <AuthContext.Provider value={{
@@ -218,7 +218,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       isAuditor,
       isAdmin: isPlatformAdmin || isTenantAdmin,
       canViewAudit: isPlatformAdmin || isTenantAdmin || isAuditor,
-      isChatOnly,
+      hasDashboardAccess,
     }}>
       {children}
     </AuthContext.Provider>

@@ -21,7 +21,6 @@ const RULE_TYPE_LABEL: Record<string, string> = {
   data_classification: 'Data Classification',
   rate_limit:          'Rate Limit',
   cost_limit:          'Cost Limit',
-  region_restriction:  'Region Restriction',
   audit_logging:       'Audit Logging',
 };
 

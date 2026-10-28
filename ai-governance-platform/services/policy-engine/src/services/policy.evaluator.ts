@@ -108,26 +108,6 @@ export class PolicyEvaluator {
         }
         return piiPatterns.some((p) => p.test(originalText));
       }
-      case 'region_restriction': {
-        // Block if the request targets a model/provider outside allowed regions
-        const allowedRegions = (rule.config.allowedRegions as string[]) || [];
-        if (allowedRegions.length === 0) return false;
-        // Check provider — OpenAI is US-based, Bedrock uses the configured AWS region
-        const providerRegion = request.provider === 'bedrock'
-          ? (process.env.AWS_REGION || 'us-east-1')
-          : 'us-east-1'; // OpenAI/Anthropic default to US
-        return !allowedRegions.some((r) => providerRegion.startsWith(r.split('-').slice(0, 2).join('-')) || providerRegion === r);
-      }
-      case 'bias_detection': {
-        // Flag prompts that reference protected classes in decision-making contexts
-        const protectedClasses = (rule.config.protectedClasses as string[]) || [
-          'race', 'gender', 'age', 'disability', 'religion', 'national origin', 'sexual orientation',
-        ];
-        const decisionKeywords = ['reject', 'deny', 'approve', 'hire', 'fire', 'promote', 'demote', 'score', 'rank', 'prefer', 'exclude', 'discriminate'];
-        const hasProtectedClass = protectedClasses.some((pc) => promptText.includes(pc.toLowerCase()));
-        const hasDecisionContext = decisionKeywords.some((dk) => promptText.includes(dk.toLowerCase()));
-        return hasProtectedClass && hasDecisionContext;
-      }
       case 'rate_limit': {
         // Rate limiting is handled at the Fastify level — this is a pass-through
         return false;

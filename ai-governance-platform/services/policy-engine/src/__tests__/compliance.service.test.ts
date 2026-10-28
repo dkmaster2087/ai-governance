@@ -23,19 +23,9 @@ describe('ComplianceService', () => {
 
   // ── Pack definitions ────────────────────────────────────────────────
 
-  it('returns all 8 compliance packs', () => {
-    const packs = service.getAllPacks();
-    expect(packs).toHaveLength(8);
-  });
-
-  it('includes all expected frameworks', () => {
-    const frameworks = service.getAllPacks().map((p) => p.framework);
-    expect(frameworks).toContain('nist-ai-rmf');
-    expect(frameworks).toContain('soc2');
-    expect(frameworks).toContain('gdpr');
-    expect(frameworks).toContain('hipaa');
-    expect(frameworks).toContain('iso-42001');
-    expect(frameworks).toContain('pipeda');
+  it('returns the 3 v1 compliance packs', () => {
+    const frameworks = service.getAllPacks().map((p) => p.framework).sort();
+    expect(frameworks).toEqual(['eu-ai-act', 'hipaa', 'soc2']);
   });
 
   it('each pack has controls and required rules', () => {
@@ -48,9 +38,9 @@ describe('ComplianceService', () => {
   });
 
   it('getPack returns correct pack', () => {
-    const pack = service.getPack('gdpr');
-    expect(pack.framework).toBe('gdpr');
-    expect(pack.name).toContain('GDPR');
+    const pack = service.getPack('hipaa');
+    expect(pack.framework).toBe('hipaa');
+    expect(pack.name).toContain('HIPAA');
   });
 
   // ── Enable framework — 1:1 policy linking ──────────────────────────
@@ -67,17 +57,17 @@ describe('ComplianceService', () => {
       createdAt: '',
       updatedAt: '',
       createdBy: 'admin',
-      sourceFramework: 'gdpr',
+      sourceFramework: 'eu-ai-act',
     } as any);
 
-    const result = await service.enableFramework('tenant_1', 'gdpr', 'admin');
+    const result = await service.enableFramework('tenant_1', 'eu-ai-act', 'admin');
 
     expect(result.status).toBe('enabled');
     expect(result.policyCreated).toBe(true);
     expect(result.linkedPolicyId).toBe('new-policy-id');
     expect(MockRepo.prototype.createPolicy).toHaveBeenCalledTimes(1);
     expect(MockRepo.prototype.createPolicy).toHaveBeenCalledWith(
-      expect.objectContaining({ sourceFramework: 'gdpr', enabled: true })
+      expect.objectContaining({ sourceFramework: 'eu-ai-act', enabled: true })
     );
   });
 
@@ -92,10 +82,10 @@ describe('ComplianceService', () => {
       createdAt: '',
       updatedAt: '',
       createdBy: 'admin',
-      sourceFramework: 'gdpr',
+      sourceFramework: 'eu-ai-act',
     } as any);
 
-    const result = await service.enableFramework('tenant_1', 'gdpr', 'admin');
+    const result = await service.enableFramework('tenant_1', 'eu-ai-act', 'admin');
 
     expect(result.status).toBe('enabled');
     expect(result.policyCreated).toBe(false);
@@ -148,7 +138,7 @@ describe('ComplianceService', () => {
   it('returns no disabledPolicyId when no linked policy exists', async () => {
     MockRepo.prototype.findByFramework.mockResolvedValue(null);
 
-    const result = await service.disableFramework('tenant_1', 'pipeda');
+    const result = await service.disableFramework('tenant_1', 'soc2');
 
     expect(result.disabledPolicyId).toBeUndefined();
     expect(MockRepo.prototype.setEnabled).not.toHaveBeenCalled();
@@ -173,7 +163,7 @@ describe('ComplianceService', () => {
 
   it('assessCompliance returns disabled when no rules present', async () => {
     MockRepo.prototype.getPoliciesForTenant.mockResolvedValue([]);
-    const result = await service.assessCompliance('tenant_1', 'nist-ai-rmf');
+    const result = await service.assessCompliance('tenant_1', 'hipaa');
     expect(result.status).toBe('disabled');
     expect(result.passedControls).toBe(0);
   });

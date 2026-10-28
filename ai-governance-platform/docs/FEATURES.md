@@ -23,11 +23,11 @@ The central routing layer. All AI traffic flows through the gateway, which norma
 ### Policy Engine
 Real-time policy evaluation on every request. Runs before the request reaches any AI provider.
 
-- **Rule types**: Keyword blocking, PII detection, model restrictions, content classification, region enforcement
+- **Rule types**: Keyword blocking, PII detection, model restrictions, data classification (custom patterns)
 - **Per-tenant policies**: Each tenant configures their own rules
 - **Framework-linked policies**: Enabling a compliance framework auto-creates a linked policy with required controls
 - **1:1 framework-policy linking**: Disable a framework → disables linked policy. Delete a policy → disables linked framework.
-- **Fail-open configurable**: If the policy engine is unreachable, requests can be allowed with a warning (configurable per tenant)
+- **Fail-closed by default**: If the policy engine or PII service is unreachable, requests are blocked; a tenant can opt to allow them instead, flagged in the audit log
 
 ### PII & Data Protection
 Sensitive data detection and masking before prompts reach AI providers, and response scanning on the way back.
@@ -42,16 +42,13 @@ Sensitive data detection and masking before prompts reach AI providers, and resp
 ## Compliance & Audit
 
 ### Compliance Frameworks
-Six industry-standard frameworks built in, each with predefined controls and auto-generated policies.
+Three frameworks built in, each with predefined controls and auto-generated policies.
 
 | Framework | Description |
 |-----------|-------------|
-| **NIST AI RMF** | US AI risk management framework — govern, map, measure, manage |
 | **SOC 2** | Service organization controls for security, availability, processing integrity |
-| **GDPR** | EU General Data Protection Regulation — data minimization, consent, right to erasure |
 | **HIPAA** | US healthcare — PHI detection, BAA requirements, access controls |
-| **ISO 42001** | International AI management system standard |
-| **PIPEDA** | Canadian Personal Information Protection and Electronic Documents Act |
+| **EU AI Act** | EU AI regulation — risk management, data governance, logging, transparency |
 
 - Enable a framework → auto-creates a linked policy with required rules
 - Disable a framework → auto-disables the linked policy
@@ -114,17 +111,6 @@ Chrome Manifest V3 extension that monitors and blocks unauthorized AI tool usage
 
 ---
 
-## Content Scanner
-Upload documents for PII and sensitive content scanning.
-
-- **File support**: Up to 500MB uploads with progress tracking
-- **Text extraction**: Capped at 1MB for performance
-- **Upload progress**: Real-time percentage bar
-- **10-minute timeout**: For large file processing
-- **Findings report**: Detailed results with PII type, location, and severity
-
----
-
 ## Multi-Tenant Architecture
 
 ### Tenant Management
@@ -148,9 +134,9 @@ Four roles with different access levels:
 | Role | Access |
 |------|--------|
 | **Platform Admin** | Super admin dashboard — tenants, licenses, analytics, cost, shadow AI, platform health, settings |
-| **Tenant Admin** | Full tenant dashboard — AI chat, audit logs, policies, compliance, models, cost, users, content scanner, shadow AI, license, settings |
-| **Tenant Auditor** | Overview, AI chat, audit logs |
-| **Tenant User** | AI chat only |
+| **Tenant Admin** | Full tenant dashboard — audit logs, policies, compliance, models, cost, users, shadow AI, license, settings |
+| **Tenant Auditor** | Overview, audit logs |
+| **Tenant User** | No dashboard; uses AI through approved apps via the gateway |
 
 - Route guards enforce access per role
 - Dynamic sidebar shows only permitted navigation items
@@ -184,7 +170,7 @@ Deep-dive into any tenant with 9 tabs:
 ### Platform Health
 Real-time service health monitoring.
 
-- **Pings**: Gateway (3000), Policy Engine (3001), Analytics (3003), Content Scanner (3004)
+- **Pings**: Gateway (3000), Policy Engine (3001), Analytics (3003)
 - **Status**: Healthy/Unhealthy with measured latency
 - **Error display**: Shows error message when a service is unreachable
 - **Auto-refresh**: Every 30 seconds with manual refresh button
@@ -200,17 +186,6 @@ Real-time service health monitoring.
 - **Status**: Active, Testing, Disabled — with badges
 - **Connection testing**: Verify API key and endpoint connectivity
 - **Info tooltips**: Hover for model limit details
-
----
-
-## AI Chat (Governed)
-Built-in chat interface that routes through the governance gateway.
-
-- **Model selector**: Choose from tenant's active models
-- **Policy enforcement**: Blocked requests show policy violation message
-- **PII masking**: Sensitive data masked before reaching the provider
-- **Audit logging**: Every message logged with tokens, latency, model
-- **Keyboard shortcuts**: Enter to send, Shift+Enter for new line
 
 ---
 
@@ -248,7 +223,6 @@ The corporate proxy redirects AI provider domains to the Aegis gateway. The IDE 
 | Gateway | 3000 | Fastify, TypeScript |
 | Policy Engine | 3001 | Fastify, TypeScript |
 | Analytics | 3003 | Fastify, TypeScript |
-| Content Scanner | 3004 | Fastify, TypeScript |
 
 ### Frontend
 | App | Port | Technology |

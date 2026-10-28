@@ -88,21 +88,5 @@ services:
       localstack:
         condition: service_healthy
 
-  # ── Content Scanner ────────────────────────────────────────────────────────
-  content-scanner:
-    build:
-      context: .
-      dockerfile: services/content-scanner/Dockerfile
-    container_name: ai-gov-content-scanner
-    ports:
-      - '3004:3004'
-    env_file: .env.local
-    environment:
-      - AWS_ENDPOINT_URL=http://localstack:4566
-      - SCAN_TEMP_BUCKET=ai-gov-audit-logs-dev-000000000000
-    depends_on:
-      localstack:
-        condition: service_healthy
-
 volumes:
   localstack-data:

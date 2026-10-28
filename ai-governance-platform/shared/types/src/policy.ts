@@ -5,9 +5,7 @@ export type PolicyRuleType =
   | 'model_restriction'
   | 'rate_limit'
   | 'data_classification'
-  | 'region_restriction'
   | 'cost_limit'
-  | 'bias_detection'
   | 'transparency'
   | 'audit_logging'
   | 'access_control';

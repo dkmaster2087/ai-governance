@@ -3,26 +3,16 @@ import { createLogger } from '@ai-governance/utils';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, QueryCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
 import { PolicyRepository } from '../repositories/policy.repository';
-import { nistAiRmfPack } from './packs/nist-ai-rmf';
 import { soc2Pack } from './packs/soc2';
-import { gdprPack } from './packs/gdpr';
 import { hipaaPack } from './packs/hipaa';
-import { iso42001Pack } from './packs/iso-42001';
-import { pipedaPack } from './packs/pipeda';
 import { euAiActPack } from './packs/eu-ai-act';
-import { coloradoSb205Pack } from './packs/colorado-sb205';
 
 const logger = createLogger('policy-engine:compliance');
 
 export const ALL_PACKS: Record<ComplianceFramework, CompliancePack> = {
-  'nist-ai-rmf': nistAiRmfPack,
   'soc2': soc2Pack,
-  'gdpr': gdprPack,
   'hipaa': hipaaPack,
-  'iso-42001': iso42001Pack,
-  'pipeda': pipedaPack,
   'eu-ai-act': euAiActPack,
-  'colorado-sb205': coloradoSb205Pack,
 };
 
 // Pre-built policy rules that get created when a framework is enabled
@@ -83,15 +73,6 @@ const FRAMEWORK_RULES: Record<string, object> = {
     description: 'Enforce rate limits to prevent abuse',
     config: { requestsPerMinute: 100, requestsPerDay: 10000 },
   },
-  rule_eu_data_residency: {
-    ruleId: 'rule_eu_data_residency',
-    type: 'region_restriction',
-    action: 'block',
-    priority: 1,
-    enabled: true,
-    description: 'Block requests that would send EU personal data outside EU regions',
-    config: { allowedRegions: ['eu-west-1', 'eu-central-1', 'eu-west-3'] },
-  },
   rule_phi_detection: {
     ruleId: 'rule_phi_detection',
     type: 'pii_detection',
@@ -132,17 +113,6 @@ const FRAMEWORK_RULES: Record<string, object> = {
     enabled: true,
     description: 'Flag AI-generated content for transparency disclosure',
     config: { addDisclosure: true },
-  },
-  rule_bias_detection: {
-    ruleId: 'rule_bias_detection',
-    type: 'bias_detection',
-    action: 'warn',
-    priority: 3,
-    enabled: true,
-    description: 'Detect potential algorithmic discrimination in prompts targeting protected classes',
-    config: {
-      protectedClasses: ['race', 'gender', 'age', 'disability', 'religion', 'national origin', 'sexual orientation'],
-    },
   },
   rule_log_retention_90d: {
     ruleId: 'rule_log_retention_90d',
