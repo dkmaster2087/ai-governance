@@ -33,6 +33,18 @@ export interface Policy {
   sourceFramework?: string;
 }
 
+/**
+ * What the stopping rule matched, as a short excerpt for evidence. Personal data around the match is
+ * masked; when the match itself is personal data, `hit` is a label such as "[SSN]".
+ */
+export interface PolicyEvidence {
+  ruleId: string;
+  ruleType: PolicyRuleType;
+  before: string;
+  hit: string;
+  after: string;
+}
+
 export interface PolicyEvaluationResult {
   allowed: boolean;
   action: PolicyAction;
@@ -40,4 +52,6 @@ export interface PolicyEvaluationResult {
   maskedContent?: string;
   reason?: string;
   riskScore: number;
+  /** Present when a rule stopped the request. */
+  evidence?: PolicyEvidence;
 }

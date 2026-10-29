@@ -3,6 +3,7 @@ import { useAuth } from './lib/auth';
 import { Shell } from './components/layout/Shell';
 import { LoginPage } from './pages/LoginPage';
 import { GatewayPage } from './pages/GatewayPage';
+import { StoppedPage } from './pages/StoppedPage';
 import { PlatformDashboardPage } from './pages/PlatformDashboardPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
 import { PoliciesPage } from './pages/PoliciesPage';
@@ -99,6 +100,7 @@ export default function App() {
           <Route path="/login" element={<Navigate to="/gateway" replace />} />
           <Route path="/overview" element={<Navigate to="/gateway" replace />} />
           <Route path="/gateway" element={<GatewayPage />} />
+          <Route path="/stopped" element={<StoppedPage />} />
           <Route path="/audit-logs" element={<RequireAuditAccess><AuditLogsPage /></RequireAuditAccess>} />
           <Route path="/policies" element={<RequireAdmin><PoliciesPage /></RequireAdmin>} />
           <Route path="/compliance" element={<RequireAdmin><CompliancePage /></RequireAdmin>} />

@@ -14,11 +14,12 @@ interface RoleNav {
 }
 
 // Direction I navigation. Rules and Evidence use the existing Policies and Audit Logs pages
-// until their redesigned versions land; "Stopped" joins once it exists.
+// until their redesigned versions land.
 const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
   tenant_admin: {
     primary: [
       { label: 'Gateway', href: '/gateway' },
+      { label: 'Stopped', href: '/stopped' },
       { label: 'Shadow AI', href: '/shadow-ai' },
       { label: 'Rules', href: '/policies' },
       { label: 'Evidence', href: '/audit-logs' },
@@ -35,6 +36,7 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
   tenant_auditor: {
     primary: [
       { label: 'Gateway', href: '/gateway' },
+      { label: 'Stopped', href: '/stopped' },
       { label: 'Evidence', href: '/audit-logs' },
     ],
     more: [],
@@ -54,7 +56,7 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
 };
 
 /** Pages already rebuilt in the new style render their own headline; older ones get a plain title. */
-const REDESIGNED = new Set(['/gateway']);
+const REDESIGNED = new Set(['/gateway', '/stopped']);
 
 function Logo() {
   return (

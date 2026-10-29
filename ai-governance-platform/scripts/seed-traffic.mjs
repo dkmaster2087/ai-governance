@@ -24,6 +24,23 @@ if (!models.json.some?.((m) => m.modelId === 'gpt-4o-mini')) {
   console.log('model config', created.status);
 }
 
+// 1b. Two extra demo rules so the Stopped page shows several causes (policy engine is internal on :3001).
+const POLICY = process.env.POLICY_ENGINE_URL || 'http://localhost:3001';
+const existing = await (await fetch(`${POLICY}/v1/policies/${TENANT}`)).json();
+if (!existing.some((p) => p.name === 'Demo rules')) {
+  await fetch(`${POLICY}/v1/policies`, {
+    method: 'POST', headers: { 'content-type': 'application/json' },
+    body: JSON.stringify({
+      tenantId: TENANT, name: 'Demo rules', description: 'Sample rules for local development', enabled: true, createdBy: 'seed',
+      rules: [
+        { ruleId: 'rule_ssn', type: 'pii_detection', action: 'block', priority: 1, enabled: true, description: 'Stop Social Security numbers', config: { piiTypes: ['SSN'] } },
+        { ruleId: 'rule_codenames', type: 'data_classification', action: 'block', priority: 2, enabled: true, description: 'Stop unreleased project codenames', config: { patterns: ['project\\s+(phoenix|atlas)'] } },
+      ],
+    }),
+  });
+  console.log('added demo rules');
+}
+
 // 2. One API key per app, so traffic is attributed to real app names.
 const apps = ['support-bot', 'billing-api', 'hr-assistant', 'analytics-etl', 'sales-copilot'];
 const keys = {};
@@ -34,8 +51,9 @@ for (const app of apps) {
 
 const prompts = {
   clean: ['Summarise this support ticket in two sentences.', 'Draft a polite follow-up email about a delayed shipment.', 'Classify this feedback as positive, neutral or negative.', 'Turn these meeting notes into action items.'],
-  pii: ['Reply to jane.doe@example.com about her refund, her phone is 415-555-0134.', 'Update the record for SSN 123-45-6789 with the new address.', 'Customer card 4111 1111 1111 1111 was charged twice, write an apology.'],
-  blocked: ['Summarise the attached confidential pricing memo for the board.', 'This is internal only: rewrite the layoff plan announcement.', 'Translate this top secret acquisition term sheet.'],
+  pii: ['Reply to jane.doe@example.com about her refund, her phone is 415-555-0134.', 'Customer card 4111 1111 1111 1111 was charged twice, write an apology.', 'Call the customer back on 415-555-0199 about the late order.'],
+  blocked: ['Summarise the attached confidential pricing memo for the board.', 'This is internal only: rewrite the layoff plan announcement.', 'Translate this top secret acquisition term sheet.',
+    'Update the payroll record for SSN 123-45-6789 with the new address.', 'Write launch copy for Project Phoenix, our unreleased payments product.', 'Draft an FAQ about Project Atlas for the sales team.'],
 };
 const users = ['j.patel', 'm.chen', 'a.ruiz', 's.lindqvist', 'k.nakamura', 'service'];
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
@@ -44,7 +62,7 @@ let ok = 0, stopped = 0, failed = 0;
 for (let i = 0; i < total; i++) {
   const app = pick(apps);
   const r = Math.random();
-  const kind = r < 0.12 ? 'blocked' : r < 0.35 ? 'pii' : 'clean';
+  const kind = r < 0.2 ? 'blocked' : r < 0.35 ? 'pii' : 'clean';
   const res = await call('POST', '/v1/chat/completions',
     { authorization: `Bearer ${keys[app]}`, 'x-app-id': app, 'x-user-id': `${pick(users)}@democorp.com`, 'content-type': 'application/json' },
     { model: 'gpt-4o-mini', messages: [{ role: 'user', content: pick(prompts[kind]) }] });

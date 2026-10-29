@@ -7,6 +7,18 @@ import { ModelConfigRepository } from '../repositories/model-config.repository';
 
 const logger = createLogger('gateway:audit');
 
+function stopMetadata(base: Record<string, string>, result: PolicyEvaluationResult): Record<string, string> {
+  const out: Record<string, string> = { ...base };
+  if (result.reason) out.policyReason = result.reason;
+  if (result.evidence) {
+    out.ruleType = result.evidence.ruleType;
+    out.evidenceBefore = result.evidence.before;
+    out.evidenceHit = result.evidence.hit;
+    out.evidenceAfter = result.evidence.after;
+  }
+  return out;
+}
+
 export class AuditService {
   private s3 = new S3Client({
     region: process.env.AWS_REGION || 'us-east-1',
@@ -71,10 +83,8 @@ export class AuditService {
         : 0,
       latencyMs,
       timestamp: new Date().toISOString(),
-      // Keep the human-readable reason a request was stopped, for the dashboard and evidence.
-      metadata: policyResult.reason && !policyResult.allowed
-        ? { ...request.metadata, policyReason: policyResult.reason }
-        : request.metadata,
+      // For stopped requests, keep the readable reason and the (already masked) excerpt that triggered it.
+      metadata: policyResult.allowed ? request.metadata : stopMetadata(request.metadata, policyResult),
     };
 
     // Write to both S3 (archival) and DynamoDB (queryable by analytics)

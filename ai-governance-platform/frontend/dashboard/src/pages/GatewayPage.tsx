@@ -53,7 +53,7 @@ function decisionsFrom(summary: GatewaySummary): Decision[] {
       tail: `by “${top.reason}”.`,
       red: true,
       detail: 'Check whether these are expected, or whether the rule needs adjusting.',
-      primary: { label: 'See the requests', to: '/audit-logs' },
+      primary: { label: 'See what was stopped', to: '/stopped' },
       secondary: { label: 'Review rules', to: '/policies' },
     });
   }

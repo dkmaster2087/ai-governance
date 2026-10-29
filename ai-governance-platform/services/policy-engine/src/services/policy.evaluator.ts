@@ -1,7 +1,8 @@
-import { NormalizedAIRequest, PolicyEvaluationResult, PolicyRule } from '@ai-governance/types';
+import { NormalizedAIRequest, PolicyEvaluationResult, PolicyEvidence, PolicyRule } from '@ai-governance/types';
 import { createLogger } from '@ai-governance/utils';
 import { PolicyRepository } from '../repositories/policy.repository';
 import { compileTenantPattern } from './pattern-safety';
+import { buildEvidence, RuleMatch } from './evidence';
 
 const logger = createLogger('policy-engine:evaluator');
 
@@ -19,6 +20,8 @@ export class PolicyEvaluator {
     const originalText = request.messages.map((m) => m.content).join(' ');
     const promptText = originalText.toLowerCase();
 
+    let evidence: PolicyEvidence | undefined;
+
     for (const policy of policies) {
       if (!policy.enabled) continue;
 
@@ -27,15 +30,16 @@ export class PolicyEvaluator {
 
       for (const rule of sortedRules) {
         if (!rule.enabled) continue;
-        const triggered = await this.evaluateRule(rule, request, promptText, originalText);
+        const match = this.evaluateRule(rule, request, promptText, originalText);
 
-        if (triggered) {
+        if (match) {
           triggeredRules.push(rule.ruleId);
           riskScore += 25;
 
           if (rule.action === 'block') {
             blocked = true;
             blockReason = rule.description;
+            evidence = buildEvidence(rule.ruleId, rule.type, originalText, match);
             logger.info('Request blocked by rule', {
               ruleId: rule.ruleId,
               tenantId: request.tenantId,
@@ -54,66 +58,76 @@ export class PolicyEvaluator {
       triggeredRules,
       riskScore: Math.min(riskScore, 100),
       reason: blocked ? blockReason : undefined,
+      ...(evidence ? { evidence } : {}),
     };
   }
 
-  private async evaluateRule(
+  /** Where the rule matched, or null if it didn't. */
+  private evaluateRule(
     rule: PolicyRule,
     request: NormalizedAIRequest,
     promptText: string,
     originalText: string
-  ): Promise<boolean> {
+  ): RuleMatch | null {
+    const firstMatch = (re: RegExp, label?: string): RuleMatch | null => {
+      const m = re.exec(originalText);
+      return m ? { kind: 'text', index: m.index, length: m[0].length, label } : null;
+    };
+
     switch (rule.type) {
       case 'keyword_block': {
         const keywords = (rule.config.keywords as string[]) || [];
-        return keywords.some((kw) => promptText.includes(kw.toLowerCase()));
+        for (const kw of keywords) {
+          const index = promptText.indexOf(kw.toLowerCase());
+          if (kw && index >= 0) return { kind: 'text', index, length: kw.length };
+        }
+        return null;
       }
       case 'model_restriction': {
         const allowedModels = (rule.config.allowedModels as string[]) || [];
-        return allowedModels.length > 0 && !allowedModels.includes(request.modelId);
+        return allowedModels.length > 0 && !allowedModels.includes(request.modelId)
+          ? { kind: 'field', field: 'model', value: request.modelId }
+          : null;
       }
       case 'data_classification': {
         const forbiddenPatterns = (rule.config.patterns as string[]) || [];
-        return forbiddenPatterns.some((p) => {
+        for (const p of forbiddenPatterns) {
           const re = compileTenantPattern(p);
           if (!re) {
             logger.warn('Skipping unsafe or invalid pattern', { ruleId: rule.ruleId, tenantId: request.tenantId });
-            return false;
+            continue;
           }
-          return re.test(originalText);
-        });
+          const match = firstMatch(new RegExp(re.source, re.flags));
+          if (match) return match;
+        }
+        return null;
       }
       case 'pii_detection': {
-        // Detect PII patterns in prompt text
-        const piiPatterns = [
-          /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/,          // email
-          /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/,                                // SSN
-          /\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}\b/,  // phone
-          /\b(?:\d{4}[-\s]?){3}\d{4}\b/,                                    // credit card
-        ];
-        const customPiiTypes = (rule.config.piiTypes as string[]) || [];
-        // If specific PII types configured, only check those
-        if (customPiiTypes.length > 0) {
-          const typePatterns: Record<string, RegExp> = {
-            EMAIL: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b/i,
-            SSN: /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/,
-            PHONE: /\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}\b/,
-            CREDIT_CARD: /\b(?:\d{4}[-\s]?){3}\d{4}\b/,
-            NAME: /\b[A-Z][a-z]+ [A-Z][a-z]+\b/,
-            DATE_OF_BIRTH: /\b(?:\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/,
-            MEDICAL_RECORD_NUMBER: /\bMRN[:\s]*\d{6,}\b/i,
-          };
-          const patterns = customPiiTypes.map((t) => typePatterns[t]).filter(Boolean);
-          return patterns.some((p) => p.test(originalText));
+        const typePatterns: Record<string, RegExp> = {
+          EMAIL: /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/,
+          SSN: /\b\d{3}[-\s]?\d{2}[-\s]?\d{4}\b/,
+          PHONE: /\b(?:\+?1[-.\s]?)?(?:\(?\d{3}\)?[-.\s]?)?\d{3}[-.\s]?\d{4}\b/,
+          CREDIT_CARD: /\b(?:\d{4}[-\s]?){3}\d{4}\b/,
+          NAME: /\b[A-Z][a-z]+ [A-Z][a-z]+\b/,
+          DATE_OF_BIRTH: /\b(?:\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4})\b/,
+          MEDICAL_RECORD_NUMBER: /\bMRN[:\s]*\d{6,}\b/i,
+        };
+        const configured = (rule.config.piiTypes as string[]) || [];
+        // Default set when no specific types are configured
+        const types = configured.length > 0 ? configured : ['EMAIL', 'SSN', 'PHONE', 'CREDIT_CARD'];
+        for (const t of types) {
+          const re = typePatterns[t];
+          const match = re ? firstMatch(re, t.replace(/_/g, ' ')) : null;
+          if (match) return match;
         }
-        return piiPatterns.some((p) => p.test(originalText));
+        return null;
       }
       case 'rate_limit': {
         // Rate limiting is handled at the Fastify level — this is a pass-through
-        return false;
+        return null;
       }
       default:
-        return false;
+        return null;
     }
   }
 }
