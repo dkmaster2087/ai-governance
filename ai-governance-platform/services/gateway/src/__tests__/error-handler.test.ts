@@ -9,6 +9,7 @@ async function app() {
   a.post('/zod', async (req) => z.object({ model: z.string() }).parse(req.body));
   a.get('/app', async () => { throw new AppError('POLICY_VIOLATION', 'Stopped', 403); });
   a.get('/plain', async () => { throw Object.assign(new Error('Blocked by rule'), { code: 'POLICY_VIOLATION', statusCode: 403 }); });
+  a.get('/logged', async () => { throw Object.assign(new Error('Blocked by rule'), { code: 'POLICY_VIOLATION', statusCode: 403, requestId: 'audit-123' }); });
   a.get('/boom', async () => { throw new Error('secret internals'); });
   return a;
 }
@@ -31,6 +32,11 @@ describe('error handler', () => {
     const plain = await a.inject({ method: 'GET', url: '/plain' });
     expect(plain.statusCode).toBe(403);
     expect(plain.json()).toMatchObject({ code: 'POLICY_VIOLATION', message: 'Blocked by rule' });
+  });
+
+  it('returns the audit request ID when the error carries one, so the app can find the case file', async () => {
+    const res = await (await app()).inject({ method: 'GET', url: '/logged' });
+    expect(res.json().requestId).toBe('audit-123');
   });
 
   it('hides unexpected errors behind a 500', async () => {

@@ -5,9 +5,11 @@ import { AppError, createLogger } from '@ai-governance/utils';
 const logger = createLogger('gateway');
 
 export function errorHandler(error: FastifyError | AppError | ZodError | Error, request: FastifyRequest, reply: FastifyReply) {
+  // A request the gateway already logged carries its audit request ID, so the app can find its case file.
+  const requestId = (error as { requestId?: string }).requestId ?? request.id;
   if (error instanceof AppError) {
-    logger.warn('Application error', { code: error.code, message: error.message, requestId: request.id });
-    return reply.status(error.statusCode).send({ error: error.code, code: error.code, message: error.message, requestId: request.id });
+    logger.warn('Application error', { code: error.code, message: error.message, requestId });
+    return reply.status(error.statusCode).send({ error: error.code, code: error.code, message: error.message, requestId });
   }
 
   // Invalid request bodies are the caller's mistake, not a server failure.
@@ -26,7 +28,7 @@ export function errorHandler(error: FastifyError | AppError | ZodError | Error, 
   const status = (error as { statusCode?: number }).statusCode;
   if (status && status >= 400 && status < 500) {
     const code = (error as { code?: string }).code ?? 'BAD_REQUEST';
-    return reply.status(status).send({ error: code, code, message: error.message, requestId: request.id });
+    return reply.status(status).send({ error: code, code, message: error.message, requestId });
   }
 
   logger.error('Unhandled error', { error: error.message, requestId: request.id });

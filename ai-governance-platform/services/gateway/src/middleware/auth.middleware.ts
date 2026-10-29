@@ -64,8 +64,23 @@ function deny(reply: FastifyReply, status: 401 | 403, code: string, error: strin
   return reply.status(status).send({ error, code });
 }
 
+type KeyCache = Map<string, { key: ApiKey; cachedUntil: number }>;
+/** Every auth plugin's key cache in this process, so a revoked key can be dropped from all of them. */
+const keyCaches = new Set<KeyCache>();
+
+/**
+ * Stop trusting a cached copy of this key in this process. Call after revoking, rotating or deleting it.
+ * Other gateway instances drop it when their cache entry expires (keyCacheTtlMs, one minute by default).
+ */
+export function forgetApiKey(keyId: string): void {
+  for (const cache of keyCaches) {
+    for (const [hash, entry] of cache) if (entry.key.keyId === keyId) cache.delete(hash);
+  }
+}
+
 export function createAuthPlugin(deps: AuthDeps) {
-  const keyCache = new Map<string, { key: ApiKey; cachedUntil: number }>();
+  const keyCache: KeyCache = new Map();
+  keyCaches.add(keyCache);
 
   async function resolveApiKey(token: string): Promise<ApiKey | null> {
     const keyHash = hashApiKey(token);

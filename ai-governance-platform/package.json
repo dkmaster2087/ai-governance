@@ -13,7 +13,8 @@
     "dev": "turbo run dev",
     "lint": "turbo run lint",
     "test": "turbo run test",
-    "clean": "turbo run clean"
+    "clean": "turbo run clean",
+    "test:e2e": "node --test --test-concurrency=1 tests/e2e/request-path.test.mjs"
   },
   "devDependencies": {
     "turbo": "^2.0.0",

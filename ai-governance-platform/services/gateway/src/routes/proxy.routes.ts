@@ -84,7 +84,9 @@ export async function proxyRoutes(app: FastifyInstance) {
   app.all('/proxy/:provider/*', { preHandler: requireAccess({ scopes: ['chat'] }) }, async (request, reply) => {
     const provider = (request.params as any).provider as string;
     const path = (request.params as any)['*'] as string;
-    const targetBase = PROVIDER_TARGETS[provider.toLowerCase()];
+    // PROXY_TARGET_<PROVIDER> points a known provider elsewhere (local mock, private endpoint); set by the operator only.
+    const slug = provider.toLowerCase();
+    const targetBase = PROVIDER_TARGETS[slug] && (process.env[`PROXY_TARGET_${slug.toUpperCase()}`] || PROVIDER_TARGETS[slug]);
 
     if (!targetBase) {
       return reply.status(400).send({

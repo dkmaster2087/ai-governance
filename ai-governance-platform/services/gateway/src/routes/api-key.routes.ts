@@ -4,6 +4,7 @@ import { ApiKeyRepository, generateApiKey } from '../repositories/api-key.reposi
 import { createLogger } from '@ai-governance/utils';
 import { requireAccess, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
 import { API_KEY_SCOPES, ApiKeyScope } from '../auth/principal';
+import { forgetApiKey } from '../middleware/auth.middleware';
 
 const logger = createLogger('gateway:api-key-routes');
 
@@ -89,6 +90,7 @@ export async function apiKeyRoutes(app: FastifyInstance) {
     const { keyId } = request.params as { keyId: string };
     if (!(await ownKey(request.tenantId, keyId))) return reply.status(404).send({ error: 'Key not found', code: 'NOT_FOUND' });
     await repo.revoke(request.tenantId, keyId);
+    forgetApiKey(keyId);
     return reply.send({ keyId, status: 'revoked' });
   });
 
@@ -100,6 +102,7 @@ export async function apiKeyRoutes(app: FastifyInstance) {
 
     // Revoke old key
     await repo.revoke(request.tenantId, oldKeyId);
+    forgetApiKey(oldKeyId);
 
     // Generate new key with same config
     const { raw, hash, prefix, keyId: newKeyId } = generateApiKey(request.tenantId);
@@ -132,6 +135,7 @@ export async function apiKeyRoutes(app: FastifyInstance) {
     const { keyId } = request.params as { keyId: string };
     if (!(await ownKey(request.tenantId, keyId))) return reply.status(404).send({ error: 'Key not found', code: 'NOT_FOUND' });
     await repo.delete(request.tenantId, keyId);
+    forgetApiKey(keyId);
     return reply.send({ keyId, deleted: true });
   });
 }

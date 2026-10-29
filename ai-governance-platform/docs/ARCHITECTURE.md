@@ -59,6 +59,17 @@ tenants via `X-Tenant-Id`; everyone else is limited to their own.
 | Audit records | DynamoDB `audit-logs` (index `tenantId-timestamp-index`) + S3 archive |
 | Shadow-AI events (30-day TTL) | DynamoDB `shadow-ai` |
 
+## Testing
+
+- **Unit tests** in each workspace: `npm test` from the root. CI runs them on every push.
+- **End-to-end request path** ([tests/e2e/request-path.test.mjs](../tests/e2e/request-path.test.mjs)): real
+  requests through the gateway, policy engine, data protection and a mock model, checking what the app got
+  back, what the model received and what the case file says. Covers clean prompts, personal-data removal in
+  prompts and replies, blocked-word, approved-model and personal-data rules, rule changes taking effect,
+  tenant separation, missing/fake/revoked keys, suspended tenants, proxy mode, and fail closed/open with the
+  checks down. Start the local stack (`scripts/dev-local.sh start`), then `npm run test:e2e`. Not in CI yet
+  (needs LocalStack there). Locally, personal data is found by patterns only; Amazon Comprehend runs only in AWS.
+
 ## Deployment modes
 
 Hosted by us, or everything in the customer's AWS account. A third mode, where we run the dashboard and
@@ -69,5 +80,7 @@ the customer runs the request path, is planned in [HYBRID.md](HYBRID.md).
 - Production deploys need `-c certificateArn=…` for HTTPS; the service Dockerfiles haven't been built on a
   developer machine yet (CI builds them).
 - Streaming responses and secrets detection are not built yet.
+- A revoked API key stops working at once on the gateway instance that revoked it; other instances drop
+  their cached copy within a minute.
 - Policy engine, data protection and analytics have no service-to-service authentication; they rely on
   being reachable only inside the VPC.

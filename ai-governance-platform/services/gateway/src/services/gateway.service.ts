@@ -76,6 +76,7 @@ export class GatewayService {
       throw Object.assign(new Error(policyResult.reason || 'Request blocked by policy'), {
         code: 'POLICY_VIOLATION',
         statusCode: 403,
+        requestId,
       });
     }
 

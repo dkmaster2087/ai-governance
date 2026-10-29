@@ -1,5 +1,5 @@
 import Fastify, { FastifyInstance } from 'fastify';
-import { createAuthPlugin, UserTokenClaims } from '../middleware/auth.middleware';
+import { createAuthPlugin, forgetApiKey, UserTokenClaims } from '../middleware/auth.middleware';
 import { requireAccess, requireTenantParam, PLATFORM_ADMIN, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
 import { ApiKey, hashApiKey } from '../repositories/api-key.repository';
 import { getSecurityConfig } from '../config/security';
@@ -103,6 +103,17 @@ describe('gateway auth', () => {
     it('rejects revoked and expired keys', async () => {
       expect((await app.inject({ method: 'POST', url: '/v1/chat/completions', headers: bearer(REVOKED_KEY) })).json().code).toBe('KEY_REVOKED');
       expect((await app.inject({ method: 'POST', url: '/v1/chat/completions', headers: bearer(EXPIRED_KEY) })).json().code).toBe('KEY_EXPIRED');
+    });
+
+    it('stops accepting a cached key as soon as it is revoked', async () => {
+      const raw = 'aegis_acme_soon_revoked';
+      KEYS.set(hashApiKey(raw), key(raw));
+      expect((await app.inject({ method: 'POST', url: '/v1/chat/completions', headers: bearer(raw) })).statusCode).toBe(200);
+      KEYS.set(hashApiKey(raw), key(raw, { status: 'revoked' }));
+      // Still cached until told otherwise.
+      expect((await app.inject({ method: 'POST', url: '/v1/chat/completions', headers: bearer(raw) })).statusCode).toBe(200);
+      forgetApiKey(`key_${raw}`);
+      expect((await app.inject({ method: 'POST', url: '/v1/chat/completions', headers: bearer(raw) })).json().code).toBe('KEY_REVOKED');
     });
 
     it('enforces scopes', async () => {
