@@ -27,12 +27,16 @@ export class StorageStack extends cdk.Stack {
 
     const { prefix, stage } = props;
 
+    // Production data is kept when a stack is deleted; dev/test stacks clean up after themselves.
+
+    const removalPolicy = stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY;
+
     // KMS key for encryption at rest
     const kmsKey = new kms.Key(this, 'StorageKey', {
       alias: `${prefix}-storage-${stage}`,
       enableKeyRotation: true,
       description: 'AI Governance Platform storage encryption key',
-      removalPolicy: cdk.RemovalPolicy.DESTROY, // Change to RETAIN for production
+      removalPolicy,
     });
 
     // Tenants table
@@ -43,7 +47,7 @@ export class StorageStack extends cdk.Stack {
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
       pointInTimeRecovery: true,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy,
     });
 
     // Policies table (tenantId + policyId)
@@ -55,7 +59,7 @@ export class StorageStack extends cdk.Stack {
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
       pointInTimeRecovery: true,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy,
     });
 
     // Metrics table (tenantId + period)
@@ -67,7 +71,7 @@ export class StorageStack extends cdk.Stack {
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
       timeToLiveAttribute: 'ttl',
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy,
     });
 
     // Compliance state table (tenantId + framework)
@@ -78,7 +82,7 @@ export class StorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy,
     });
 
     // Model configurations table (tenantId + modelConfigId)
@@ -89,7 +93,7 @@ export class StorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy,
     });
 
     // API Keys table (tenantId + keyId) with GSI on keyHash for auth lookups
@@ -101,7 +105,7 @@ export class StorageStack extends cdk.Stack {
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
       pointInTimeRecovery: true,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy,
     });
     this.apiKeysTable.addGlobalSecondaryIndex({
       indexName: 'keyHash-index',
@@ -117,7 +121,7 @@ export class StorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy,
     });
 
     // Shadow AI events table (tenantId + eventId)
@@ -129,7 +133,7 @@ export class StorageStack extends cdk.Stack {
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
       timeToLiveAttribute: 'ttl',
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy,
     });
 
     // Audit logs table (tenantId + requestId) with TTL for retention
@@ -142,7 +146,15 @@ export class StorageStack extends cdk.Stack {
       encryptionKey: kmsKey,
       timeToLiveAttribute: 'ttl',
       pointInTimeRecovery: true,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy,
+    });
+
+    // The dashboard's summaries read audit records for a tenant by time.
+    this.auditLogsTable.addGlobalSecondaryIndex({
+      indexName: 'tenantId-timestamp-index',
+      partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'timestamp', type: dynamodb.AttributeType.STRING },
+      projectionType: dynamodb.ProjectionType.ALL,
     });
 
     // Audit log bucket (immutable, versioned, encrypted)
@@ -164,8 +176,8 @@ export class StorageStack extends cdk.Stack {
           transitions: [{ storageClass: s3.StorageClass.GLACIER, transitionAfter: cdk.Duration.days(90) }],
         },
       ],
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      autoDeleteObjects: true, // For teardown convenience in dev
+      removalPolicy,
+      autoDeleteObjects: stage !== 'prod', // Empty buckets on teardown, except in production
     });
 
     // Athena results bucket
@@ -178,8 +190,8 @@ export class StorageStack extends cdk.Stack {
       lifecycleRules: [
         { expiration: cdk.Duration.days(7) }, // Auto-clean query results
       ],
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      autoDeleteObjects: true,
+      removalPolicy,
+      autoDeleteObjects: stage !== 'prod',
     });
 
     // Outputs

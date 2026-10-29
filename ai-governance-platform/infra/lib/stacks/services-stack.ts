@@ -186,30 +186,40 @@ export class ServicesStack extends cdk.Stack {
       })
     );
 
-    // Public ALB listener → Gateway
-    const listener = this.loadBalancer.addListener('HttpsListener', {
-      port: 443,
-      open: true,
-      // In production: add ACM certificate here
-      // certificates: [acm.Certificate.fromCertificateArn(...)],
-      defaultAction: elbv2.ListenerAction.fixedResponse(200, {
-        contentType: 'application/json',
-        messageBody: '{"status":"ok"}',
-      }),
-    });
-
-    listener.addTargets('GatewayTarget', {
+    // Public ALB listener → Gateway. HTTPS needs a certificate ARN (-c certificateArn=...); without one,
+    // non-production stages serve plain HTTP so they can still be deployed and tested.
+    const certificateArn: string | undefined = this.node.tryGetContext('certificateArn');
+    if (!certificateArn && stage === 'prod') {
+      throw new Error('Production needs a TLS certificate: deploy with -c certificateArn=arn:aws:acm:...');
+    }
+    const gatewayTarget = {
       port: 3000,
       protocol: elbv2.ApplicationProtocol.HTTP,
       targets: [this.gatewayService],
       healthCheck: { path: '/health', interval: cdk.Duration.seconds(30) },
-    });
+    };
+    if (certificateArn) {
+      const listener = this.loadBalancer.addListener('HttpsListener', {
+        port: 443,
+        open: true,
+        certificates: [elbv2.ListenerCertificate.fromArn(certificateArn)],
+        sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS,
+      });
+      listener.addTargets('GatewayTarget', gatewayTarget);
+      this.loadBalancer.addListener('HttpRedirect', {
+        port: 80,
+        defaultAction: elbv2.ListenerAction.redirect({ protocol: 'HTTPS', port: '443', permanent: true }),
+      });
+    } else {
+      const listener = this.loadBalancer.addListener('HttpListener', { port: 80, open: true });
+      listener.addTargets('GatewayTarget', gatewayTarget);
+    }
 
-    // HTTP → HTTPS redirect
-    this.loadBalancer.addListener('HttpRedirect', {
-      port: 80,
-      defaultAction: elbv2.ListenerAction.redirect({ protocol: 'HTTPS', port: '443' }),
-    });
+    // Production runs at least two gateways and scales with load.
+    if (stage === 'prod') {
+      const scaling = this.gatewayService.autoScaleTaskCount({ minCapacity: 2, maxCapacity: 10 });
+      scaling.scaleOnCpuUtilization('GatewayCpu', { targetUtilizationPercent: 60 });
+    }
 
     new cdk.CfnOutput(this, 'LoadBalancerDns', { value: this.loadBalancer.loadBalancerDnsName });
     new cdk.CfnOutput(this, 'ClusterName', { value: this.cluster.clusterName });
@@ -231,14 +241,14 @@ export class ServicesStack extends cdk.Stack {
 
     const repo = new ecr.Repository(this, `${id}Repo`, {
       repositoryName: `${prefix}-${name}-${stage}`,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
-      emptyOnDelete: true,
+      removalPolicy: stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+      emptyOnDelete: stage !== 'prod',
     });
 
     const logGroup = new logs.LogGroup(this, `${id}Logs`, {
       logGroupName: `/ecs/${prefix}-${name}-${stage}`,
       retention: logs.RetentionDays.ONE_MONTH,
-      removalPolicy: cdk.RemovalPolicy.DESTROY,
+      removalPolicy: stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
     });
 
     const taskDef = new ecs.FargateTaskDefinition(this, `${id}TaskDef`, {
@@ -273,7 +283,7 @@ export class ServicesStack extends cdk.Stack {
       serviceName: `${prefix}-${name}-${stage}`,
       cluster,
       taskDefinition: taskDef,
-      desiredCount: 1,
+      desiredCount: stage === 'prod' ? 2 : 1,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       securityGroups: [sg],
       enableExecuteCommand: true, // For debugging

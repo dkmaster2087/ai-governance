@@ -24,24 +24,18 @@ describe('NetworkStack', () => {
   });
 
   it('creates 2 public subnets', () => {
-    template.resourceCountIs('AWS::EC2::Subnet', Match.anyValue());
     // 2 public + 2 private-app + 2 private-data = 6 subnets across 2 AZs
     const subnets = template.findResources('AWS::EC2::Subnet');
     expect(Object.keys(subnets).length).toBe(6);
   });
 
-  it('creates S3 VPC endpoint', () => {
-    template.hasResourceProperties('AWS::EC2::VPCEndpoint', {
-      ServiceName: Match.stringLikeRegexp('s3'),
-      VpcEndpointType: 'Gateway',
-    });
-  });
-
-  it('creates DynamoDB VPC endpoint', () => {
-    template.hasResourceProperties('AWS::EC2::VPCEndpoint', {
-      ServiceName: Match.stringLikeRegexp('dynamodb'),
-      VpcEndpointType: 'Gateway',
-    });
+  it('creates S3 and DynamoDB gateway endpoints', () => {
+    const gateways = Object.values(template.findResources('AWS::EC2::VPCEndpoint'))
+      .filter((r: any) => r.Properties.VpcEndpointType === 'Gateway');
+    expect(gateways).toHaveLength(2);
+    const names = JSON.stringify(gateways.map((r: any) => r.Properties.ServiceName));
+    expect(names).toContain('.s3');
+    expect(names).toContain('.dynamodb');
   });
 
   it('creates Bedrock interface endpoint', () => {

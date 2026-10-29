@@ -15,8 +15,15 @@ describe('StorageStack', () => {
     template = Template.fromStack(stack);
   });
 
-  it('creates 3 DynamoDB tables', () => {
-    template.resourceCountIs('AWS::DynamoDB::Table', 3);
+  it('creates the 9 DynamoDB tables', () => {
+    template.resourceCountIs('AWS::DynamoDB::Table', 9);
+  });
+
+  it('indexes audit records by tenant and time for the dashboard', () => {
+    template.hasResourceProperties('AWS::DynamoDB::Table', {
+      TableName: Match.stringLikeRegexp('audit-logs'),
+      GlobalSecondaryIndexes: Match.arrayWith([Match.objectLike({ IndexName: 'tenantId-timestamp-index' })]),
+    });
   });
 
   it('audit log bucket has versioning enabled', () => {
@@ -52,5 +59,15 @@ describe('StorageStack', () => {
     template.hasResourceProperties('AWS::DynamoDB::Table', {
       PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true },
     });
+  });
+});
+
+describe('StorageStack in production', () => {
+  it('keeps data when the stack is deleted', () => {
+    const app = new cdk.App();
+    const stack = new StorageStack(app, 'StorageProd', { env: { account: '123456789012', region: 'us-east-1' }, prefix: 'ai-gov', stage: 'prod' });
+    const t = Template.fromStack(stack);
+    const tables = Object.values(t.findResources('AWS::DynamoDB::Table')) as any[];
+    expect(tables.every((r) => r.DeletionPolicy === 'Retain')).toBe(true);
   });
 });
