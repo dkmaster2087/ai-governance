@@ -2,7 +2,7 @@ import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './lib/auth';
 import { Shell } from './components/layout/Shell';
 import { LoginPage } from './pages/LoginPage';
-import { OverviewPage } from './pages/OverviewPage';
+import { GatewayPage } from './pages/GatewayPage';
 import { PlatformDashboardPage } from './pages/PlatformDashboardPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
 import { PoliciesPage } from './pages/PoliciesPage';
@@ -30,7 +30,7 @@ function RequireAuth({ children }: { children: React.ReactNode }) {
 function RequireAdmin({ children }: { children: React.ReactNode }) {
   const { user, isAdmin } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (!isAdmin) return <Navigate to="/overview" replace />;
+  if (!isAdmin) return <Navigate to="/gateway" replace />;
   return <>{children}</>;
 }
 
@@ -44,7 +44,7 @@ function RequirePlatformAdmin({ children }: { children: React.ReactNode }) {
 function RequireAuditAccess({ children }: { children: React.ReactNode }) {
   const { user, canViewAudit } = useAuth();
   if (!user) return <Navigate to="/login" replace />;
-  if (!canViewAudit) return <Navigate to="/overview" replace />;
+  if (!canViewAudit) return <Navigate to="/gateway" replace />;
   return <>{children}</>;
 }
 
@@ -95,9 +95,10 @@ export default function App() {
     <RequireAuth>
       <Shell>
         <Routes>
-          <Route path="/" element={<Navigate to="/overview" replace />} />
-          <Route path="/login" element={<Navigate to="/overview" replace />} />
-          <Route path="/overview" element={<OverviewPage />} />
+          <Route path="/" element={<Navigate to="/gateway" replace />} />
+          <Route path="/login" element={<Navigate to="/gateway" replace />} />
+          <Route path="/overview" element={<Navigate to="/gateway" replace />} />
+          <Route path="/gateway" element={<GatewayPage />} />
           <Route path="/audit-logs" element={<RequireAuditAccess><AuditLogsPage /></RequireAuditAccess>} />
           <Route path="/policies" element={<RequireAdmin><PoliciesPage /></RequireAdmin>} />
           <Route path="/compliance" element={<RequireAdmin><CompliancePage /></RequireAdmin>} />
@@ -107,7 +108,7 @@ export default function App() {
           <Route path="/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
           <Route path="/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
           <Route path="/license" element={<RequireAdmin><TenantLicensePage /></RequireAdmin>} />
-          <Route path="*" element={<Navigate to="/overview" replace />} />
+          <Route path="*" element={<Navigate to="/gateway" replace />} />
         </Routes>
       </Shell>
     </RequireAuth>

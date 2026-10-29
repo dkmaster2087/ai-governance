@@ -111,7 +111,9 @@ export class GatewayService {
     if (degraded.length > 0) {
       protectedRequest = { ...protectedRequest, metadata: { ...protectedRequest.metadata, governanceDegraded: degraded.join(',') } };
     }
-    await this.auditService.log(protectedRequest, filteredResponse, policyResult, latencyMs);
+    // PII was masked if the data protection service changed any message.
+    const piiDetected = protectedRequest.messages.some((m, i) => m.content !== normalizedRequest.messages[i]?.content);
+    await this.auditService.log(protectedRequest, filteredResponse, policyResult, latencyMs, { piiDetected });
 
     return filteredResponse;
   }

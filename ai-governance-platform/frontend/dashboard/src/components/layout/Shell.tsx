@@ -1,227 +1,151 @@
-import { useState } from 'react';
+import { useRef } from 'react';
 import { NavLink, useLocation, useNavigate } from 'react-router-dom';
-import {
-  LayoutDashboard, ScrollText, ShieldCheck, Cpu, Settings,
-  Shield, Menu, Bell, BadgeCheck,
-  Building2, Eye, LogOut, Sun, Moon, Users, DollarSign,
-  ChevronLeft, Search, Key, BarChart3, Activity,
-} from 'lucide-react';
 import clsx from 'clsx';
-import { useAuth } from '../../lib/auth';
-import { useTheme } from '../../lib/theme';
+import { useAuth, UserRole } from '../../lib/auth';
 
-// Platform admin — super admin dashboard (reporting, tenants, licenses)
-const platformAdminNav = [
-  { label: 'Dashboard',       href: '/overview',        icon: LayoutDashboard },
-  { label: 'Tenants',         href: '/tenants',         icon: Building2 },
-  { label: 'Licenses',        href: '/licenses',        icon: Key },
-  { label: 'Usage Analytics', href: '/analytics',       icon: BarChart3 },
-  { label: 'Cost & Billing',  href: '/cost',            icon: DollarSign },
-  { label: 'Shadow AI',       href: '/shadow-ai',       icon: Eye },
-  { label: 'Platform Health', href: '/health',          icon: Activity },
-  { label: 'Settings',        href: '/settings',        icon: Settings },
-];
-
-// Tenant admin — full governance dashboard
-const tenantAdminNav = [
-  { label: 'Overview',        href: '/overview',        icon: LayoutDashboard },
-  { label: 'Audit Logs',      href: '/audit-logs',      icon: ScrollText },
-  { label: 'Policies',        href: '/policies',        icon: ShieldCheck },
-  { label: 'Compliance',      href: '/compliance',      icon: BadgeCheck },
-  { label: 'Shadow AI',       href: '/shadow-ai',       icon: Eye },
-  { label: 'Models',          href: '/models',          icon: Cpu },
-  { label: 'Cost & Billing',  href: '/cost',            icon: DollarSign },
-  { label: 'Users',           href: '/users',           icon: Users },
-  { label: 'License',         href: '/license',         icon: Key },
-  { label: 'Settings',        href: '/settings',        icon: Settings },
-];
-
-const auditorNav = [
-  { label: 'Overview',        href: '/overview',        icon: LayoutDashboard },
-  { label: 'Audit Logs',      href: '/audit-logs',      icon: ScrollText },
-];
-
-function getNavForRole(role: string) {
-  switch (role) {
-    case 'platform_admin': return platformAdminNav;
-    case 'tenant_admin':   return tenantAdminNav;
-    case 'tenant_auditor': return auditorNav;
-    default:               return [];
-  }
+interface NavItem {
+  label: string;
+  href: string;
 }
 
+interface RoleNav {
+  primary: NavItem[];
+  more: NavItem[];
+}
+
+// Direction I navigation. Rules and Evidence use the existing Policies and Audit Logs pages
+// until their redesigned versions land; "Stopped" joins once it exists.
+const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
+  tenant_admin: {
+    primary: [
+      { label: 'Gateway', href: '/gateway' },
+      { label: 'Shadow AI', href: '/shadow-ai' },
+      { label: 'Rules', href: '/policies' },
+      { label: 'Evidence', href: '/audit-logs' },
+    ],
+    more: [
+      { label: 'Models & keys', href: '/models' },
+      { label: 'Spend', href: '/cost' },
+      { label: 'Compliance', href: '/compliance' },
+      { label: 'Users', href: '/users' },
+      { label: 'License', href: '/license' },
+      { label: 'Settings', href: '/settings' },
+    ],
+  },
+  tenant_auditor: {
+    primary: [
+      { label: 'Gateway', href: '/gateway' },
+      { label: 'Evidence', href: '/audit-logs' },
+    ],
+    more: [],
+  },
+  platform_admin: {
+    primary: [
+      { label: 'Platform', href: '/overview' },
+      { label: 'Tenants', href: '/tenants' },
+      { label: 'Licenses', href: '/licenses' },
+      { label: 'Usage', href: '/analytics' },
+      { label: 'Spend', href: '/cost' },
+      { label: 'Shadow AI', href: '/shadow-ai' },
+      { label: 'Health', href: '/health' },
+    ],
+    more: [{ label: 'Settings', href: '/settings' }],
+  },
+};
+
+/** Pages already rebuilt in the new style render their own headline; older ones get a plain title. */
+const REDESIGNED = new Set(['/gateway']);
+
+function Logo() {
+  return (
+    <span className="flex items-center gap-2.5 font-extrabold text-[17px] tracking-[0.06em] uppercase">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
+        <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z" />
+      </svg>
+      Aegis
+    </span>
+  );
+}
+
+const linkClass = ({ isActive }: { isActive: boolean }) =>
+  clsx(
+    'flex items-center min-h-[44px] no-underline',
+    isActive ? 'font-semibold text-ink shadow-[inset_0_-2px_0_#14213D]' : 'text-ink-muted hover:text-ink'
+  );
+
 export function Shell({ children }: { children: React.ReactNode }) {
-  const [sidebarOpen, setSidebarOpen] = useState(false);
-  const [collapsed, setCollapsed] = useState(false);
-  const { user, logout, isPlatformAdmin } = useAuth();
-  const { isDark, toggle: toggleTheme } = useTheme();
+  const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const nav = getNavForRole(user?.role || 'tenant_user');
+  const moreRef = useRef<HTMLDetailsElement>(null);
+  const accountRef = useRef<HTMLDetailsElement>(null);
 
-  const handleLogout = () => { logout(); navigate('/login'); };
-  const currentPage = nav.find((n) => n.href === location.pathname);
-
-  const sidebarW = collapsed ? 'w-[68px]' : 'w-64';
-  const mainPl = collapsed ? 'lg:pl-[68px]' : 'lg:pl-64';
+  const nav = user && user.role !== 'tenant_user' ? NAV[user.role] : { primary: [], more: [] };
+  const all = [...nav.primary, ...nav.more];
+  const current = all.find((n) => location.pathname === n.href || location.pathname.startsWith(n.href + '/'));
+  const moreActive = !!current && nav.more.includes(current);
+  const closeMenus = () => {
+    moreRef.current?.removeAttribute('open');
+    accountRef.current?.removeAttribute('open');
+  };
+  const handleLogout = () => { closeMenus(); logout(); navigate('/login'); };
 
   return (
-    <div className={clsx('h-full flex', isDark ? 'bg-[#060810] text-slate-100' : 'bg-[#f0f2f7] text-gray-900')}>
-      {/* Sidebar */}
-      <aside
-        className={clsx(
-          'fixed inset-y-0 left-0 z-50 flex flex-col transition-all duration-300 border-r',
-          sidebarW,
-          isDark ? 'bg-[#080b14] border-white/[0.06]' : 'bg-white border-gray-200',
-          sidebarOpen ? 'translate-x-0' : '-translate-x-full lg:translate-x-0'
-        )}
-      >
-        {/* Logo */}
-        <div className={clsx('h-16 flex items-center gap-2.5 border-b', collapsed ? 'px-4 justify-center' : 'px-5', isDark ? 'border-white/[0.06]' : 'border-gray-200/60')}>
-          <div className="w-8 h-8 rounded-xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center shadow-glow-brand flex-shrink-0">
-            <Shield className="w-4 h-4 text-white" />
-          </div>
-          {!collapsed && (
-            <>
-              <span className={clsx('font-bold text-[15px] tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>Aegis AI</span>
-              {isPlatformAdmin && (
-                <span className="ml-auto text-[10px] font-semibold text-brand-400 bg-brand-500/10 px-2 py-0.5 rounded-full border border-brand-500/20">
-                  Admin
-                </span>
-              )}
-            </>
-          )}
-        </div>
-
-        {/* Tenant badge */}
-        {!collapsed && (
-          <div className={clsx('px-4 py-3 border-b', isDark ? 'border-white/[0.06]' : 'border-gray-200/60')}>
-            <div className={clsx('flex items-center gap-2.5 px-3 py-2 rounded-xl', isDark ? 'bg-white/[0.04]' : 'bg-gray-50')}>
-              <div className={clsx('w-2 h-2 rounded-full animate-pulse-soft', isPlatformAdmin ? 'bg-brand-400' : 'bg-accent-400')} />
-              <span className={clsx('text-sm font-medium truncate', isDark ? 'text-slate-300' : 'text-gray-600')}>
-                {user?.tenantName}
-              </span>
-            </div>
-          </div>
-        )}
-
-        {/* Nav */}
-        <nav className={clsx('flex-1 py-3 space-y-0.5 overflow-y-auto scrollbar-thin', collapsed ? 'px-2' : 'px-3')}>
-          {nav.map(({ label, href, icon: Icon }) => (
-            <NavLink
-              key={href}
-              to={href}
-              onClick={() => setSidebarOpen(false)}
-              title={collapsed ? label : undefined}
-              className={({ isActive }) =>
-                clsx(
-                  'flex items-center gap-3 rounded-xl text-[13px] font-medium transition-all duration-200',
-                  collapsed ? 'px-3 py-2.5 justify-center' : 'px-3 py-2.5',
-                  isActive
-                    ? clsx('text-brand-400', isDark ? 'bg-brand-500/10 shadow-glow-brand' : 'bg-brand-50 shadow-sm')
-                    : isDark
-                      ? 'text-slate-400 hover:text-white hover:bg-white/[0.04]'
-                      : 'text-gray-500 hover:text-gray-900 hover:bg-gray-100/80'
-                )
-              }
-            >
-              <Icon className="w-[18px] h-[18px] flex-shrink-0" />
-              {!collapsed && label}
-            </NavLink>
+    <div className="min-h-full bg-canvas text-ink font-sans text-sm leading-[1.45]">
+      <header className="flex flex-wrap items-center gap-x-8 gap-y-2 px-5 sm:px-10 min-h-[64px] bg-white border-b border-line">
+        <Logo />
+        <nav aria-label="Main" className="flex flex-wrap items-center gap-x-6 gap-y-1">
+          {nav.primary.map((n) => (
+            <NavLink key={n.href} to={n.href} className={linkClass}>{n.label}</NavLink>
           ))}
+          {nav.more.length > 0 && (
+            <details ref={moreRef} className="relative">
+              <summary className={clsx('flex items-center min-h-[44px] cursor-pointer list-none', moreActive ? 'font-semibold text-ink' : 'text-ink-muted hover:text-ink')}>
+                {moreActive ? current?.label : 'More'}
+                <svg className="ml-1" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+              </summary>
+              <div className="absolute left-0 top-full z-20 mt-1 min-w-[200px] bg-white border border-line rounded-xl py-1.5 shadow-[0_8px_24px_rgba(20,33,61,0.08)]">
+                {nav.more.map((n) => (
+                  <NavLink
+                    key={n.href}
+                    to={n.href}
+                    onClick={closeMenus}
+                    className={({ isActive }) => clsx('flex items-center min-h-[40px] px-4 no-underline', isActive ? 'font-semibold text-ink bg-ink-tint' : 'text-ink hover:bg-canvas')}
+                  >
+                    {n.label}
+                  </NavLink>
+                ))}
+              </div>
+            </details>
+          )}
         </nav>
 
-        {/* Collapse toggle */}
-        <div className={clsx('px-3 py-2 border-t hidden lg:block', isDark ? 'border-white/[0.06]' : 'border-gray-200/60')}>
-          <button
-            onClick={() => setCollapsed(!collapsed)}
-            className={clsx('w-full flex items-center justify-center gap-2 py-2 rounded-xl text-xs transition-colors', isDark ? 'text-slate-500 hover:text-slate-300 hover:bg-white/[0.04]' : 'text-gray-400 hover:text-gray-600 hover:bg-gray-100')}
-          >
-            <ChevronLeft className={clsx('w-3.5 h-3.5 transition-transform', collapsed && 'rotate-180')} />
-            {!collapsed && 'Collapse'}
-          </button>
-        </div>
-
-        {/* User footer */}
-        <div className={clsx('px-3 py-3 border-t', isDark ? 'border-white/[0.06]' : 'border-gray-200/60')}>
-          <div className={clsx('flex items-center', collapsed ? 'justify-center' : 'gap-3')}>
-            <div className={clsx(
-              'rounded-xl bg-gradient-to-br from-brand-500/20 to-brand-600/20 flex items-center justify-center text-brand-400 text-xs font-bold flex-shrink-0',
-              collapsed ? 'w-9 h-9' : 'w-9 h-9'
-            )}>
-              {user?.name.split(' ').map((n) => n[0]).join('').slice(0, 2).toUpperCase()}
+        <details ref={accountRef} className="relative ml-auto">
+          <summary className="flex items-center gap-2 min-h-[44px] cursor-pointer list-none text-ink-muted hover:text-ink">
+            <span>{user?.tenantName}</span>
+            <span aria-hidden="true" className="w-8 h-8 rounded-full bg-ink-tint text-ink font-semibold flex items-center justify-center text-xs">
+              {(user?.name ?? '?').split(' ').map((p) => p[0]).slice(0, 2).join('')}
+            </span>
+            <span className="sr-only">Account menu</span>
+          </summary>
+          <div className="absolute right-0 top-full z-20 mt-1 min-w-[220px] bg-white border border-line rounded-xl py-2 shadow-[0_8px_24px_rgba(20,33,61,0.08)]">
+            <div className="px-4 pb-2 border-b border-line-subtle">
+              <div className="font-semibold text-ink">{user?.name}</div>
+              <div className="text-xs text-ink-muted">{user?.email}</div>
             </div>
-            {!collapsed && (
-              <>
-                <div className="flex-1 min-w-0">
-                  <p className={clsx('text-sm font-medium truncate', isDark ? 'text-white' : 'text-gray-900')}>{user?.name}</p>
-                  <p className={clsx('text-[11px] truncate', isDark ? 'text-slate-500' : 'text-gray-400')}>{user?.email}</p>
-                </div>
-                <button
-                  onClick={handleLogout}
-                  className={clsx('p-1.5 rounded-lg transition-colors', isDark ? 'text-slate-500 hover:text-red-400 hover:bg-red-500/10' : 'text-gray-400 hover:text-red-500 hover:bg-red-50')}
-                  title="Sign out"
-                  aria-label="Sign out"
-                >
-                  <LogOut className="w-4 h-4" />
-                </button>
-              </>
-            )}
-          </div>
-        </div>
-      </aside>
-
-      {/* Mobile overlay */}
-      {sidebarOpen && (
-        <div className="fixed inset-0 z-40 bg-black/50 backdrop-blur-sm lg:hidden" onClick={() => setSidebarOpen(false)} />
-      )}
-
-      {/* Main */}
-      <div className={clsx('flex-1 flex flex-col min-h-0 min-w-0 transition-all duration-300', mainPl)}>
-        {/* Topbar */}
-        <header className={clsx(
-          'h-16 flex items-center gap-4 px-6 border-b backdrop-blur-md sticky top-0 z-30',
-          isDark ? 'bg-[#060810]/80 border-white/[0.06]' : 'bg-[#f0f2f7]/90 border-gray-200'
-        )}>
-          <button
-            className={clsx('lg:hidden', isDark ? 'text-slate-400' : 'text-gray-500')}
-            onClick={() => setSidebarOpen(true)}
-            aria-label="Open menu"
-          >
-            <Menu className="w-5 h-5" />
-          </button>
-          <div>
-            <h1 className={clsx('text-base font-semibold', isDark ? 'text-white' : 'text-gray-900')}>
-              {currentPage?.label ?? 'Dashboard'}
-            </h1>
-          </div>
-          <div className="ml-auto flex items-center gap-1.5">
-            <button
-              onClick={toggleTheme}
-              className={clsx(
-                'p-2 rounded-xl transition-all duration-200',
-                isDark ? 'text-slate-400 hover:text-yellow-400 hover:bg-white/[0.06]' : 'text-gray-400 hover:text-gray-900 hover:bg-gray-100'
-              )}
-              title={isDark ? 'Switch to light mode' : 'Switch to dark mode'}
-              aria-label="Toggle theme"
-            >
-              {isDark ? <Sun className="w-[18px] h-[18px]" /> : <Moon className="w-[18px] h-[18px]" />}
-            </button>
-            <button
-              className={clsx('relative p-2 rounded-xl transition-all duration-200', isDark ? 'text-slate-400 hover:bg-white/[0.06]' : 'text-gray-400 hover:bg-gray-100')}
-              aria-label="Notifications"
-            >
-              <Bell className="w-[18px] h-[18px]" />
-              <span className="absolute top-1.5 right-1.5 w-2 h-2 rounded-full bg-brand-500 ring-2 ring-[#060810]" />
+            <button type="button" onClick={handleLogout} className="w-full text-left min-h-[40px] px-4 text-ink hover:bg-canvas">
+              Sign out
             </button>
           </div>
-        </header>
+        </details>
+      </header>
 
-        {/* Page content */}
-        <main className="flex-1 overflow-y-auto overflow-x-hidden scrollbar-thin p-6">
-          {children}
-        </main>
-      </div>
+      <main className="px-5 sm:px-10 pt-8 pb-14">
+        {!REDESIGNED.has(location.pathname) && current && (
+          <h1 className="m-0 mb-6 text-[28px] font-bold tracking-[-0.02em]">{current.label}</h1>
+        )}
+        {children}
+      </main>
     </div>
   );
 }

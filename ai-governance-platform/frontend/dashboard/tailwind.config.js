@@ -5,6 +5,12 @@ export default {
   theme: {
     extend: {
       colors: {
+        // ── Aegis design tokens (direction I) ──────────────────────────────
+        ink: { DEFAULT: '#14213D', soft: '#39445A', muted: '#5A6478', faint: '#8A94A6', tint: '#EEF1F6', 'on-dark': '#D5DCE8', 'on-dark-muted': '#B9C3D6' },
+        line: { DEFAULT: '#E3E6EC', subtle: '#EDEFF3', strong: '#D5DAE2' },
+        canvas: '#F6F7F9',
+        // Red is reserved for "stopped"; never use it for decoration.
+        stop: { DEFAULT: '#C8322A', soft: '#FBEAE8', text: '#A3231C' },
         brand: {
           50: '#eef2ff',
           100: '#e0e7ff',
@@ -25,7 +31,7 @@ export default {
         },
       },
       fontFamily: {
-        sans: ['Inter', 'system-ui', 'sans-serif'],
+        sans: ['Archivo', 'system-ui', 'sans-serif'],
         mono: ['JetBrains Mono', 'monospace'],
       },
       borderRadius: {

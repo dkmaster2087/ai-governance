@@ -1,5 +1,5 @@
 <!DOCTYPE html>
-<html lang="en" class="dark">
+<html lang="en" class="light">
   <head>
     <meta charset="UTF-8" />
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
@@ -8,7 +8,9 @@
     <script>
       // Apply theme before React loads to prevent flash
       (function() {
-        var theme = localStorage.getItem('aegis_theme') || 'dark';
+        // Light is the default; dark returns later as an opt-in theme.
+        var theme = 'light';
+        try { theme = localStorage.getItem('aegis_theme_v2') || 'light'; } catch (e) {}
         document.documentElement.className = theme;
       })();
     </script>

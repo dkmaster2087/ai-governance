@@ -9,7 +9,8 @@ interface ThemeContextValue {
 }
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
-const STORAGE_KEY = 'aegis_theme';
+// v2: the redesign starts everyone on light; older stored 'dark' choices are ignored.
+const STORAGE_KEY = 'aegis_theme_v2';
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {
@@ -17,11 +18,11 @@ export function ThemeProvider({ children }: { children: ReactNode }) {
       const stored = localStorage.getItem(STORAGE_KEY);
       if (stored === 'light' || stored === 'dark') return stored;
     } catch {}
-    return 'dark';
+    return 'light';
   });
 
   useEffect(() => {
-    localStorage.setItem(STORAGE_KEY, theme);
+    try { localStorage.setItem(STORAGE_KEY, theme); } catch {}
     const root = document.documentElement;
     if (theme === 'dark') {
       root.classList.add('dark');

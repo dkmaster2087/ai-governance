@@ -20,6 +20,7 @@ import { setupGracefulShutdown } from './middleware/graceful-shutdown';
 import { requestTracing } from './middleware/request-tracing';
 import { getSecurityConfig } from './config/security';
 import { metricsRoutes } from './routes/metrics.routes';
+import { gatewayRoutes } from './routes/gateway.routes';
 
 export async function buildApp() {
   const securityConfig = getSecurityConfig();
@@ -60,6 +61,7 @@ export async function buildApp() {
   await app.register(apiKeyRoutes, { prefix: '/v1' });
   await app.register(alertRoutes, { prefix: '/v1' });
   await app.register(reportingRoutes, { prefix: '/v1' });
+  await app.register(gatewayRoutes, { prefix: '/v1' });
   await app.register(metricsRoutes, { prefix: '/internal' });
 
   // Error handler

@@ -105,7 +105,7 @@ function userFromSession(session: CognitoUserSession): AuthUser | null {
 }
 
 // Every API client asks this for credentials before each request.
-setAuthHeaderProvider(async () => {
+setAuthHeaderProvider(async (): Promise<Record<string, string>> => {
   if (AUTH_MODE === 'cognito') {
     const session = await cognito.currentSession();
     return session ? { authorization: `Bearer ${session.getIdToken().getJwtToken()}` } : {};

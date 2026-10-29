@@ -27,7 +27,8 @@ export class AuditService {
     request: NormalizedAIRequest,
     response: NormalizedAIResponse | null,
     policyResult: PolicyEvaluationResult,
-    latencyMs: number
+    latencyMs: number,
+    findings: { piiDetected?: boolean } = {}
   ): Promise<void> {
     // Look up model config for accurate pricing
     let inputCostPer1k = 0.003;
@@ -61,7 +62,7 @@ export class AuditService {
       responseHash: response ? hashContent(response.content) : '',
       policyDecision: policyResult.action,
       triggeredRules: policyResult.triggeredRules,
-      piiDetected: false,
+      piiDetected: findings.piiDetected ?? false,
       piiTypes: [],
       inputTokens: response?.inputTokens || 0,
       outputTokens: response?.outputTokens || 0,
@@ -70,7 +71,10 @@ export class AuditService {
         : 0,
       latencyMs,
       timestamp: new Date().toISOString(),
-      metadata: request.metadata,
+      // Keep the human-readable reason a request was stopped, for the dashboard and evidence.
+      metadata: policyResult.reason && !policyResult.allowed
+        ? { ...request.metadata, policyReason: policyResult.reason }
+        : request.metadata,
     };
 
     // Write to both S3 (archival) and DynamoDB (queryable by analytics)

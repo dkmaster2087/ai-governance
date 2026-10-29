@@ -51,6 +51,18 @@ describe('GatewayService governance', () => {
     expect(Router.prototype.route.mock.calls[0][0].messages[0].content).toBe('My SSN is [REDACTED]');
   });
 
+  it('records in the audit log whether personal data was masked', async () => {
+    await new GatewayService().processRequest(input);
+    expect(Audit.prototype.log.mock.calls[0][4]).toEqual({ piiDetected: true });
+    DataProtection.prototype.protectRequest.mockImplementation(async (r) => r);
+    jest.clearAllMocks();
+    Router.prototype.route.mockResolvedValue(providerResponse);
+    Policy.prototype.evaluate.mockResolvedValue(allow);
+    DataProtection.prototype.filterResponse.mockImplementation(async (r) => r);
+    await new GatewayService().processRequest({ ...input, messages: [{ role: 'user' as const, content: 'hello' }] });
+    expect(Audit.prototype.log.mock.calls[0][4]).toEqual({ piiDetected: false });
+  });
+
   it('does not mask or call the provider when policy blocks', async () => {
     Policy.prototype.evaluate.mockResolvedValue({ allowed: false, action: 'block', triggeredRules: ['pii'], riskScore: 100, reason: 'PII' });
     await expect(new GatewayService().processRequest(input)).rejects.toMatchObject({ statusCode: 403 });
