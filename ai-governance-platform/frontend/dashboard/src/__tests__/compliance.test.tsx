@@ -1,150 +1,77 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
-import { ThemeProvider } from '../lib/theme';
-import { ControlDetailDrawer } from '../components/compliance/ControlDetailDrawer';
-import { CustomPolicyBuilder } from '../components/compliance/CustomPolicyBuilder';
-import { PolicyModal } from '../components/policies/PolicyModal';
+import { CompliancePage } from '../pages/CompliancePage';
+import * as api from '../lib/compliance-api';
 
-const wrap = (ui: React.ReactElement) => {
+vi.mock('../lib/compliance-api', () => ({
+  fetchComplianceStatus: vi.fn(),
+  enableFramework: vi.fn(),
+  disableFramework: vi.fn(),
+  assessFramework: vi.fn(),
+}));
+
+const wrap = () => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter>
-        <ThemeProvider>{ui}</ThemeProvider>
-      </MemoryRouter>
-    </QueryClientProvider>
-  );
+  return render(<QueryClientProvider client={qc}><MemoryRouter><CompliancePage /></MemoryRouter></QueryClientProvider>);
 };
 
-// ── ControlDetailDrawer ───────────────────────────────────────────────────────
-
-describe('ControlDetailDrawer', () => {
-  const baseProps = {
-    controlId: 'SOC2-P3.1',
-    controlTitle: 'Sensitive Data in AI Prompts',
-    severity: 'critical',
-    framework: 'SOC 2 Type II',
-    onClose: vi.fn(),
-    onCopyToPolicy: vi.fn(),
-  };
-
-  it('renders control title and ID', () => {
-    wrap(<ControlDetailDrawer {...baseProps} />);
-    expect(screen.getByText('Sensitive Data in AI Prompts')).toBeInTheDocument();
-    expect(screen.getByText('SOC2-P3.1')).toBeInTheDocument();
-  });
-
-  it('shows blocked examples for SOC2-P3.1', () => {
-    wrap(<ControlDetailDrawer {...baseProps} />);
-    expect(screen.getByText(/Prompts that would be blocked/i)).toBeInTheDocument();
-  });
-
-  it('shows allowed examples', () => {
-    wrap(<ControlDetailDrawer {...baseProps} />);
-    expect(screen.getByText(/Prompts that would pass/i)).toBeInTheDocument();
-  });
-
-  it('calls onCopyToPolicy when button clicked', () => {
-    wrap(<ControlDetailDrawer {...baseProps} />);
-    fireEvent.click(screen.getByText(/Copy to Custom Policy/i));
-    expect(baseProps.onCopyToPolicy).toHaveBeenCalledWith('SOC2-P3.1');
-  });
-
-  it('calls onClose when close button clicked', () => {
-    wrap(<ControlDetailDrawer {...baseProps} />);
-    fireEvent.click(screen.getByLabelText('Close'));
-    expect(baseProps.onClose).toHaveBeenCalled();
-  });
-
-  it('shows fallback message for unknown control', () => {
-    wrap(<ControlDetailDrawer {...baseProps} controlId="UNKNOWN-999" />);
-    expect(screen.getByText(/not yet available/i)).toBeInTheDocument();
-  });
+const pack = (framework: string, name: string, status: 'enabled' | 'partial' | 'disabled') => ({
+  framework, name, version: '1.0', description: `${name} controls`, status, passedControls: status === 'disabled' ? 0 : 3, totalControls: 5,
+  controls: [
+    { controlId: `${framework}-1`, title: 'Access control', severity: 'critical', automatable: true },
+    { controlId: `${framework}-2`, title: 'Risk assessment', severity: 'medium', automatable: false },
+  ],
 });
 
-// ── CustomPolicyBuilder ───────────────────────────────────────────────────────
+describe('CompliancePage', () => {
+  beforeEach(() => vi.clearAllMocks());
 
-describe('CustomPolicyBuilder', () => {
-  const baseProps = {
-    preloadedControlIds: [] as string[],
-    onClose: vi.fn(),
-    onSaved: vi.fn(),
-  };
-
-  it('renders policy name input', () => {
-    wrap(<CustomPolicyBuilder {...baseProps} />);
-    expect(screen.getByLabelText(/Policy name/i)).toBeInTheDocument();
+  it('leads with which frameworks are on', async () => {
+    vi.mocked(api.fetchComplianceStatus).mockResolvedValue([pack('soc2', 'SOC 2', 'enabled'), pack('hipaa', 'HIPAA', 'disabled'), pack('eu-ai-act', 'EU AI Act', 'partial')]);
+    wrap();
+    expect(await screen.findByText('SOC 2 and EU AI Act are on.')).toBeInTheDocument();
+    expect(screen.getAllByText(/3 of 5/)).toHaveLength(2);
   });
 
-  it('shows preloaded control count when controls provided', () => {
-    wrap(<CustomPolicyBuilder {...baseProps} preloadedControlIds={['SOC2-P3.1', 'HIPAA-164.312A']} />);
-    expect(screen.getByText(/2 controls? pre-loaded/i)).toBeInTheDocument();
+  it('says so when nothing is on', async () => {
+    vi.mocked(api.fetchComplianceStatus).mockResolvedValue([pack('hipaa', 'HIPAA', 'disabled')]);
+    wrap();
+    expect(await screen.findByText('No compliance frameworks are on.')).toBeInTheDocument();
   });
 
-  it('save button is disabled when name is empty', () => {
-    wrap(<CustomPolicyBuilder {...baseProps} />);
-    const saveBtn = screen.getByRole('button', { name: /Save Policy/i });
-    expect(saveBtn).toBeDisabled();
+  it('turns a framework on', async () => {
+    vi.mocked(api.fetchComplianceStatus).mockResolvedValue([pack('hipaa', 'HIPAA', 'disabled')]);
+    vi.mocked(api.enableFramework).mockResolvedValue({ framework: 'hipaa', status: 'enabled' });
+    wrap();
+    fireEvent.click(await screen.findByRole('switch', { name: 'HIPAA off' }));
+    await waitFor(() => expect(api.enableFramework).toHaveBeenCalledWith('hipaa'));
   });
 
-  it('shows add rule button', () => {
-    wrap(<CustomPolicyBuilder {...baseProps} />);
-    expect(screen.getByText(/Add new rule/i)).toBeInTheDocument();
+  it('asks before turning a framework off', async () => {
+    vi.mocked(api.fetchComplianceStatus).mockResolvedValue([pack('soc2', 'SOC 2', 'enabled')]);
+    vi.mocked(api.disableFramework).mockResolvedValue({});
+    wrap();
+    fireEvent.click(await screen.findByRole('switch', { name: 'SOC 2 on' }));
+    expect(api.disableFramework).not.toHaveBeenCalled();
+    fireEvent.click(screen.getByRole('button', { name: 'Turn off' }));
+    await waitFor(() => expect(api.disableFramework).toHaveBeenCalledWith('soc2'));
   });
 
-  it('opens rule type selector when Add new rule clicked', () => {
-    wrap(<CustomPolicyBuilder {...baseProps} />);
-    fireEvent.click(screen.getByText(/Add new rule/i));
-    expect(screen.getByText('Keyword Block')).toBeInTheDocument();
-    expect(screen.getByText('PII Detection')).toBeInTheDocument();
-    expect(screen.getByText('Model Restriction')).toBeInTheDocument();
-  });
-});
-
-// ── PolicyModal — framework-linked warning ────────────────────────────────────
-
-describe('PolicyModal', () => {
-  const baseProps = {
-    onClose: vi.fn(),
-    onSaved: vi.fn(),
-  };
-
-  it('renders New Policy title when no policy provided', () => {
-    wrap(<PolicyModal policy={null} {...baseProps} />);
-    expect(screen.getByText('New Policy')).toBeInTheDocument();
+  it('shows the error instead of pretending it worked', async () => {
+    vi.mocked(api.fetchComplianceStatus).mockResolvedValue([pack('hipaa', 'HIPAA', 'disabled')]);
+    vi.mocked(api.enableFramework).mockRejectedValue({ response: { data: { message: 'Policy engine unavailable' } } });
+    wrap();
+    fireEvent.click(await screen.findByRole('switch', { name: 'HIPAA off' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Policy engine unavailable');
   });
 
-  it('renders Edit Policy title when editing', () => {
-    wrap(<PolicyModal policy={{ policyId: 'p1', name: 'Test', description: '', enabled: true, rules: [] }} {...baseProps} />);
-    expect(screen.getByText('Edit Policy')).toBeInTheDocument();
-  });
-
-  it('shows framework warning banner when policy has sourceFramework', () => {
-    wrap(<PolicyModal policy={{ policyId: 'p1', name: 'HIPAA Controls', description: '', enabled: true, rules: [], sourceFramework: 'hipaa' }} {...baseProps} />);
-    expect(screen.getByText(/linked to the hipaa compliance framework/i)).toBeInTheDocument();
-  });
-
-  it('does not show framework warning for non-linked policies', () => {
-    wrap(<PolicyModal policy={{ policyId: 'p1', name: 'Custom', description: '', enabled: true, rules: [] }} {...baseProps} />);
-    expect(screen.queryByText(/linked to the.*compliance framework/i)).not.toBeInTheDocument();
-  });
-
-  it('shows framework badge when sourceFramework is set', () => {
-    wrap(<PolicyModal policy={{ policyId: 'p1', name: 'Test', description: '', enabled: true, rules: [], sourceFramework: 'soc2' }} {...baseProps} />);
-    expect(screen.getByText(/Generated from soc2/i)).toBeInTheDocument();
-  });
-
-  it('shows toggle for enabled state', () => {
-    wrap(<PolicyModal policy={{ policyId: 'p1', name: 'Test', description: '', enabled: true, rules: [] }} {...baseProps} />);
-    expect(screen.getByRole('switch')).toBeInTheDocument();
-    expect(screen.getByText(/Policy enabled/i)).toBeInTheDocument();
-  });
-
-  it('save button is disabled when name is empty', () => {
-    wrap(<PolicyModal policy={null} {...baseProps} />);
-    const saveBtn = screen.getByRole('button', { name: /Create Policy/i });
-    expect(saveBtn).toBeDisabled();
+  it('lists controls and which need a manual review', async () => {
+    vi.mocked(api.fetchComplianceStatus).mockResolvedValue([pack('soc2', 'SOC 2', 'enabled')]);
+    wrap();
+    fireEvent.click(await screen.findByRole('button', { name: /Show 2 controls/ }));
+    expect(screen.getByText('Access control')).toBeInTheDocument();
+    expect(screen.getByText('Manual review')).toBeInTheDocument();
   });
 });

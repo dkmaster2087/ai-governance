@@ -65,4 +65,3 @@ tenants via `X-Tenant-Id`; everyone else is limited to their own.
 - Streaming responses and secrets detection are not built yet.
 - Policy engine, data protection and analytics have no service-to-service authentication; they rely on
   being reachable only inside the VPC.
-- Models & keys, Compliance and Users still use the older visual style (they read real data).

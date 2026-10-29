@@ -1,262 +1,174 @@
 import { useState } from 'react';
-import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query';
-import {
-  Plus, Pencil, Trash2, Play, CheckCircle, XCircle,
-  Clock, Star, StarOff, AlertTriangle, Cpu,
-} from 'lucide-react';
+import { Link } from 'react-router-dom';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { format } from 'date-fns';
-import { fetchModelConfigs, deleteModelConfig, testModelConfig } from '../lib/api';
-import type { mockModelConfigs } from '../lib/mock-data';
-import { Badge } from '../components/ui/Badge';
-import { ModelConfigModal } from '../components/models/ModelConfigModal';
-import { useTheme } from '../lib/theme';
-import { themeClasses } from '../lib/theme-classes';
+import {
+  listModels, MODEL_SUGGESTIONS, ModelConfig, ModelInput, ModelProvider, ModelTestResult,
+  PROVIDER_LABEL, removeModel, saveModel, testModel,
+} from '../lib/models-api';
+import { errorMessage } from '../lib/rules-api';
+import { Button, Note, Panel, SectionLabel, Segmented, Switch } from '../components/aegis/primitives';
 
-type ModelStatus = 'active' | 'inactive' | 'testing';
-type TestStatus = 'pass' | 'fail' | undefined;
+const field = 'w-full min-h-[42px] px-3 border border-line-strong rounded-lg bg-white';
+const price = (n: number) => (n ? `$${n}` : '—');
 
-const providerMeta: Record<string, { label: string; color: string; bg: string }> = {
-  bedrock:       { label: 'Amazon Bedrock',  color: 'text-orange-400', bg: 'bg-orange-500/20' },
-  openai:        { label: 'OpenAI',          color: 'text-green-400',  bg: 'bg-green-500/20'  },
-  anthropic:     { label: 'Anthropic',       color: 'text-purple-400', bg: 'bg-purple-500/20' },
-  'azure-openai':{ label: 'Azure OpenAI',    color: 'text-blue-400',   bg: 'bg-blue-500/20'   },
-  'google-vertex':{ label: 'Google Vertex',  color: 'text-yellow-400', bg: 'bg-yellow-500/20' },
-};
+const blank: ModelInput = { name: '', provider: 'bedrock', modelId: '', status: 'active', apiKey: '', inputCostPer1kTokens: 0, outputCostPer1kTokens: 0 };
 
-export function ModelsPage() {
-  const { isDark } = useTheme();
-  const t = themeClasses(isDark);
+export function ModelForm({ model, onDone }: { model?: ModelConfig; onDone: () => void }) {
+  const qc = useQueryClient();
+  const [form, setForm] = useState<ModelInput>(model ? {
+    name: model.name,
+    provider: (model.provider === 'openai' ? 'openai' : 'bedrock'),
+    modelId: model.modelId,
+    status: model.status === 'active' ? 'active' : 'inactive',
+    apiKey: '',
+    inputCostPer1kTokens: model.inputCostPer1kTokens ?? 0,
+    outputCostPer1kTokens: model.outputCostPer1kTokens ?? 0,
+  } : blank);
+  const set = <K extends keyof ModelInput>(k: K, v: ModelInput[K]) => setForm((f) => ({ ...f, [k]: v }));
+  const unsupported = model && !(model.provider in PROVIDER_LABEL);
+  const needsKey = form.provider === 'openai';
 
-  const providerCustom = { label: 'Custom', color: isDark ? 'text-slate-400' : 'text-gray-500', bg: isDark ? 'bg-slate-700' : 'bg-gray-200' };
-
-  const statusBadge: Record<ModelStatus, { label: string; color: string }> = {
-    active:   { label: 'Active',   color: 'text-accent-400 bg-accent-500/20' },
-    inactive: { label: 'Inactive', color: clsx(isDark ? 'text-slate-400 bg-slate-700' : 'text-gray-500 bg-gray-200') },
-    testing:  { label: 'Testing',  color: 'text-yellow-400 bg-yellow-500/20' },
-  };
-
-  const [modalOpen, setModalOpen] = useState(false);
-  const [editTarget, setEditTarget] = useState<typeof mockModelConfigs[0] | null>(null);
-  const [testingId, setTestingId] = useState<string | null>(null);
-  const queryClient = useQueryClient();
-
-  const { data, isLoading: modelsLoading, isError: modelsError } = useQuery({
-    queryKey: ['model-configs'],
-    queryFn: fetchModelConfigs,
+  const save = useMutation({
+    mutationFn: () => saveModel(form, model?.modelConfigId),
+    onSuccess: () => { qc.invalidateQueries({ queryKey: ['model-configs'] }); onDone(); },
   });
-
-  const models: typeof mockModelConfigs = Array.isArray(data) ? data : [];
-
-  const deleteMutation = useMutation({
-    mutationFn: deleteModelConfig,
-    onSuccess: () => queryClient.invalidateQueries({ queryKey: ['model-configs'] }),
-  });
-
-  const testMutation = useMutation({
-    mutationFn: (id: string) => testModelConfig(id),
-    onSettled: () => {
-      setTestingId(null);
-      queryClient.invalidateQueries({ queryKey: ['model-configs'] });
-    },
-  });
-
-  const handleTest = (id: string) => {
-    setTestingId(id);
-    testMutation.mutate(id);
-  };
-
-  const activeCount = models.filter((m) => m.status === 'active').length;
-  const totalCostEstimate = models
-    .filter((m) => m.status === 'active')
-    .reduce((sum, m) => sum + m.inputCostPer1kTokens + m.outputCostPer1kTokens, 0);
+  const canSave = form.name.trim() && form.modelId.trim() && (!needsKey || form.apiKey || model?.apiKeyHint);
 
   return (
-    <div className="space-y-5">
-      {modelsError && <p role="alert" className="m-0 text-stop-text font-semibold">Couldn’t load models. Check that the gateway is reachable and try again.</p>}
-      {!modelsLoading && !modelsError && models.length === 0 && (
-        <div className="bg-white border border-line rounded-[14px] px-6 py-5">
-          <p className="m-0 font-semibold">No models yet.</p>
-          <p className="m-0 mt-1 text-ink-muted">Add the models your apps may use. Requests for any other model are refused.</p>
+    <Panel aria-label={model ? `Edit ${model.name}` : 'Add a model'} className="px-6 py-5">
+      <SectionLabel className="mb-4">{model ? `Edit ${model.name}` : 'Add a model'}</SectionLabel>
+      <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); if (canSave) save.mutate(); }}>
+        {unsupported && (
+          <p className="m-0 text-stop-text font-semibold">This model was set up for {model!.provider}, which the gateway can’t call. Choose Amazon Bedrock or OpenAI.</p>
+        )}
+        <div className="flex flex-col gap-1.5">
+          <span className="text-sm font-semibold">Provider</span>
+          <div><Segmented label="Provider" value={form.provider} onChange={(p: ModelProvider) => set('provider', p)}
+            options={[{ value: 'bedrock', label: 'Amazon Bedrock' }, { value: 'openai', label: 'OpenAI' }]} /></div>
+          <span className="text-xs text-ink-muted">
+            {form.provider === 'bedrock' ? 'Called with the gateway’s AWS role, in its own region. No key needed.' : 'Your OpenAI key is kept in AWS Secrets Manager. Only its last four characters are shown here.'}
+          </span>
         </div>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
+          <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Name</span>
+            <input className={field} value={form.name} onChange={(e) => set('name', e.target.value)} placeholder="e.g. Claude for support" />
+          </label>
+          <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Model ID</span>
+            <input className={clsx(field, 'font-mono text-[13px]')} list="model-suggestions" value={form.modelId} onChange={(e) => set('modelId', e.target.value)}
+              placeholder={MODEL_SUGGESTIONS[form.provider][0]} />
+            <datalist id="model-suggestions">{MODEL_SUGGESTIONS[form.provider].map((m) => <option key={m} value={m} />)}</datalist>
+            <span className="text-xs text-ink-muted">Apps send this as <code className="font-mono">model</code>.</span>
+          </label>
+          {needsKey && (
+            <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">OpenAI key</span>
+              <input className={clsx(field, 'font-mono text-[13px]')} type="password" autoComplete="off" value={form.apiKey} onChange={(e) => set('apiKey', e.target.value)}
+                placeholder={model?.apiKeyHint ? `Blank keeps key ending ${model.apiKeyHint.slice(-4)}` : 'sk-…'} />
+            </label>
+          )}
+        </div>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
+          <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Input price per 1,000 tokens ($)</span>
+            <input className={field} type="number" min={0} step="0.00001" value={form.inputCostPer1kTokens} onChange={(e) => set('inputCostPer1kTokens', Math.max(0, Number(e.target.value) || 0))} />
+          </label>
+          <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Output price per 1,000 tokens ($)</span>
+            <input className={field} type="number" min={0} step="0.00001" value={form.outputCostPer1kTokens} onChange={(e) => set('outputCostPer1kTokens', Math.max(0, Number(e.target.value) || 0))} />
+          </label>
+        </div>
+        <p className="m-0 -mt-2 text-xs text-ink-muted">Prices are what your provider charges; Spend uses them to estimate cost.</p>
+        <div className="flex items-center gap-3">
+          <Switch label="Listed for apps" checked={form.status === 'active'} onChange={(on) => set('status', on ? 'active' : 'inactive')} />
+          <span className="text-sm">Listed for apps <span className="text-ink-muted">(shown in the gateway’s model list)</span></span>
+        </div>
+        {save.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(save.error)}</p>}
+        <div className="flex gap-2">
+          <Button type="submit" disabled={!canSave || save.isPending}>{save.isPending ? 'Saving…' : model ? 'Save' : 'Add model'}</Button>
+          <Button type="button" variant="secondary" onClick={onDone}>Cancel</Button>
+        </div>
+      </form>
+    </Panel>
+  );
+}
+
+function ModelRow({ m, onEdit }: { m: ModelConfig; onEdit: () => void }) {
+  const qc = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const [result, setResult] = useState<ModelTestResult | null>(null);
+  const test = useMutation({ mutationFn: () => testModel(m.modelConfigId), onSuccess: setResult, onSettled: () => qc.invalidateQueries({ queryKey: ['model-configs'] }) });
+  const remove = useMutation({ mutationFn: () => removeModel(m.modelConfigId), onSuccess: () => qc.invalidateQueries({ queryKey: ['model-configs'] }) });
+  const listed = m.status === 'active';
+
+  const testLine = test.isError ? { ok: false, text: `Test failed: ${errorMessage(test.error)}` }
+    : result ? (result.success ? { ok: true, text: `Answered in ${result.latencyMs} ms` } : { ok: false, text: `Didn’t answer: ${result.error ?? 'unknown error'}` })
+    : m.lastTestStatus ? { ok: m.lastTestStatus === 'pass', text: m.lastTestStatus === 'pass' ? 'Last test passed' : 'Last test failed' }
+    : null;
+
+  return (
+    <li className="grid gap-x-6 gap-y-2 px-6 py-4 border-b border-line-subtle last:border-b-0 md:grid-cols-[minmax(0,1.4fr)_minmax(0,1fr)_auto] md:items-center">
+      <div className="min-w-0">
+        <div className="flex items-center gap-2 flex-wrap">
+          <span className="font-semibold">{m.name}</span>
+          {!listed && <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-line-subtle text-ink-soft">Not listed</span>}
+        </div>
+        <div className="font-mono text-[13px] text-ink-muted truncate">{m.modelId}</div>
+      </div>
+      <div className="text-sm min-w-0">
+        <div>{PROVIDER_LABEL[m.provider] ?? <span className="text-stop-text font-semibold">{m.provider} (not supported)</span>}{m.apiKeyHint && <span className="font-mono text-ink-muted"> · key {m.apiKeyHint}</span>}</div>
+        <div className="text-ink-muted">{m.inputCostPer1kTokens || m.outputCostPer1kTokens ? `In ${price(m.inputCostPer1kTokens)} · out ${price(m.outputCostPer1kTokens)} per 1k tokens` : 'No prices set'}</div>
+        {testLine && <div className={clsx('font-semibold', testLine.ok ? 'text-ink' : 'text-stop-text')}>{testLine.text}</div>}
+      </div>
+      <div className="flex gap-2 flex-wrap md:justify-end">
+        {confirming ? (
+          <>
+            <span className="self-center text-sm">Remove {m.name}?</span>
+            <Button variant="secondary" onClick={() => remove.mutate()} disabled={remove.isPending}>Remove</Button>
+            <Button variant="ghost" onClick={() => setConfirming(false)}>Keep</Button>
+          </>
+        ) : (
+          <>
+            <Button variant="secondary" onClick={() => { setResult(null); test.mutate(); }} disabled={test.isPending}>{test.isPending ? 'Testing…' : 'Test'}</Button>
+            <Button variant="secondary" onClick={onEdit}>Edit</Button>
+            <Button variant="ghost" onClick={() => setConfirming(true)}>Remove</Button>
+          </>
+        )}
+      </div>
+    </li>
+  );
+}
+
+/** The models apps can reach through the gateway, and the provider keys behind them. */
+export function ModelsPage() {
+  const [editing, setEditing] = useState<ModelConfig | 'new' | null>(null);
+  const { data: models, isLoading, isError, refetch } = useQuery({ queryKey: ['model-configs'], queryFn: listModels });
+  const listed = models?.filter((m) => m.status === 'active').length ?? 0;
+
+  return (
+    <div className="flex flex-col gap-6 max-w-[1100px]">
+      <div className="flex flex-wrap justify-between items-end gap-4">
+        <div>
+          <p className="m-0 text-[30px] leading-[1.15] font-bold tracking-[-0.02em]">
+            {models ? (models.length === 0 ? 'No models set up yet.' : `${listed} ${listed === 1 ? 'model' : 'models'} listed for apps.`) : ' '}
+          </p>
+          <p className="m-0 mt-1.5 text-ink-muted text-[15px]">
+            To stop apps using anything else, add an <Link to="/rules" className="font-semibold text-ink">Approved models</Link> rule.
+          </p>
+        </div>
+        {editing === null && <Button onClick={() => setEditing('new')}>Add a model</Button>}
+      </div>
+
+      {editing !== null && <ModelForm key={editing === 'new' ? 'new' : editing.modelConfigId} model={editing === 'new' ? undefined : editing} onDone={() => setEditing(null)} />}
+
+      {isError && <Panel className="px-6"><Note title="Couldn’t load models."><button type="button" className="underline font-semibold" onClick={() => refetch()}>Try again</button></Note></Panel>}
+      {isLoading && <Panel className="px-6 py-5"><p className="m-0 text-ink-muted">Loading…</p></Panel>}
+      {models && models.length === 0 && editing === null && (
+        <Panel className="px-6"><Note title="Add the models your apps use.">Each one needs its provider and, for OpenAI, a key. Prices are optional and feed Spend.</Note></Panel>
       )}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-4">
-          <div className={clsx('border rounded-xl px-4 py-2.5 text-center', t.card)}>
-            <p className={clsx('text-lg font-bold', t.heading)}>{models.length}</p>
-            <p className={clsx('text-xs', t.muted)}>Configured</p>
-          </div>
-          <div className={clsx('border rounded-xl px-4 py-2.5 text-center', t.card)}>
-            <p className="text-lg font-bold text-accent-400">{activeCount}</p>
-            <p className={clsx('text-xs', t.muted)}>Active</p>
-          </div>
-          <div className={clsx('border rounded-xl px-4 py-2.5 text-center', t.card)}>
-            <p className={clsx('text-lg font-bold', t.heading)}>${totalCostEstimate.toFixed(4)}</p>
-            <p className={clsx('text-xs', t.muted)}>Avg cost/1k tokens</p>
-          </div>
-        </div>
-        <button
-          onClick={() => { setEditTarget(null); setModalOpen(true); }}
-          className="flex items-center gap-2 px-4 py-2.5 rounded-xl bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-colors"
-        >
-          <Plus className="w-4 h-4" />
-          Add Model
-        </button>
-      </div>
-
-      <div className={clsx('flex items-start gap-2.5 border rounded-xl px-4 py-3 text-xs', t.card, t.muted)}>
-        <AlertTriangle className="w-3.5 h-3.5 text-yellow-500 flex-shrink-0 mt-0.5" />
-        <span>
-          Model configurations are stored in <span className={clsx('font-mono', t.body)}>DynamoDB / ai-gov-models</span>.
-          API keys are stored in <span className={clsx('font-mono', t.body)}>AWS Secrets Manager</span> — only the last 4 characters are shown here.
-        </span>
-      </div>
-
-      <div className="grid md:grid-cols-2 xl:grid-cols-3 gap-4">
-        {models.map((model) => {
-          const provider = providerMeta[model.provider] ?? providerCustom;
-          const status = statusBadge[model.status as ModelStatus];
-          const isTesting = testingId === model.modelConfigId;
-
-          return (
-            <div
-              key={model.modelConfigId}
-              className={clsx(
-                'border rounded-2xl p-5 flex flex-col gap-4 transition-colors',
-                t.card,
-                model.isDefault && 'border-brand-500/40'
-              )}
-            >
-              <div className="flex items-start gap-3">
-                <div className={clsx('w-10 h-10 rounded-xl flex items-center justify-center flex-shrink-0', provider.bg)}>
-                  <Cpu className={clsx('w-5 h-5', provider.color)} />
-                </div>
-                <div className="flex-1 min-w-0">
-                  <div className="flex items-center gap-1.5 mb-0.5">
-                    <h3 className={clsx('font-semibold text-sm truncate', t.heading)}>{model.name}</h3>
-                    {model.isDefault && (
-                      <Star className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" aria-label="Default model" />
-                    )}
-                  </div>
-                  <p className={clsx('text-xs font-mono truncate', t.muted)}>{model.modelId}</p>
-                </div>
-                <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium flex-shrink-0', status.color)}>
-                  {status.label}
-                </span>
-              </div>
-
-              <div className="flex items-center gap-2 flex-wrap">
-                <span className={clsx('text-xs px-2 py-0.5 rounded-full font-medium', provider.bg, provider.color)}>
-                  {provider.label}
-                </span>
-                {model.region && (
-                  <span className={clsx('text-xs px-2 py-0.5 rounded-full', t.muted, isDark ? 'bg-slate-800' : 'bg-gray-100')}>
-                    {model.region}
-                  </span>
-                )}
-                {model.apiKeyHint && (
-                  <span className={clsx('text-xs px-2 py-0.5 rounded-full font-mono', t.muted, isDark ? 'bg-slate-800' : 'bg-gray-100')}>
-                    key {model.apiKeyHint}
-                  </span>
-                )}
-                {model.requiresApproval && (
-                  <span className="text-xs text-yellow-400 bg-yellow-500/10 px-2 py-0.5 rounded-full">
-                    Approval required
-                  </span>
-                )}
-              </div>
-
-              <div className="grid grid-cols-2 gap-2 text-xs">
-                <div className={clsx('rounded-lg px-3 py-2', t.cardInner)}>
-                  <p className={clsx('mb-0.5', t.muted)}>Input cost</p>
-                  <p className={clsx('font-medium', t.heading)}>${model.inputCostPer1kTokens}/1k tokens</p>
-                </div>
-                <div className={clsx('rounded-lg px-3 py-2', t.cardInner)}>
-                  <p className={clsx('mb-0.5', t.muted)}>Output cost</p>
-                  <p className={clsx('font-medium', t.heading)}>${model.outputCostPer1kTokens}/1k tokens</p>
-                </div>
-                <div className={clsx('rounded-lg px-3 py-2', t.cardInner)}>
-                  <p className={clsx('mb-0.5', t.muted)}>Max tokens/req</p>
-                  <p className={clsx('font-medium', t.heading)}>{model.maxTokensPerRequest.toLocaleString()}</p>
-                </div>
-                <div className={clsx('rounded-lg px-3 py-2', t.cardInner)}>
-                  <p className={clsx('mb-0.5', t.muted)}>Context window</p>
-                  <p className={clsx('font-medium', t.heading)}>{(model.maxContextTokens / 1000).toFixed(0)}k</p>
-                </div>
-              </div>
-
-              {(model.allowedForRoles.length > 0 || model.tags.length > 0) && (
-                <div className="flex flex-wrap gap-1">
-                  {model.allowedForRoles.map((r) => (
-                    <span key={r} className="text-xs bg-brand-600/20 text-brand-400 px-2 py-0.5 rounded-full">{r}</span>
-                  ))}
-                  {model.tags.map((tg) => (
-                    <span key={tg} className={clsx('text-xs px-2 py-0.5 rounded-full', isDark ? 'bg-slate-800' : 'bg-gray-100', t.muted)}>{tg}</span>
-                  ))}
-                </div>
-              )}
-
-              <div className="flex items-center gap-2 text-xs">
-                {model.lastTestStatus === 'pass' ? (
-                  <CheckCircle className="w-3.5 h-3.5 text-accent-400" />
-                ) : model.lastTestStatus === 'fail' ? (
-                  <XCircle className="w-3.5 h-3.5 text-red-400" />
-                ) : (
-                  <Clock className={clsx('w-3.5 h-3.5', t.faint)} />
-                )}
-                <span className={clsx(
-                  model.lastTestStatus === 'pass' ? 'text-accent-400' :
-                  model.lastTestStatus === 'fail' ? 'text-red-400' : t.faint
-                )}>
-                  {model.lastTestStatus === 'pass' ? 'Connection verified' :
-                   model.lastTestStatus === 'fail' ? 'Last test failed' : 'Not tested'}
-                </span>
-                {model.lastTestedAt && (
-                  <span className={clsx('ml-auto', t.faint)}>
-                    {format(new Date(model.lastTestedAt), 'MMM d, HH:mm')}
-                  </span>
-                )}
-              </div>
-
-              <div className={clsx('flex items-center gap-2 pt-1 border-t', t.border)}>
-                <button
-                  onClick={() => handleTest(model.modelConfigId)}
-                  disabled={isTesting}
-                  className={clsx('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors disabled:opacity-50', t.btnSecondary)}
-                >
-                  <Play className={clsx('w-3 h-3', isTesting && 'animate-pulse')} />
-                  {isTesting ? 'Testing...' : 'Test'}
-                </button>
-                <button
-                  onClick={() => { setEditTarget(model as any); setModalOpen(true); }}
-                  className={clsx('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs transition-colors', t.btnSecondary)}
-                >
-                  <Pencil className="w-3 h-3" />
-                  Edit
-                </button>
-                <button
-                  onClick={() => deleteMutation.mutate(model.modelConfigId)}
-                  disabled={model.isDefault}
-                  className={clsx('ml-auto flex items-center gap-1.5 px-3 py-1.5 rounded-lg hover:text-red-400 hover:bg-red-500/10 text-xs transition-colors disabled:opacity-30 disabled:cursor-not-allowed', t.faint)}
-                  title={model.isDefault ? 'Cannot delete the default model' : 'Delete'}
-                >
-                  <Trash2 className="w-3 h-3" />
-                </button>
-              </div>
-            </div>
-          );
-        })}
-      </div>
-
-      {modalOpen && (
-        <ModelConfigModal
-          model={editTarget as Parameters<typeof ModelConfigModal>[0]['model']}
-          onClose={() => setModalOpen(false)}
-          onSaved={() => {
-            setModalOpen(false);
-            queryClient.invalidateQueries({ queryKey: ['model-configs'] });
-          }}
-        />
+      {models && models.length > 0 && (
+        <Panel>
+          <ul className="m-0 p-0 list-none">
+            {models.map((m) => <ModelRow key={m.modelConfigId} m={m} onEdit={() => setEditing(m)} />)}
+          </ul>
+        </Panel>
       )}
     </div>
   );

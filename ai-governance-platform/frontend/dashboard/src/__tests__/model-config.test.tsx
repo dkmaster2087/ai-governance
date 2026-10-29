@@ -1,129 +1,104 @@
-import { render, screen, fireEvent } from '@testing-library/react';
+import { render, screen, fireEvent, waitFor } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
-import { ThemeProvider } from '../lib/theme';
-import { ModelConfigModal } from '../components/models/ModelConfigModal';
+import { ModelForm, ModelsPage } from '../pages/ModelsPage';
+import * as api from '../lib/api';
+
+vi.mock('../lib/api', () => ({
+  fetchModelConfigs: vi.fn(),
+  createModelConfig: vi.fn(),
+  updateModelConfig: vi.fn(),
+  deleteModelConfig: vi.fn(),
+  testModelConfig: vi.fn(),
+}));
 
 const wrap = (ui: React.ReactElement) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
-  return render(
-    <QueryClientProvider client={qc}>
-      <MemoryRouter>
-        <ThemeProvider>{ui}</ThemeProvider>
-      </MemoryRouter>
-    </QueryClientProvider>
-  );
+  return render(<QueryClientProvider client={qc}><MemoryRouter>{ui}</MemoryRouter></QueryClientProvider>);
 };
 
-const baseProps = { onClose: vi.fn(), onSaved: vi.fn() };
+const openaiModel = {
+  modelConfigId: 'm1', name: 'GPT for support', provider: 'openai', modelId: 'gpt-4o', status: 'active' as const,
+  apiKeyHint: '...abcd', inputCostPer1kTokens: 0.005, outputCostPer1kTokens: 0.015,
+};
 
-describe('ModelConfigModal', () => {
+describe('ModelForm', () => {
   beforeEach(() => vi.clearAllMocks());
 
-  it('renders Add Model title when no model provided', () => {
-    wrap(<ModelConfigModal model={null} {...baseProps} />);
-    expect(screen.getByText('Add Model Configuration')).toBeInTheDocument();
+  it('offers only the providers the gateway can call', () => {
+    wrap(<ModelForm onDone={vi.fn()} />);
+    const group = screen.getByRole('group', { name: 'Provider' });
+    expect(group.querySelectorAll('button')).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Amazon Bedrock' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'OpenAI' })).toBeInTheDocument();
   });
 
-  it('renders Edit Model title when editing', () => {
-    wrap(<ModelConfigModal model={{ modelConfigId: 'm1', name: 'Test', modelId: 'gpt-4o', provider: 'openai' }} {...baseProps} />);
-    expect(screen.getByText('Edit Model')).toBeInTheDocument();
+  it('asks for a key only for OpenAI', () => {
+    wrap(<ModelForm onDone={vi.fn()} />);
+    expect(screen.queryByText('OpenAI key')).not.toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'OpenAI' }));
+    expect(screen.getByText('OpenAI key')).toBeInTheDocument();
   });
 
-  it('shows provider selector with all options', () => {
-    wrap(<ModelConfigModal model={null} {...baseProps} />);
-    expect(screen.getByText('Amazon Bedrock')).toBeInTheDocument();
-    expect(screen.getByText('OpenAI')).toBeInTheDocument();
-    expect(screen.getByText('Anthropic')).toBeInTheDocument();
+  it('cannot save without a name and model ID', () => {
+    wrap(<ModelForm onDone={vi.fn()} />);
+    expect(screen.getByRole('button', { name: 'Add model' })).toBeDisabled();
   });
 
-  it('save button is disabled when name is empty', () => {
-    wrap(<ModelConfigModal model={null} {...baseProps} />);
-    expect(screen.getByText('Add Model')).toBeDisabled();
+  it('keeps the existing key when editing and the key is left blank', async () => {
+    vi.mocked(api.updateModelConfig).mockResolvedValue({});
+    const onDone = vi.fn();
+    wrap(<ModelForm model={openaiModel} onDone={onDone} />);
+    expect(screen.getByPlaceholderText(/keeps key ending abcd/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    const [id, payload] = vi.mocked(api.updateModelConfig).mock.calls[0];
+    expect(id).toBe('m1');
+    expect(payload).toMatchObject({ provider: 'openai', modelId: 'gpt-4o', apiKey: undefined });
   });
 
-  it('shows three tabs', () => {
-    wrap(<ModelConfigModal model={null} {...baseProps} />);
-    expect(screen.getByText('Connection')).toBeInTheDocument();
-    expect(screen.getByText('Limits & Cost')).toBeInTheDocument();
-    expect(screen.getByText('Governance')).toBeInTheDocument();
+  it('shows the server’s reason when saving fails', async () => {
+    vi.mocked(api.createModelConfig).mockRejectedValue({ response: { data: { message: 'Invalid model' } } });
+    wrap(<ModelForm onDone={vi.fn()} />);
+    fireEvent.change(screen.getByPlaceholderText('e.g. Claude for support'), { target: { value: 'X' } });
+    fireEvent.change(screen.getByPlaceholderText(/anthropic\.claude/), { target: { value: 'amazon.titan-text-express-v1' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Add model' }));
+    expect(await screen.findByRole('alert')).toHaveTextContent('Invalid model');
+  });
+});
+
+describe('ModelsPage', () => {
+  beforeEach(() => vi.clearAllMocks());
+
+  it('leads with how many models are listed for apps', async () => {
+    vi.mocked(api.fetchModelConfigs).mockResolvedValue([openaiModel, { ...openaiModel, modelConfigId: 'm2', name: 'Old', status: 'inactive' }]);
+    wrap(<ModelsPage />);
+    expect(await screen.findByText('1 model listed for apps.')).toBeInTheDocument();
+    expect(screen.getByText('Not listed')).toBeInTheDocument();
   });
 
-  it('calls onClose when Cancel clicked', () => {
-    wrap(<ModelConfigModal model={null} {...baseProps} />);
-    fireEvent.click(screen.getByText('Cancel'));
-    expect(baseProps.onClose).toHaveBeenCalled();
+  it('marks models set up for a provider the gateway can’t call', async () => {
+    vi.mocked(api.fetchModelConfigs).mockResolvedValue([{ ...openaiModel, provider: 'google-vertex' }]);
+    wrap(<ModelsPage />);
+    expect(await screen.findByText('google-vertex (not supported)')).toBeInTheDocument();
   });
 
-  // ── Limits & validation ─────────────────────────────────────────────
-
-  it('shows model limits info when a known model is selected', () => {
-    wrap(<ModelConfigModal model={{ modelConfigId: 'm1', name: 'Test', modelId: 'gpt-4o', provider: 'openai' }} {...baseProps} />);
-    fireEvent.click(screen.getByText('Limits & Cost'));
-    expect(screen.getByText(/16,384/)).toBeInTheDocument(); // maxOutput
-    expect(screen.getByText(/128,000/)).toBeInTheDocument(); // contextWindow
+  it('shows the test result', async () => {
+    vi.mocked(api.fetchModelConfigs).mockResolvedValue([openaiModel]);
+    vi.mocked(api.testModelConfig).mockResolvedValue({ success: true, latencyMs: 412 });
+    wrap(<ModelsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Test' }));
+    expect(await screen.findByText('Answered in 412 ms')).toBeInTheDocument();
   });
 
-  it('shows validation error when max tokens exceeds model limit', () => {
-    wrap(<ModelConfigModal model={{ modelConfigId: 'm1', name: 'Test', modelId: 'gpt-4o', provider: 'openai', maxTokensPerRequest: 99999 }} {...baseProps} />);
-    fireEvent.click(screen.getByText('Limits & Cost'));
-    expect(screen.getByText(/Exceeds model limit of 16,384 tokens/)).toBeInTheDocument();
-  });
-
-  it('shows validation error when context window exceeds model limit', () => {
-    wrap(<ModelConfigModal model={{ modelConfigId: 'm1', name: 'Test', modelId: 'gpt-4o', provider: 'openai', maxContextTokens: 999999 }} {...baseProps} />);
-    fireEvent.click(screen.getByText('Limits & Cost'));
-    expect(screen.getByText(/Exceeds model limit of 128,000 tokens/)).toBeInTheDocument();
-  });
-
-  it('disables save button when validation errors exist', () => {
-    wrap(<ModelConfigModal model={{ modelConfigId: 'm1', name: 'Test', modelId: 'gpt-4o', provider: 'openai', maxTokensPerRequest: 99999 }} {...baseProps} />);
-    expect(screen.getByText('Save Changes')).toBeDisabled();
-  });
-
-  it('does not show validation error for values within limits', () => {
-    wrap(<ModelConfigModal model={{ modelConfigId: 'm1', name: 'Test', modelId: 'gpt-4o', provider: 'openai', maxTokensPerRequest: 4096, maxContextTokens: 8192 }} {...baseProps} />);
-    fireEvent.click(screen.getByText('Limits & Cost'));
-    expect(screen.queryByText(/Exceeds model limit/)).not.toBeInTheDocument();
-  });
-
-  it('does not show limits info for unknown/custom models', () => {
-    wrap(<ModelConfigModal model={{ modelConfigId: 'm1', name: 'Test', modelId: 'my-custom-model', provider: 'custom' }} {...baseProps} />);
-    fireEvent.click(screen.getByText('Limits & Cost'));
-    expect(screen.queryByText(/output tokens/)).not.toBeInTheDocument();
-  });
-
-  // ── Info tooltips ───────────────────────────────────────────────────
-
-  it('shows info tooltips on limits tab', () => {
-    wrap(<ModelConfigModal model={{ modelConfigId: 'm1', name: 'Test', modelId: 'gpt-4o', provider: 'openai' }} {...baseProps} />);
-    fireEvent.click(screen.getByText('Limits & Cost'));
-    expect(screen.getByText(/maximum number of tokens the model can generate/)).toBeInTheDocument();
-    expect(screen.getByText(/total number of tokens the model can process/)).toBeInTheDocument();
-  });
-
-  // ── Governance tab ──────────────────────────────────────────────────
-
-  it('shows governance fields', () => {
-    wrap(<ModelConfigModal model={null} {...baseProps} />);
-    fireEvent.click(screen.getByText('Governance'));
-    expect(screen.getByText(/Require approval/)).toBeInTheDocument();
-    expect(screen.getByLabelText(/Allowed roles/)).toBeInTheDocument();
-  });
-
-  // ── Edit with onError fallback ──────────────────────────────────────
-
-  it('shows Save Changes button when editing', () => {
-    wrap(<ModelConfigModal model={{ modelConfigId: 'm1', name: 'Test', modelId: 'gpt-4o', provider: 'openai' }} {...baseProps} />);
-    expect(screen.getByText('Save Changes')).toBeInTheDocument();
-  });
-
-  it('shows red dot on Limits tab when validation error exists', () => {
-    wrap(<ModelConfigModal model={{ modelConfigId: 'm1', name: 'Test', modelId: 'gpt-4o', provider: 'openai', maxTokensPerRequest: 99999 }} {...baseProps} />);
-    // The Limits tab should have a red indicator dot
-    const limitsTab = screen.getByText('Limits & Cost');
-    const dot = limitsTab.parentElement?.querySelector('.bg-red-400');
-    expect(dot).toBeTruthy();
+  it('asks before removing', async () => {
+    vi.mocked(api.fetchModelConfigs).mockResolvedValue([openaiModel]);
+    vi.mocked(api.deleteModelConfig).mockResolvedValue(undefined);
+    wrap(<ModelsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove' }));
+    expect(screen.getByText('Remove GPT for support?')).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    await waitFor(() => expect(api.deleteModelConfig).toHaveBeenCalledWith('m1'));
   });
 });

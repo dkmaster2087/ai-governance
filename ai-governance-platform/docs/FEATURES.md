@@ -34,8 +34,12 @@ to let requests through instead; those are flagged in their evidence record.
 | Evidence | Every decision, searchable; a case file per request with a downloadable export |
 | API keys | Keys with scoped permissions and optional expiry; create, replace, revoke |
 
-Other pages (Models & keys, Spend, Compliance, Users, License, Settings) and the platform-admin views still use
-the previous visual style.
+| Models & keys | Models apps can reach (Amazon Bedrock or OpenAI), provider keys, prices for Spend; test a model |
+| Compliance | SOC 2, HIPAA, EU AI Act on/off, controls in place, which need a manual review |
+| Users | Roles, and how to add people in Cognito (local demo accounts in development) |
+
+Spend, License and Settings use the same design. The platform-admin views (tenants, usage, health) still use the
+previous visual style.
 
 ## Compliance packs
 

@@ -59,7 +59,7 @@ export const DOCS: DocPage[] = [
         <H2>1. Create an API key</H2>
         <P>In the dashboard, open <strong>More → API keys</strong> and create a key with the <C>chat</C> permission. Copy it: it’s shown once.</P>
         <H2>2. Add a model</H2>
-        <P>Open <strong>More → Models &amp; keys</strong> and add the models your apps may use. For OpenAI or other providers, paste the provider’s API key; it’s stored in AWS Secrets Manager. Amazon Bedrock models use the gateway’s AWS role and need no key.</P>
+        <P>Open <strong>More → Models &amp; keys</strong> and add the models your apps use, from Amazon Bedrock or OpenAI. For OpenAI, paste your API key; it’s stored in AWS Secrets Manager. Bedrock models use the gateway’s AWS role and need no key. To refuse every other model, add an <strong>Approved models</strong> rule.</P>
         <H2>3. Point your app at the gateway</H2>
         <P>The gateway speaks the OpenAI chat completions format. Change the base URL and use your Aegis key:</P>
         <Code label="curl">{`curl https://gateway.example.com/v1/chat/completions \\

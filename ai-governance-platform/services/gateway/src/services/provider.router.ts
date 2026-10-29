@@ -31,15 +31,17 @@ export class ProviderRouter {
     const configs = await this.modelConfigRepo.getForTenant(request.tenantId);
     const modelConfig = configs.find((c) => c.modelId === request.modelId);
     const storedKey = await this.modelConfigService.resolveProviderKey(modelConfig);
+    // The admin's configuration wins; the name-based guess is only for models nobody configured.
+    const provider = (modelConfig?.provider as AIProvider | undefined) ?? request.provider;
 
-    if (request.provider === 'openai') {
-      return this.openaiProvider.complete(request, storedKey);
+    if (provider === 'openai') {
+      return this.openaiProvider.complete({ ...request, provider }, storedKey);
     }
-    if (request.provider === 'bedrock') {
-      return this.bedrockProvider.complete(request);
+    if (provider === 'bedrock') {
+      return this.bedrockProvider.complete({ ...request, provider });
     }
 
-    throw new ProviderError(request.provider, 'Provider not configured');
+    throw new ProviderError(provider, 'Provider not configured');
   }
 
   async getModelsForTenant(tenantId: string) {

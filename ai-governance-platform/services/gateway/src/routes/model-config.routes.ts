@@ -5,7 +5,8 @@ import { requireAccess, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
 
 const modelSchema = z.object({
   name: z.string().min(1),
-  provider: z.enum(['bedrock', 'openai', 'anthropic', 'azure-openai', 'google-vertex', 'custom']),
+  // The providers the gateway can call today.
+  provider: z.enum(['bedrock', 'openai']),
   modelId: z.string().min(1),
   status: z.enum(['active', 'inactive', 'testing']).default('active'),
   isDefault: z.boolean().default(false),
