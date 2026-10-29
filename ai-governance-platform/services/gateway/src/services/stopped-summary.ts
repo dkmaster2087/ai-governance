@@ -66,7 +66,8 @@ export function summarizeStopped(
 
   const groups = new Map<string, AuditLog[]>();
   for (const l of stopped) {
-    const key = l.triggeredRules?.[0] || l.metadata?.policyReason || 'unknown';
+    // The stopping rule is the last one matched; earlier ones only flagged the request.
+    const key = l.triggeredRules?.[l.triggeredRules.length - 1] || l.metadata?.policyReason || 'unknown';
     groups.set(key, [...(groups.get(key) ?? []), l]);
   }
 

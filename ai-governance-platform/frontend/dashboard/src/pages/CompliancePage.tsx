@@ -371,7 +371,7 @@ export function CompliancePage() {
           <div className="flex-1 min-w-0">
             <p className={clsx('text-sm font-medium', t.heading)}>{toast.message}</p>
             <Link
-              to="/policies"
+              to="/rules"
               className="inline-flex items-center gap-1 mt-2 text-sm text-brand-400 hover:text-brand-300 transition-colors"
             >
               View Policy <ArrowRight className="w-3.5 h-3.5" />

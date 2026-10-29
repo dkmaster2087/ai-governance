@@ -6,9 +6,9 @@ import { GatewayPage } from './pages/GatewayPage';
 import { StoppedPage } from './pages/StoppedPage';
 import { ShadowAiPage } from './pages/TenantShadowPage';
 import { BlockedPage } from './pages/BlockedPage';
+import { RulesPage } from './pages/RulesPage';
 import { PlatformDashboardPage } from './pages/PlatformDashboardPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
-import { PoliciesPage } from './pages/PoliciesPage';
 import { ModelsPage } from './pages/ModelsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { CompliancePage } from './pages/CompliancePage';
@@ -108,7 +108,8 @@ export default function App() {
           <Route path="/gateway" element={<GatewayPage />} />
           <Route path="/stopped" element={<StoppedPage />} />
           <Route path="/audit-logs" element={<RequireAuditAccess><AuditLogsPage /></RequireAuditAccess>} />
-          <Route path="/policies" element={<RequireAdmin><PoliciesPage /></RequireAdmin>} />
+          <Route path="/rules" element={<RequireAdmin><RulesPage /></RequireAdmin>} />
+          <Route path="/policies" element={<Navigate to="/rules" replace />} />
           <Route path="/compliance" element={<RequireAdmin><CompliancePage /></RequireAdmin>} />
           <Route path="/models" element={<RequireAdmin><ModelsPage /></RequireAdmin>} />
           <Route path="/cost" element={<RequireAdmin><CostPage /></RequireAdmin>} />

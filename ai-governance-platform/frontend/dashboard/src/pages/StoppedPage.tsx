@@ -77,7 +77,7 @@ function CauseCard({ cause, canEditRules }: { cause: Cause; canEditRules: boolea
 
       <div className="flex-[1_1_200px] flex flex-col gap-2">
         <span className="text-xs text-ink-muted">Check 1 · Policy rules{cause.ruleType && RULE_KIND[cause.ruleType] ? ` · ${RULE_KIND[cause.ruleType]}` : ''}</span>
-        {canEditRules && <ButtonLink to="/policies" variant="secondary" className="self-start mt-1.5">Adjust rule</ButtonLink>}
+        {canEditRules && <ButtonLink to="/rules" variant="secondary" className="self-start mt-1.5">Adjust rule</ButtonLink>}
         <ArrowLink to="/audit-logs" className="self-start">See all {formatCount(cause.count)}</ArrowLink>
       </div>
     </Panel>

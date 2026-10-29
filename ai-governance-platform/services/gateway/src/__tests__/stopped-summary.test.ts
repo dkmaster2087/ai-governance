@@ -47,6 +47,11 @@ describe('summarizeStopped', () => {
     expect(s.byDay.map((d) => d.count)).toEqual([0, 1, 1, 2, 0]);
   });
 
+  it('credits the stop to the last matched rule, not an earlier flag-only one', () => {
+    const s2 = summarizeStopped([log({ triggeredRules: ['rule_flag', 'rule_stop'] })], { from: '2026-10-27T00:00:00Z', to: '2026-10-28T00:00:00Z' });
+    expect(s2.causes[0].key).toBe('rule_stop');
+  });
+
   it('buckets days in the viewer’s timezone', () => {
     // 01:00 UTC on the 27th is still the 26th in UTC-6 (offset +360 minutes).
     expect(localDate('2026-10-27T01:00:00.000Z', 360)).toBe('2026-10-26');

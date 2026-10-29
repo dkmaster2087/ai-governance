@@ -54,7 +54,7 @@ function decisionsFrom(summary: GatewaySummary): Decision[] {
       red: true,
       detail: 'Check whether these are expected, or whether the rule needs adjusting.',
       primary: { label: 'See what was stopped', to: '/stopped' },
-      secondary: { label: 'Review rules', to: '/policies' },
+      secondary: { label: 'Review rules', to: '/rules' },
     });
   }
   if (summary.shadowAi.people > 0) {
