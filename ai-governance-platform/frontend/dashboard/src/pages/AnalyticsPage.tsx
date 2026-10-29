@@ -1,212 +1,97 @@
 import { useState } from 'react';
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { AreaChart, Area, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, Legend } from 'recharts';
-import { Building2, Cpu, Activity, ShieldX, ScanEye, DollarSign } from 'lucide-react';
-import clsx from 'clsx';
-import { useTheme } from '../lib/theme';
-import { themeClasses } from '../lib/theme-classes';
-import { StatCard } from '../components/ui/StatCard';
-import { fetchTenants } from '../lib/tenant-api';
-import type { mockTenants } from '../lib/mock-tenants';
-import { useAuth } from '../lib/auth';
+import { Days, fetchPlatformUsage, listTenants, money } from '../lib/platform-api';
+import { Note, Panel, SectionLabel, Segmented, formatCount } from '../components/aegis/primitives';
+import { DayBars } from '../components/aegis/platform';
 
-const PERIODS = [
-  { label: '7 days', value: '7d' },
-  { label: '30 days', value: '30d' },
-  { label: '90 days', value: '90d' },
-] as const;
+const PERIODS: Array<{ value: '7' | '30' | '90'; label: string }> = [
+  { value: '7', label: '7 days' }, { value: '30', label: '30 days' }, { value: '90', label: '90 days' },
+];
 
-const tenantData: Record<string, any> = {
-  all: {
-    totalRequests: 128400, blockedRequests: 452, piiDetections: 509, totalCost: 4820.50,
-    requestsTrend: Array.from({ length: 14 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (13 - i)); return { date: d.toISOString().slice(5, 10), requests: Math.floor(Math.random() * 8000) + 4000, blocked: Math.floor(Math.random() * 40) + 5 }; }),
-    modelUsage: [
-      { model: 'Claude 3 Haiku', requests: 48200, cost: 1240 },
-      { model: 'Claude 3 Sonnet', requests: 32100, cost: 1680 },
-      { model: 'GPT-4o', requests: 28400, cost: 1420 },
-      { model: 'Titan Express', requests: 12300, cost: 320 },
-      { model: 'Llama 3 70B', requests: 7400, cost: 160 },
-    ],
-    topUsers: [
-      { user: 'sarah_k@democorp.com', tenant: 'Demo Corp', requests: 8200, cost: 245.30 },
-      { user: 'dr_chen@healthco.com', tenant: 'HealthCo', requests: 7100, cost: 312.40 },
-      { user: 'james_t@fintech.io', tenant: 'FinTech', requests: 6400, cost: 198.50 },
-      { user: 'priya_m@democorp.com', tenant: 'Demo Corp', requests: 5800, cost: 172.80 },
-      { user: 'nurse_j@healthco.com', tenant: 'HealthCo', requests: 5200, cost: 156.20 },
-    ],
-  },
-  demo_corp: {
-    totalRequests: 32400, blockedRequests: 234, piiDetections: 89, totalCost: 890.50,
-    requestsTrend: Array.from({ length: 14 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (13 - i)); return { date: d.toISOString().slice(5, 10), requests: Math.floor(Math.random() * 3000) + 1000, blocked: Math.floor(Math.random() * 20) + 2 }; }),
-    modelUsage: [
-      { model: 'Claude 3 Haiku', requests: 18200, cost: 320.10 },
-      { model: 'Claude 3 Sonnet', requests: 9800, cost: 410.20 },
-      { model: 'GPT-4o', requests: 4400, cost: 160.20 },
-    ],
-    topUsers: [
-      { user: 'sarah_k', tenant: 'Demo Corp', requests: 8200, cost: 245.30 },
-      { user: 'priya_m', tenant: 'Demo Corp', requests: 5800, cost: 172.80 },
-      { user: 'carlos_r', tenant: 'Demo Corp', requests: 4200, cost: 128.50 },
-    ],
-  },
-  healthco: {
-    totalRequests: 54200, blockedRequests: 12, piiDetections: 340, totalCost: 1650.00,
-    requestsTrend: Array.from({ length: 14 }, (_, i) => { const d = new Date(); d.setDate(d.getDate() - (13 - i)); return { date: d.toISOString().slice(5, 10), requests: Math.floor(Math.random() * 5000) + 2000, blocked: Math.floor(Math.random() * 5) }; }),
-    modelUsage: [
-      { model: 'Claude 3 Haiku', requests: 42000, cost: 1200 },
-      { model: 'Claude 3 Sonnet', requests: 12200, cost: 450 },
-    ],
-    topUsers: [
-      { user: 'dr_chen', tenant: 'HealthCo', requests: 7100, cost: 312.40 },
-      { user: 'nurse_j', tenant: 'HealthCo', requests: 5200, cost: 156.20 },
-    ],
-  },
-};
-
-['fintech', 'legalfirm', 'retailmax'].forEach((id) => {
-  if (!tenantData[id]) tenantData[id] = { ...tenantData.demo_corp, totalRequests: Math.floor(Math.random() * 30000) + 5000 };
-});
-
+/** AI traffic and estimated spend across tenants, from the audit log. */
 export function AnalyticsPage() {
-  const { isDark } = useTheme();
-  const t = themeClasses(isDark);
-  const { user } = useAuth();
-  const [period, setPeriod] = useState('30d');
-  const [selectedTenant, setSelectedTenant] = useState('all');
+  const [period, setPeriod] = useState<'7' | '30' | '90'>('30');
+  const [tenantId, setTenantId] = useState('');
+  const days = Number(period) as Days;
+  const tenants = useQuery({ queryKey: ['tenants'], queryFn: listTenants });
+  const usage = useQuery({ queryKey: ['platform-usage', days, tenantId], queryFn: () => fetchPlatformUsage(days, tenantId || undefined) });
+  const names = new Map((tenants.data ?? []).map((t) => [t.tenantId, t.name]));
+  const u = usage.data;
 
-  const { data: rawTenants } = useQuery({
-    queryKey: ['tenants', user?.tenantId],
-    queryFn: () => fetchTenants(user?.tenantId),
-  });
-  const tenants: typeof mockTenants = Array.isArray(rawTenants) ? rawTenants : [];
-
-  const TENANT_OPTIONS = [
-    { id: 'all', name: 'All Tenants' },
-    ...tenants.map((tn) => ({ id: tn.tenantId, name: tn.name })),
-  ];
-
-  const tooltipStyle = isDark
-    ? { background: '#0c1021', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8 }
-    : { background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, color: '#111827' };
-  const tickFill = isDark ? '#475569' : '#9ca3af';
-  const gridStroke = isDark ? 'rgba(255,255,255,0.04)' : '#f3f4f6';
-
-  const data = tenantData[selectedTenant] || tenantData.all;
-  const tenantLabel = TENANT_OPTIONS.find((o) => o.id === selectedTenant)?.name || 'All Tenants';
-
-  // Aggregate real data from tenants
-  const realAll = {
-    totalRequests: tenants.reduce((s, tn) => s + (tn.usageThisMonth?.requests ?? 0), 0),
-    blockedRequests: tenants.reduce((s, tn) => s + (tn.usageThisMonth?.violations ?? 0), 0),
-    piiDetections: Math.round(tenants.reduce((s, tn) => s + (tn.usageThisMonth?.violations ?? 0), 0) * 1.1),
-    totalCost: tenants.reduce((s, tn) => s + (tn.usageThisMonth?.cost ?? 0), 0),
-  };
-  const dd = selectedTenant === 'all' && realAll.totalRequests > 0 ? { ...data, ...realAll } : data;
+  const models = new Map<string, { requests: number; cost: number }>();
+  for (const t of u?.tenants ?? []) for (const m of t.models) {
+    const cur = models.get(m.model) ?? { requests: 0, cost: 0 };
+    models.set(m.model, { requests: cur.requests + m.requests, cost: cur.cost + m.cost });
+  }
+  const modelRows = [...models.entries()].sort((a, b) => b[1].requests - a[1].requests).slice(0, 10);
+  const maxModel = Math.max(1, ...modelRows.map(([, v]) => v.requests));
+  const who = tenantId ? names.get(tenantId) ?? tenantId : 'All tenants';
 
   return (
-    <div className="space-y-6 w-full">
-      <div className="flex flex-wrap items-center gap-3">
-        <div className="flex items-center gap-2">
-          <Building2 className={clsx('w-4 h-4', t.muted)} />
-          <select value={selectedTenant} onChange={(e) => setSelectedTenant(e.target.value)}
-            className={clsx('border rounded-xl px-3 py-1.5 text-sm focus:outline-none focus:border-brand-500', t.input)}>
-            {TENANT_OPTIONS.map((tn) => <option key={tn.id} value={tn.id}>{tn.name}</option>)}
+    <div className="flex flex-col gap-6 max-w-[1200px]">
+      <div className="flex flex-wrap justify-between items-end gap-4">
+        <div>
+          <p className="m-0 text-[30px] leading-[1.15] font-bold tracking-[-0.02em]">
+            {u ? <>{formatCount(u.totals.requests)} requests in the last {days} days.</> : ' '}
+          </p>
+          {u && (
+            <p className="m-0 mt-1.5 text-ink-muted text-[15px]">
+              {who}. <span className="text-stop-text font-semibold">{formatCount(u.totals.stopped)} stopped</span>, {formatCount(u.totals.cleaned)} cleaned, about {money(u.totals.cost)} in model spend.
+              {u.truncated && ' Lower bounds: some tenants had more traffic than one read covers.'}
+            </p>
+          )}
+        </div>
+        <div className="flex flex-wrap gap-3 items-center">
+          <select aria-label="Tenant" value={tenantId} onChange={(e) => setTenantId(e.target.value)} className="min-h-[38px] px-3 border border-line-strong rounded-lg bg-white">
+            <option value="">All tenants</option>
+            {(tenants.data ?? []).map((t) => <option key={t.tenantId} value={t.tenantId}>{t.name}</option>)}
           </select>
+          <Segmented label="Period" options={PERIODS} value={period} onChange={setPeriod} />
         </div>
-        <div className={clsx('flex rounded-xl border overflow-hidden', t.border)}>
-          {PERIODS.map((p) => (
-            <button key={p.value} onClick={() => setPeriod(p.value)}
-              className={clsx('px-3 py-1.5 text-xs font-medium transition-colors', period === p.value ? 'bg-brand-600 text-white' : t.btnSecondary)}>
-              {p.label}
-            </button>
-          ))}
-        </div>
-        <p className={clsx('ml-auto text-xs', t.muted)}>Showing data for {tenantLabel}</p>
       </div>
 
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <StatCard label="Total Requests" value={dd.totalRequests?.toLocaleString()} icon={Activity} color="brand" />
-        <StatCard label="Blocked Requests" value={dd.blockedRequests?.toLocaleString()} icon={ShieldX} color="red" />
-        <StatCard label="PII Detections" value={dd.piiDetections?.toLocaleString()} icon={ScanEye} color="yellow" />
-        <StatCard label="Total Cost" value={'$' + dd.totalCost?.toFixed(2)} icon={DollarSign} color="green" />
-      </div>
+      {usage.isError && <Panel className="px-6"><Note title="Couldn’t load usage."><button type="button" className="underline font-semibold" onClick={() => usage.refetch()}>Try again</button></Note></Panel>}
+      {usage.isLoading && <Panel className="px-6 py-5"><p className="m-0 text-ink-muted">Loading…</p></Panel>}
 
-      <div className={clsx('border rounded-2xl p-5', t.card)}>
-        <h2 className={clsx('text-sm font-semibold mb-5', t.heading)}>{'Request Volume \u2014 ' + tenantLabel}</h2>
-        <ResponsiveContainer width="100%" height={220}>
-          <AreaChart data={data.requestsTrend}>
-            <defs>
-              <linearGradient id="reqGradA" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#6366f1" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#6366f1" stopOpacity={0} />
-              </linearGradient>
-              <linearGradient id="blockGradA" x1="0" y1="0" x2="0" y2="1">
-                <stop offset="5%" stopColor="#f87171" stopOpacity={0.3} />
-                <stop offset="95%" stopColor="#f87171" stopOpacity={0} />
-              </linearGradient>
-            </defs>
-            <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
-            <XAxis dataKey="date" tick={{ fill: tickFill, fontSize: 11 }} axisLine={false} tickLine={false} />
-            <YAxis tick={{ fill: tickFill, fontSize: 11 }} axisLine={false} tickLine={false} />
-            <Tooltip contentStyle={tooltipStyle} />
-            <Legend wrapperStyle={{ fontSize: 11, color: '#94a3b8' }} />
-            <Area type="monotone" dataKey="requests" name="Requests" stroke="#6366f1" fill="url(#reqGradA)" strokeWidth={2} />
-            <Area type="monotone" dataKey="blocked" name="Blocked" stroke="#f87171" fill="url(#blockGradA)" strokeWidth={2} />
-          </AreaChart>
-        </ResponsiveContainer>
-      </div>
+      {u && <DayBars days={u.days} />}
 
-      <div className="grid lg:grid-cols-2 gap-4">
-        <div className={clsx('border rounded-2xl p-5', t.card)}>
-          <h2 className={clsx('text-sm font-semibold mb-4', t.heading)}>Model Usage</h2>
-          <div className="space-y-3">
-            {(data.modelUsage || []).map((row: any) => {
-              const max = Math.max(...(data.modelUsage || []).map((r: any) => r.requests));
-              return (
-                <div key={row.model}>
-                  <div className="flex items-center justify-between mb-1">
-                    <span className={clsx('text-sm font-medium flex items-center gap-2', t.heading)}>
-                      <Cpu className="w-3.5 h-3.5 text-accent-400" />{row.model}
-                    </span>
-                    <div className="flex items-center gap-3">
-                      <span className={clsx('text-xs', t.sub)}>{row.requests.toLocaleString()}</span>
-                      <span className={clsx('text-xs font-medium', t.heading)}>{'$' + row.cost?.toLocaleString()}</span>
-                    </div>
-                  </div>
-                  <div className={clsx('h-2 rounded-full overflow-hidden', t.track)}>
-                    <div className="h-full bg-accent-500 rounded-full" style={{ width: (row.requests / max * 100) + '%' }} />
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-
-        <div className={clsx('border rounded-2xl p-5', t.card)}>
-          <h2 className={clsx('text-sm font-semibold mb-4', t.heading)}>Top Users by Usage</h2>
-          <div className="overflow-x-auto">
-            <table className="w-full text-sm">
-              <thead>
-                <tr className={clsx('border-b', t.border)}>
-                  {['User', selectedTenant === 'all' ? 'Tenant' : null, 'Requests', 'Cost'].filter(Boolean).map((h) => (
-                    <th key={h!} className={clsx('text-left py-2 pr-3 text-xs font-medium', t.muted)}>{h}</th>
+      {u && u.totals.requests > 0 && (
+        <div className="grid gap-5 items-start" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(340px, 1fr))' }}>
+          {!tenantId && (
+            <Panel className="overflow-x-auto">
+              <div className="px-6 pt-5 pb-1"><SectionLabel>By tenant</SectionLabel></div>
+              <table className="w-full border-collapse">
+                <thead>
+                  <tr className="text-left text-xs text-ink-muted">{['Tenant', 'Requests', 'Stopped', 'Spend'].map((h) => <th key={h} className="font-medium px-6 py-2">{h}</th>)}</tr>
+                </thead>
+                <tbody>
+                  {u.tenants.filter((t) => t.requests > 0).map((t) => (
+                    <tr key={t.tenantId} className="border-t border-line-subtle">
+                      <td className="px-6 py-2.5"><Link to={`/tenants/${encodeURIComponent(t.tenantId)}`} className="font-semibold text-ink hover:text-stop">{names.get(t.tenantId) ?? t.tenantId}</Link></td>
+                      <td className="px-6 py-2.5 font-mono text-sm">{formatCount(t.requests)}</td>
+                      <td className="px-6 py-2.5 font-mono text-sm">{t.stopped ? <span className="text-stop-text font-semibold">{formatCount(t.stopped)}</span> : '0'}</td>
+                      <td className="px-6 py-2.5 font-mono text-sm">{money(t.cost)}</td>
+                    </tr>
                   ))}
-                </tr>
-              </thead>
-              <tbody className={clsx('divide-y', t.divider)}>
-                {(data.topUsers || []).map((u: any) => (
-                  <tr key={u.user} className={t.hoverRow}>
-                    <td className={clsx('py-2.5 pr-3 font-medium', t.heading)}>{u.user}</td>
-                    {selectedTenant === 'all' && <td className={clsx('py-2.5 pr-3 text-xs', t.sub)}>{u.tenant}</td>}
-                    <td className={clsx('py-2.5 pr-3', t.body)}>{u.requests.toLocaleString()}</td>
-                    <td className={clsx('py-2.5 font-medium', t.heading)}>{'$' + u.cost.toFixed(2)}</td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
+                </tbody>
+              </table>
+            </Panel>
+          )}
+          <Panel className="px-6 py-5">
+            <SectionLabel className="mb-2">By model</SectionLabel>
+            {modelRows.map(([model, v]) => (
+              <div key={model} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-3 gap-y-1 py-2 border-b border-line-subtle last:border-b-0">
+                <span className="font-mono text-[13px] truncate">{model}</span>
+                <span className="font-mono text-sm">{formatCount(v.requests)}</span>
+                <div className="col-span-2 h-1.5 bg-line-subtle rounded-full"><div className="h-1.5 bg-ink rounded-full" style={{ width: `${(v.requests / maxModel) * 100}%` }} /></div>
+                <span className="col-span-2 text-xs text-ink-muted">{money(v.cost)} estimated</span>
+              </div>
+            ))}
+          </Panel>
         </div>
-      </div>
+      )}
+      {u && <p className="m-0 text-xs text-ink-muted">Spend is estimated from token counts and the prices each tenant set for its models.</p>}
     </div>
   );
 }

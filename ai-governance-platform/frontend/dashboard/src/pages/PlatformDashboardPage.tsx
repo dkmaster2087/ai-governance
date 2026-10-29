@@ -1,241 +1,123 @@
+import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
-import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
-import { Building2, Key, DollarSign, Users, Activity, Shield, Cpu } from 'lucide-react';
-import { Link, useNavigate } from 'react-router-dom';
-import clsx from 'clsx';
-import { StatCard } from '../components/ui/StatCard';
-import { useTheme } from '../lib/theme';
-import { themeClasses } from '../lib/theme-classes';
-import { renderActiveShape } from '../components/ui/ActivePieShape';
-import { useState } from 'react';
-import { fetchTenants } from '../lib/tenant-api';
-import type { mockTenants } from '../lib/mock-tenants';
-import { useAuth } from '../lib/auth';
-import { fetchAllLicenses } from '../lib/license-api';
-import { createApiClient } from '../lib/http';
+import { ago, fetchPlatformUsage, listTenants, Tenant, TenantUsage } from '../lib/platform-api';
+import { fetchAllLicenses, formatDate, License } from '../lib/license-api';
+import { ArrowLink, Note, Panel, SectionLabel, formatCount } from '../components/aegis/primitives';
+import { DayBars, PLAN_LABEL, RUNS_LABEL, StatusPill } from '../components/aegis/platform';
 
-const policyApi = createApiClient('/api/v1/policies');
-const complianceApi = createApiClient('/api/v1/compliance');
+const DAY = 86_400_000;
 
+interface Attention { key: string; text: string; tenantId: string }
+
+/** Things a platform admin should act on, most serious first. */
+export function needsAttention(tenants: Tenant[], licenses: License[], usage: TenantUsage[] | undefined, now = Date.now()): Attention[] {
+  const items: Attention[] = [];
+  for (const t of tenants) {
+    if (t.status === 'suspended') items.push({ key: `s-${t.tenantId}`, tenantId: t.tenantId, text: `${t.name} is suspended; every request is refused.` });
+  }
+  for (const t of tenants) {
+    if (t.status !== 'suspended' && t.settings?.governanceFailMode === 'open') {
+      items.push({ key: `f-${t.tenantId}`, tenantId: t.tenantId, text: `${t.name} lets requests through unchecked when a check is down.` });
+    }
+  }
+  for (const l of licenses) {
+    if (l.status !== 'active' || !l.expiresAt) continue;
+    const left = new Date(l.expiresAt).getTime() - now;
+    if (left < 30 * DAY) items.push({ key: `l-${l.licenseId}`, tenantId: l.tenantId, text: left < 0 ? `${l.tenantName}’s license expired ${formatDate(l.expiresAt)}.` : `${l.tenantName}’s license expires ${formatDate(l.expiresAt)}.` });
+  }
+  const licensed = new Set(licenses.filter((l) => l.status === 'active').map((l) => l.tenantId));
+  for (const t of tenants) {
+    if (t.status !== 'suspended' && !licensed.has(t.tenantId)) items.push({ key: `n-${t.tenantId}`, tenantId: t.tenantId, text: `${t.name} has no active license.` });
+  }
+  if (usage) {
+    for (const t of tenants) {
+      const u = usage.find((x) => x.tenantId === t.tenantId);
+      if (t.status !== 'suspended' && (!u || u.requests === 0)) items.push({ key: `q-${t.tenantId}`, tenantId: t.tenantId, text: `${t.name} sent no requests in 30 days.` });
+    }
+  }
+  return items;
+}
+
+/** Platform home: how every tenant's gateway is doing, and what needs a platform admin. */
 export function PlatformDashboardPage() {
-  const { isDark } = useTheme();
-  const t = themeClasses(isDark);
-  const { user } = useAuth();
-  const navigate = useNavigate();
-  const [activePieIndex, setActivePieIndex] = useState<number | undefined>(undefined);
-  const [activePlanIndex, setActivePlanIndex] = useState<number | undefined>(undefined);
+  const tenants = useQuery({ queryKey: ['tenants'], queryFn: listTenants });
+  const usage = useQuery({ queryKey: ['platform-usage', 30], queryFn: () => fetchPlatformUsage(30) });
+  const licenses = useQuery({ queryKey: ['licenses'], queryFn: fetchAllLicenses });
 
-  const tooltipStyle = isDark
-    ? { background: '#0c1021', border: '1px solid rgba(255,255,255,0.06)', borderRadius: 8 }
-    : { background: '#ffffff', border: '1px solid #e5e7eb', borderRadius: 8, color: '#111827' };
-  const tickFill = isDark ? '#475569' : '#9ca3af';
-  const gridStroke = isDark ? 'rgba(255,255,255,0.04)' : '#f3f4f6';
-
-  // Fetch real tenants
-  const { data: rawTenants } = useQuery({
-    queryKey: ['tenants', user?.tenantId],
-    queryFn: () => fetchTenants(user?.tenantId),
-  });
-  const tenants: typeof mockTenants = Array.isArray(rawTenants) ? rawTenants : [];
-
-  // Fetch compliance per tenant (aggregate)
-  const { data: complianceMap = {} } = useQuery({
-    queryKey: ['platform-compliance-all'],
-    queryFn: async () => {
-      const map: Record<string, any[]> = {};
-      for (const tn of tenants) {
-        try {
-          const { data } = await complianceApi.get(`/status/${tn.tenantId}`);
-          map[tn.tenantId] = Array.isArray(data) ? data : [];
-        } catch { map[tn.tenantId] = []; }
-      }
-      return map;
-    },
-    enabled: tenants.length > 0,
-  });
-
-  // Fetch policies per tenant (aggregate)
-  const { data: policiesMap = {} } = useQuery({
-    queryKey: ['platform-policies-all'],
-    queryFn: async () => {
-      const map: Record<string, any[]> = {};
-      for (const tn of tenants) {
-        try {
-          const { data } = await policyApi.get(`/${tn.tenantId}`);
-          map[tn.tenantId] = Array.isArray(data) ? data : [];
-        } catch { map[tn.tenantId] = []; }
-      }
-      return map;
-    },
-    enabled: tenants.length > 0,
-  });
-
-  const { data: licenses = [] } = useQuery({ queryKey: ['licenses'], queryFn: fetchAllLicenses });
-  const activeLicenses = licenses.filter((l) => l.status === 'active').length;
-  const totalUsers = licenses.filter((l) => l.status === 'active').reduce((s, l) => s + l.maxUsers, 0);
-  const totalRequests = tenants.reduce((s, tn) => s + (tn.usageThisMonth?.requests ?? 0), 0);
-  const monthlyRevenue = tenants.reduce((s, tn) => s + (tn.usageThisMonth?.cost ?? 0), 0);
-
-  const cloudCount = tenants.filter((tn) => tn.deploymentMode === 'saas').length;
-  const onpremCount = tenants.filter((tn) => tn.deploymentMode === 'onprem').length;
-  const tenantsByType = [
-    { name: 'Cloud', value: cloudCount || 1, color: '#6366f1' },
-    { name: 'On-Prem', value: onpremCount || 0, color: '#22d3ee' },
-  ].filter((d) => d.value > 0);
-
-  const planCounts: Record<string, number> = {};
-  tenants.forEach((tn) => { planCounts[tn.plan] = (planCounts[tn.plan] || 0) + 1; });
-  const planColors: Record<string, string> = { enterprise: '#6366f1', professional: '#818cf8', starter: '#22d3ee' };
-  const tenantsByPlan = Object.entries(planCounts).map(([name, value]) => ({
-    name: name.charAt(0).toUpperCase() + name.slice(1), value, color: planColors[name] || '#94a3b8',
-  }));
-
-  const revenueByMonth = [
-    { month: 'Jan', revenue: Math.round(monthlyRevenue * 0.7) },
-    { month: 'Feb', revenue: Math.round(monthlyRevenue * 0.8) },
-    { month: 'Mar', revenue: Math.round(monthlyRevenue * 0.9) },
-    { month: 'Apr', revenue: Math.round(monthlyRevenue) },
-  ];
+  const list = tenants.data ?? [];
+  const u = usage.data;
+  const byId = new Map((u?.tenants ?? []).map((t) => [t.tenantId, t]));
+  const attention = tenants.data && licenses.data ? needsAttention(list, licenses.data, u?.tenants) : null;
 
   return (
-    <div className="space-y-6 w-full">
-      {/* Stat cards */}
-      <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
-        <StatCard label="Total Tenants" value={tenants.length} icon={Building2} color="brand" href="/tenants" />
-        <StatCard label="Active Licenses" value={activeLicenses} icon={Key} color="green" href="/licenses" />
-        <StatCard label="Licensed users" value={totalUsers.toLocaleString()} icon={Users} color="yellow" />
-        <StatCard label="Monthly Revenue" value={`$${monthlyRevenue.toFixed(2)}`} icon={DollarSign} color="green" href="/cost" />
-        <StatCard label="Total Requests" value={totalRequests.toLocaleString()} icon={Activity} color="brand" trendValue="+18%" trend="up" />
+    <div className="flex flex-col gap-6 max-w-[1200px]">
+      <div>
+        <p className="m-0 text-[30px] leading-[1.15] font-bold tracking-[-0.02em]">
+          {tenants.data && u ? <>{formatCount(list.length)} {list.length === 1 ? 'tenant' : 'tenants'} sent {formatCount(u.totals.requests)} AI requests in the last 30 days.</> : ' '}
+        </p>
+        {u && u.totals.requests > 0 && (
+          <p className="m-0 mt-1.5 text-ink-muted text-[15px]">
+            <span className="text-stop-text font-semibold">{formatCount(u.totals.stopped)} stopped</span>, {formatCount(u.totals.cleaned)} had personal data removed.
+            {u.truncated && ' Some tenants had more traffic than one read covers, so these are lower bounds.'}
+          </p>
+        )}
       </div>
 
-      {/* Charts row */}
-      <div className="grid lg:grid-cols-3 gap-4">
-        {/* Revenue trend */}
-        <div className={clsx('border rounded-2xl p-5', t.card)}>
-          <h2 className={clsx('text-sm font-semibold mb-5', t.heading)}>Monthly Revenue</h2>
-          <ResponsiveContainer width="100%" height={180}>
-            <BarChart data={revenueByMonth}>
-              <CartesianGrid strokeDasharray="3 3" stroke={gridStroke} />
-              <XAxis dataKey="month" tick={{ fill: tickFill, fontSize: 11 }} axisLine={false} tickLine={false} />
-              <YAxis tick={{ fill: tickFill, fontSize: 11 }} axisLine={false} tickLine={false} tickFormatter={(v) => `$${v}`} />
-              <Tooltip contentStyle={tooltipStyle} formatter={(v: number) => [`$${v.toLocaleString()}`, 'Revenue']} />
-              <Bar dataKey="revenue" fill="#6366f1" radius={[4, 4, 0, 0]} />
-            </BarChart>
-          </ResponsiveContainer>
-        </div>
+      {(tenants.isError || usage.isError) && (
+        <Panel className="px-6"><Note title="Couldn’t load the platform view."><button type="button" className="underline font-semibold" onClick={() => { tenants.refetch(); usage.refetch(); }}>Try again</button></Note></Panel>
+      )}
 
-        {/* Tenants by type */}
-        <div className={clsx('border rounded-2xl p-5', t.card)}>
-          <h2 className={clsx('text-sm font-semibold mb-5', t.heading)}>Tenants by Deployment</h2>
-          <div className="flex items-center gap-4">
-            <div onMouseDown={(e) => e.preventDefault()}>
-            <ResponsiveContainer width={140} height={140}>
-              <PieChart>
-                <Pie activeIndex={activePieIndex} activeShape={renderActiveShape} data={tenantsByType} cx="50%" cy="50%" innerRadius={40} outerRadius={55} dataKey="value" paddingAngle={3} stroke={isDark ? '#0c1021' : '#fff'} strokeWidth={2} onMouseEnter={(_, i) => setActivePieIndex(i)} onMouseLeave={() => setActivePieIndex(undefined)}>
-                  {tenantsByType.map((e, i) => <Cell key={i} fill={e.color} cursor="pointer" />)}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-            </div>
-            <ul className="space-y-2 flex-1">
-              {tenantsByType.map((m) => (
-                <li key={m.name} className="flex items-center gap-2 text-sm">
-                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: m.color }} />
-                  <span className={clsx('flex-1', t.sub)}>{m.name}</span>
-                  <span className={clsx('font-semibold', t.heading)}>{m.value}</span>
+      {attention && (
+        <Panel className="px-6 py-5">
+          <SectionLabel className="mb-2">Needs attention</SectionLabel>
+          {attention.length === 0 ? <p className="m-0 py-2 text-ink-muted">Nothing right now.</p> : (
+            <ul className="m-0 p-0 list-none">
+              {attention.map((a) => (
+                <li key={a.key} className="flex flex-wrap justify-between gap-3 py-2.5 border-b border-line-subtle last:border-b-0">
+                  <span>{a.text}</span>
+                  <Link to={`/tenants/${encodeURIComponent(a.tenantId)}`} className="font-semibold text-ink hover:text-stop">Open <span aria-hidden="true">→</span></Link>
                 </li>
               ))}
             </ul>
-          </div>
-        </div>
+          )}
+        </Panel>
+      )}
 
-        {/* Tenants by plan */}
-        <div className={clsx('border rounded-2xl p-5', t.card)}>
-          <h2 className={clsx('text-sm font-semibold mb-5', t.heading)}>Tenants by Plan</h2>
-          <div className="flex items-center gap-4">
-            <div onMouseDown={(e) => e.preventDefault()}>
-            <ResponsiveContainer width={140} height={140}>
-              <PieChart>
-                <Pie activeIndex={activePlanIndex} activeShape={renderActiveShape} data={tenantsByPlan} cx="50%" cy="50%" innerRadius={40} outerRadius={55} dataKey="value" paddingAngle={3} stroke={isDark ? '#0c1021' : '#fff'} strokeWidth={2} onMouseEnter={(_, i) => setActivePlanIndex(i)} onMouseLeave={() => setActivePlanIndex(undefined)}>
-                  {tenantsByPlan.map((e, i) => <Cell key={i} fill={e.color} cursor="pointer" />)}
-                </Pie>
-              </PieChart>
-            </ResponsiveContainer>
-            </div>
-            <ul className="space-y-2 flex-1">
-              {tenantsByPlan.map((m) => (
-                <li key={m.name} className="flex items-center gap-2 text-sm">
-                  <span className="w-2.5 h-2.5 rounded-full flex-shrink-0" style={{ background: m.color }} />
-                  <span className={clsx('flex-1', t.sub)}>{m.name}</span>
-                  <span className={clsx('font-semibold', t.heading)}>{m.value}</span>
-                </li>
-              ))}
-            </ul>
-          </div>
-        </div>
-      </div>
+      {u && <DayBars days={u.days} label="All tenants, per day" />}
 
-      {/* Tenant overview table — real data */}
-      <div className={clsx('border rounded-2xl overflow-hidden', t.card)}>
-        <div className={clsx('px-5 py-4 border-b flex items-center justify-between', t.border)}>
-          <div>
-            <h2 className={clsx('text-sm font-semibold', t.heading)}>Tenant Overview</h2>
-            <p className={clsx('text-xs mt-0.5', t.muted)}>All tenants across cloud and on-prem deployments</p>
+      {tenants.data && (
+        <Panel className="overflow-x-auto">
+          <div className="flex justify-between items-center px-6 pt-5 pb-2">
+            <SectionLabel>Tenants</SectionLabel>
+            <ArrowLink to="/tenants">All tenants</ArrowLink>
           </div>
-          <Link to="/tenants" className="text-xs text-brand-400 hover:text-brand-300 transition-colors">View all →</Link>
-        </div>
-        <div className="overflow-x-auto">
-          <table className="w-full text-sm">
-            <thead>
-              <tr className={clsx('border-b', t.border)}>
-                {['Tenant', 'Type', 'Plan', 'Requests', 'Policies', 'Frameworks', 'Cost', 'Status'].map((h) => (
-                  <th key={h} className={clsx('text-left px-4 py-3 text-xs font-medium uppercase tracking-wider whitespace-nowrap', t.muted)}>{h}</th>
-                ))}
-              </tr>
-            </thead>
-            <tbody className={clsx('divide-y', t.divider)}>
-              {tenants.map((tenant) => {
-                const tenantPolicies = policiesMap[tenant.tenantId] || [];
-                const tenantCompliance = complianceMap[tenant.tenantId] || [];
-                const enabledPolicies = tenantPolicies.filter((p: any) => p.enabled).length;
-                const enabledFrameworks = tenantCompliance.filter((f: any) => f.status === 'enabled').length;
-                return (
-                  <tr key={tenant.tenantId} className={clsx('transition-colors cursor-pointer', t.hoverRow)} onClick={() => navigate(`/tenants/${tenant.tenantId}`)}>
-                    <td className="px-4 py-3">
-                      <div className="flex items-center gap-2">
-                        <Building2 className="w-4 h-4 text-brand-400 flex-shrink-0" />
-                        <div>
-                          <span className={clsx('font-medium', t.heading)}>{tenant.name}</span>
-                          <p className={clsx('text-xs', t.faint)}>{tenant.adminEmail}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={clsx('text-xs px-2 py-0.5 rounded-lg font-medium ring-1',
-                        tenant.deploymentMode === 'saas' ? 'bg-brand-500/10 text-brand-400 ring-brand-500/20' : 'bg-accent-500/10 text-accent-400 ring-accent-500/20'
-                      )}>{tenant.deploymentMode === 'saas' ? 'Cloud' : 'On-Prem'}</span>
-                    </td>
-                    <td className={clsx('px-4 py-3 text-xs font-medium capitalize', t.body)}>{tenant.plan}</td>
-                    <td className={clsx('px-4 py-3', t.body)}>{(tenant.usageThisMonth?.requests ?? 0).toLocaleString()}</td>
-                    <td className="px-4 py-3">
-                      <span className={clsx('text-xs flex items-center gap-1', t.body)}><Shield className="w-3 h-3" />{enabledPolicies}/{tenantPolicies.length}</span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <span className={clsx('text-xs flex items-center gap-1', t.body)}><Cpu className="w-3 h-3" />{enabledFrameworks}/{tenantCompliance.length}</span>
-                    </td>
-                    <td className={clsx('px-4 py-3 font-medium', t.heading)}>${(tenant.usageThisMonth?.cost ?? 0).toFixed(2)}</td>
-                    <td className="px-4 py-3">
-                      <span className={clsx('text-xs px-2 py-0.5 rounded-lg font-medium ring-1',
-                        tenant.status === 'active' ? 'bg-accent-500/10 text-accent-400 ring-accent-500/20' : tenant.status === 'trial' ? 'bg-yellow-500/10 text-yellow-400 ring-yellow-500/20' : 'bg-red-500/10 text-red-400 ring-red-500/20'
-                      )}>{tenant.status}</span>
-                    </td>
-                  </tr>
-                );
-              })}
-            </tbody>
-          </table>
-        </div>
-      </div>
+          {list.length === 0 ? <div className="px-6"><Note title="No tenants yet." /></div> : (
+            <table className="w-full border-collapse min-w-[760px]">
+              <thead>
+                <tr className="text-left text-xs text-ink-muted">
+                  {['Tenant', 'Plan', 'Runs', 'Requests (30 days)', 'Stopped', 'Last request', 'Status'].map((h) => <th key={h} className="font-medium px-6 py-2.5">{h}</th>)}
+                </tr>
+              </thead>
+              <tbody>
+                {list.map((t) => {
+                  const tu = byId.get(t.tenantId);
+                  return (
+                    <tr key={t.tenantId} className="border-t border-line-subtle">
+                      <td className="px-6 py-3"><Link to={`/tenants/${encodeURIComponent(t.tenantId)}`} className="font-semibold text-ink hover:text-stop">{t.name}</Link></td>
+                      <td className="px-6 py-3">{PLAN_LABEL[t.plan] ?? t.plan}</td>
+                      <td className="px-6 py-3">{RUNS_LABEL[t.deploymentMode] ?? t.deploymentMode}</td>
+                      <td className="px-6 py-3 font-mono text-sm">{tu ? formatCount(tu.requests) : '—'}</td>
+                      <td className="px-6 py-3 font-mono text-sm">{tu ? (tu.stopped ? <span className="text-stop-text font-semibold">{formatCount(tu.stopped)}</span> : '0') : '—'}</td>
+                      <td className="px-6 py-3 text-sm">{tu ? ago(tu.lastRequestAt) : '—'}</td>
+                      <td className="px-6 py-3"><StatusPill status={t.status} /></td>
+                    </tr>
+                  );
+                })}
+              </tbody>
+            </table>
+          )}
+        </Panel>
+      )}
     </div>
   );
 }

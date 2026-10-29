@@ -38,8 +38,18 @@ to let requests through instead; those are flagged in their evidence record.
 | Compliance | SOC 2, HIPAA, EU AI Act on/off, controls in place, which need a manual review |
 | Users | Roles, and how to add people in Cognito (local demo accounts in development) |
 
-Spend, License and Settings use the same design. The platform-admin views (tenants, usage, health) still use the
-previous visual style.
+Spend, License and Settings use the same design.
+
+### Platform admin (running Aegis for many customers)
+
+| Page | What it shows |
+|---|---|
+| Platform | Requests across tenants, what needs attention (suspended, open fail mode, licenses expiring or missing, no traffic) |
+| Tenants | Every tenant with 30-day traffic; add one, then the Cognito command for its admin |
+| Tenant | Traffic, setup (fail mode, rules, models, frameworks), licenses; edit, suspend, reactivate |
+| Licenses | Issue and revoke license keys |
+| Usage | Requests, stops and estimated spend per tenant and model, 7/30/90 days |
+| Health | The gateway's own check of its database, policy engine and data protection |
 
 ## Compliance packs
 

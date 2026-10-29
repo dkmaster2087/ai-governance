@@ -47,15 +47,13 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
       { label: 'Tenants', href: '/tenants' },
       { label: 'Licenses', href: '/licenses' },
       { label: 'Usage', href: '/analytics' },
-      { label: 'Spend', href: '/cost' },
-      { label: 'Shadow AI', href: '/shadow-ai' },
       { label: 'Health', href: '/health' },
     ],
     more: [{ label: 'Settings', href: '/settings' }],
   },
 };
 
-/** Pages already rebuilt in the new style render their own headline; older ones get a plain title. */
+/** These pages render their own headline instead of the plain page title. */
 const REDESIGNED = new Set(['/gateway', '/stopped', '/shadow-ai', '/rules', '/evidence', '/keys']);
 
 /** The logo is also the way home. */
@@ -144,7 +142,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </header>
 
       <main className="px-5 sm:px-10 pt-8 pb-14">
-        {!REDESIGNED.has(location.pathname) && current && (
+        {!REDESIGNED.has(location.pathname) && !location.pathname.startsWith("/tenants/") && current && (
           <h1 className="m-0 mb-6 text-[28px] font-bold tracking-[-0.02em]">{current.label}</h1>
         )}
         {children}

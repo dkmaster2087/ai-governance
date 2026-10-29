@@ -14,7 +14,6 @@ import { ModelsPage } from './pages/ModelsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { CompliancePage } from './pages/CompliancePage';
 import { TenantsPage } from './pages/TenantsPage';
-import { ShadowAIPage } from './pages/ShadowAIPage';
 import { NoDashboardAccessPage } from './pages/NoDashboardAccessPage';
 import { UsersPage } from './pages/UsersPage';
 import { CostPage } from './pages/CostPage';
@@ -87,8 +86,7 @@ export default function App() {
             <Route path="/tenants/:tenantId" element={<TenantDetailPage />} />
             <Route path="/licenses" element={<LicensesPage />} />
             <Route path="/analytics" element={<AnalyticsPage />} />
-            <Route path="/cost" element={<CostPage />} />
-            <Route path="/shadow-ai" element={<ShadowAIPage />} />
+            <Route path="/cost" element={<Navigate to="/analytics" replace />} />
             <Route path="/health" element={<PlatformHealthPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/overview" replace />} />

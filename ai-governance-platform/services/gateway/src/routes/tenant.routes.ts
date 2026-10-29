@@ -13,6 +13,24 @@ import { requireAccess, requireTenantParam, PLATFORM_ADMIN, TENANT_ADMIN, TENANT
 
 const logger = createLogger('gateway:tenants');
 
+const tenantFields = {
+  name: z.string().trim().min(1).max(200),
+  adminEmail: z.string().trim().email(),
+  plan: z.enum(['starter', 'professional', 'enterprise']),
+  deploymentMode: z.enum(['saas', 'onprem']),
+  region: z.string().regex(/^[a-z]{2}-[a-z]+-\d$/, 'must be an AWS region like us-east-1'),
+  /** How long evidence is kept; the plan sets it. */
+  auditLogRetentionDays: z.number().int().min(30).max(3650),
+};
+const tenantCreateSchema = z.object({
+  ...tenantFields,
+  plan: tenantFields.plan.default('starter'),
+  deploymentMode: tenantFields.deploymentMode.default('saas'),
+  region: tenantFields.region.default('us-east-1'),
+  auditLogRetentionDays: tenantFields.auditLogRetentionDays.optional(),
+});
+const tenantUpdateSchema = z.object(tenantFields).partial();
+
 export async function tenantRoutes(app: FastifyInstance) {
   const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
   const client = DynamoDBDocumentClient.from(dynamo);
@@ -43,7 +61,7 @@ export async function tenantRoutes(app: FastifyInstance) {
 
   // Create / onboard tenant
   app.post('/tenants', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
-    const body = request.body as any;
+    const body = tenantCreateSchema.parse(request.body);
     const tenant = {
       tenantId: `tenant_${randomUUID().replace(/-/g, '').slice(0, 12)}`,
       name: body.name,
@@ -52,14 +70,15 @@ export async function tenantRoutes(app: FastifyInstance) {
       status: 'active',
       deploymentMode: body.deploymentMode ?? 'saas',
       region: body.region ?? 'us-east-1',
-      settings: body.settings ?? {
+      settings: {
         allowedModels: [],
         maxTokensPerRequest: 4096,
         maxRequestsPerMinute: 100,
         dataResidencyRegion: body.region ?? 'us-east-1',
         piiMaskingEnabled: true,
-        auditLogRetentionDays: 90,
+        auditLogRetentionDays: body.auditLogRetentionDays ?? 365,
         allowExternalProviders: false,
+        governanceFailMode: 'closed',
       },
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
@@ -73,21 +92,41 @@ export async function tenantRoutes(app: FastifyInstance) {
   // Update tenant
   app.put('/tenants/:tenantId', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
-    const body = request.body as any;
+    const body = tenantUpdateSchema.parse(request.body);
     const updatedAt = new Date().toISOString();
 
-    await client.send(new UpdateCommand({
-      TableName: table,
-      Key: { tenantId },
-      UpdateExpression: 'SET #name = :name, plan = :plan, settings = :settings, updatedAt = :updatedAt',
-      ExpressionAttributeNames: { '#name': 'name' },
-      ExpressionAttributeValues: {
-        ':name': body.name,
-        ':plan': body.plan,
-        ':settings': body.settings,
-        ':updatedAt': updatedAt,
-      },
-    }));
+    // Only the fields sent are changed; other settings (fail mode, shadow AI decisions) stay as they are.
+    const sets: string[] = ['updatedAt = :updatedAt'];
+    const names: Record<string, string> = {};
+    const values: Record<string, unknown> = { ':updatedAt': updatedAt };
+    for (const key of ['name', 'adminEmail', 'plan', 'deploymentMode', 'region'] as const) {
+      if (body[key] === undefined) continue;
+      sets.push(`#${key} = :${key}`);
+      names[`#${key}`] = key;
+      values[`:${key}`] = body[key];
+    }
+    if (body.auditLogRetentionDays !== undefined) {
+      await client.send(new UpdateCommand({
+        TableName: table, Key: { tenantId },
+        UpdateExpression: 'SET settings = if_not_exists(settings, :empty)', ExpressionAttributeValues: { ':empty': {} },
+      }));
+      sets.push('settings.auditLogRetentionDays = :retention');
+      values[':retention'] = body.auditLogRetentionDays;
+    }
+
+    try {
+      await client.send(new UpdateCommand({
+        TableName: table,
+        Key: { tenantId },
+        UpdateExpression: `SET ${sets.join(', ')}`,
+        ConditionExpression: 'attribute_exists(tenantId)',
+        ...(Object.keys(names).length ? { ExpressionAttributeNames: names } : {}),
+        ExpressionAttributeValues: values,
+      }));
+    } catch (err) {
+      if ((err as Error).name === 'ConditionalCheckFailedException') return reply.status(404).send({ error: 'Tenant not found', code: 'NOT_FOUND' });
+      throw err;
+    }
 
     tenantSettings().invalidate(tenantId);
     return reply.send({ tenantId, ...body, updatedAt });

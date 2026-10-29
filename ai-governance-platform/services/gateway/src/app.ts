@@ -21,6 +21,7 @@ import { requestTracing } from './middleware/request-tracing';
 import { getSecurityConfig } from './config/security';
 import { metricsRoutes } from './routes/metrics.routes';
 import { gatewayRoutes } from './routes/gateway.routes';
+import { platformRoutes } from './routes/platform.routes';
 import { rulesRoutes } from './routes/rules.routes';
 import { evidenceRoutes } from './routes/evidence.routes';
 import { policiesRoutes } from './routes/policies.routes';
@@ -68,6 +69,7 @@ export async function buildApp() {
   await app.register(alertRoutes, { prefix: '/v1' });
   await app.register(reportingRoutes, { prefix: '/v1' });
   await app.register(gatewayRoutes, { prefix: '/v1' });
+  await app.register(platformRoutes, { prefix: '/v1' });
   await app.register(rulesRoutes, { prefix: '/v1' });
   await app.register(evidenceRoutes, { prefix: '/v1' });
   await app.register(policiesRoutes, { prefix: '/v1' });

@@ -1,121 +1,66 @@
-import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
-import { Activity, Server, Shield, CheckCircle, XCircle, Clock, RefreshCw } from 'lucide-react';
 import clsx from 'clsx';
-import axios from 'axios';
-import { useTheme } from '../lib/theme';
-import { themeClasses } from '../lib/theme-classes';
+import { fetchHealth } from '../lib/platform-api';
+import { Button, Panel, SectionLabel } from '../components/aegis/primitives';
 
-interface ServiceHealth {
-  name: string;
-  port: number;
-  icon: typeof Shield;
-  status: 'healthy' | 'unhealthy' | 'checking';
-  latencyMs: number | null;
-  service?: string;
-  error?: string;
-}
+const NAMES: Record<string, { label: string; role: string }> = {
+  dynamodb: { label: 'Database (DynamoDB)', role: 'Tenants, keys, rules and evidence' },
+  'policy-engine': { label: 'Policy engine', role: 'Checks every prompt against rules' },
+  'data-protection': { label: 'Data protection', role: 'Removes personal data' },
+};
 
-const SERVICE_DEFS = [
-  { name: 'Gateway',         port: 3000, icon: Shield,   proxyPath: '/health/gateway' },
-  { name: 'Policy Engine',   port: 3001, icon: Shield,   proxyPath: '/health/policy-engine' },
-  { name: 'Analytics',       port: 3003, icon: Activity,  proxyPath: '/health/analytics' },
-];
+const uptime = (s: number) => (s < 3600 ? `${Math.round(s / 60)} min` : s < 172_800 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86_400)} days`);
 
-async function checkAllServices(): Promise<ServiceHealth[]> {
-  return Promise.all(
-    SERVICE_DEFS.map(async (svc) => {
-      const start = performance.now();
-      try {
-        const { data } = await axios.get(svc.proxyPath, { timeout: 5000 });
-        return { name: svc.name, port: svc.port, icon: svc.icon, status: 'healthy' as const, latencyMs: Math.round(performance.now() - start), service: data?.service };
-      } catch (err: any) {
-        return { name: svc.name, port: svc.port, icon: svc.icon, status: 'unhealthy' as const, latencyMs: Math.round(performance.now() - start), error: err.message || 'Unreachable' };
-      }
-    })
-  );
-}
-
+/** Whether the request path works right now, as the gateway itself sees it. */
 export function PlatformHealthPage() {
-  const { isDark } = useTheme();
-  const t = themeClasses(isDark);
+  const health = useQuery({ queryKey: ['platform-health'], queryFn: fetchHealth, refetchInterval: 30_000, retry: false });
+  const h = health.data;
+  const failing = h?.dependencies.filter((d) => d.status !== 'healthy') ?? [];
 
-  const { data: services = [], refetch, isFetching } = useQuery({
-    queryKey: ['platform-health'],
-    queryFn: checkAllServices,
-    refetchInterval: 30000,
-  });
-
-  const healthyCount = services.filter((s) => s.status === 'healthy').length;
-  const totalCount = SERVICE_DEFS.length;
+  const headline = health.isError ? 'The gateway isn’t answering.'
+    : !h ? ' '
+    : failing.length === 0 ? 'Everything on the request path is working.'
+    : `${failing.length === 1 ? NAMES[failing[0].name]?.label ?? failing[0].name : `${failing.length} services`} ${failing.length === 1 ? 'is' : 'are'} down.`;
 
   return (
-    <div className="space-y-6 w-full">
-      <div className="flex items-center justify-between">
+    <div className="flex flex-col gap-6 max-w-[900px]">
+      <div className="flex flex-wrap justify-between items-end gap-4">
         <div>
-          <p className={clsx('text-sm', t.sub)}>
-            {services.length > 0
-              ? `${healthyCount}/${totalCount} services healthy`
-              : 'Checking services...'}
+          <p className={clsx('m-0 text-[30px] leading-[1.15] font-bold tracking-[-0.02em]', (health.isError || failing.length > 0) && 'text-stop-text')}>{headline}</p>
+          <p className="m-0 mt-1.5 text-ink-muted text-[15px]">
+            {health.isError ? 'Apps can’t reach AI through it. Check the gateway service and its load balancer.'
+              : failing.length > 0 ? 'Tenants that fail closed are refusing requests; tenants that fail open are letting them through unchecked.'
+              : h ? `Checked ${new Date(health.dataUpdatedAt).toLocaleTimeString([], { hour: 'numeric', minute: '2-digit' })}. Rechecks every 30 seconds.` : ''}
           </p>
         </div>
-        <button onClick={() => refetch()} className={clsx('flex items-center gap-2 px-4 py-2 rounded-xl text-sm font-medium transition-colors', t.btnSecondary)}>
-          <RefreshCw className={clsx('w-4 h-4', isFetching && 'animate-spin')} />
-          Refresh
-        </button>
+        <Button variant="secondary" onClick={() => health.refetch()} disabled={health.isFetching}>{health.isFetching ? 'Checking…' : 'Check now'}</Button>
       </div>
 
-      {/* Services grid */}
-      <div className="grid grid-cols-2 lg:grid-cols-2 gap-4">
-        {(services.length > 0 ? services : SERVICE_DEFS.map((s) => ({ ...s, status: 'checking' as const, latencyMs: null, error: undefined }))).map((svc) => {
-          const Icon = svc.icon;
-          const isHealthy = svc.status === 'healthy';
-          const isChecking = svc.status === 'checking';
-          return (
-            <div key={svc.name} className={clsx('border rounded-2xl p-5 transition-all duration-300 hover:-translate-y-0.5', t.card)}>
-              <div className="flex items-center gap-3 mb-4">
-                <div className={clsx('w-10 h-10 rounded-xl flex items-center justify-center bg-gradient-to-br',
-                  isChecking ? 'from-yellow-500/20 to-yellow-600/10' : isHealthy ? 'from-accent-500/20 to-accent-600/10' : 'from-red-500/20 to-red-600/10'
-                )}>
-                  <Icon className={clsx('w-5 h-5', isChecking ? 'text-yellow-400 animate-pulse' : isHealthy ? 'text-accent-400' : 'text-red-400')} />
-                </div>
-                <div className="flex-1">
-                  <p className={clsx('font-semibold text-sm', t.heading)}>{svc.name}</p>
-                  <p className={clsx('text-xs', t.muted)}>Port {svc.port}</p>
-                </div>
-                {isChecking
-                  ? <Clock className="w-4 h-4 text-yellow-400 animate-pulse" />
-                  : isHealthy
-                    ? <CheckCircle className="w-4 h-4 text-accent-400" />
-                    : <XCircle className="w-4 h-4 text-red-400" />
-                }
-              </div>
-              <div className="grid grid-cols-2 gap-3 text-xs">
-                <div className={clsx('rounded-lg px-3 py-2', t.cardInner)}>
-                  <p className={t.muted}>Status</p>
-                  <p className={clsx('font-medium', isChecking ? 'text-yellow-400' : isHealthy ? 'text-accent-400' : 'text-red-400')}>
-                    {isChecking ? 'Checking...' : isHealthy ? 'Healthy' : 'Unhealthy'}
-                  </p>
-                </div>
-                <div className={clsx('rounded-lg px-3 py-2', t.cardInner)}>
-                  <p className={t.muted}>Latency</p>
-                  <p className={clsx('font-medium', t.heading)}>
-                    {svc.latencyMs != null ? svc.latencyMs + 'ms' : '—'}
-                  </p>
-                </div>
-              </div>
-              {svc.error && (
-                <p className={clsx('text-xs mt-3 px-3 py-2 rounded-lg', isDark ? 'bg-red-500/10 text-red-400' : 'bg-red-50 text-red-600')}>
-                  {svc.error}
-                </p>
-              )}
-            </div>
-          );
-        })}
-      </div>
-
-      {/* Auto-refresh note */}
-      <p className={clsx('text-xs text-center', t.faint)}>Auto-refreshes every 30 seconds</p>
+      {h && (
+        <Panel className="px-6 py-5">
+          <SectionLabel className="mb-1">Request path</SectionLabel>
+          <ul className="m-0 p-0 list-none">
+            <li className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 py-3 border-b border-line-subtle">
+              <div><div className="font-semibold">Gateway</div><div className="text-sm text-ink-muted">Version {h.version}, up {uptime(h.uptime)}</div></div>
+              <span className="font-semibold">Working</span>
+            </li>
+            {h.dependencies.map((d) => {
+              const ok = d.status === 'healthy';
+              return (
+                <li key={d.name} className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 py-3 border-b border-line-subtle last:border-b-0">
+                  <div>
+                    <div className="font-semibold">{NAMES[d.name]?.label ?? d.name}</div>
+                    <div className="text-sm text-ink-muted">{ok ? NAMES[d.name]?.role : d.error ?? 'Not answering'}</div>
+                  </div>
+                  <span className={clsx('font-semibold text-right', !ok && 'text-stop-text')}>
+                    {ok ? 'Working' : 'Down'}{ok && d.latencyMs !== undefined && <span className="block text-xs font-normal text-ink-muted font-mono">{d.latencyMs} ms</span>}
+                  </span>
+                </li>
+              );
+            })}
+          </ul>
+        </Panel>
+      )}
     </div>
   );
 }

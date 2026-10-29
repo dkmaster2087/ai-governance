@@ -46,6 +46,7 @@ tenants via `X-Tenant-Id`; everyone else is limited to their own.
 | `GET /v1/shadow-ai/config/:tenantId`, `POST /v1/shadow-ai/events` | Browser extension (`shadow_ai:ingest` key) |
 | `GET /v1/evidence…` | Evidence page and exports |
 | `GET/POST /v1/api-keys…` | API keys page |
+| `GET /v1/platform/usage`, `/v1/tenants…`, `/health/deep` | Platform-admin pages (platform admins only, except health) |
 
 ## Storage
 
