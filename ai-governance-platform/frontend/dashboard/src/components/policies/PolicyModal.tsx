@@ -37,9 +37,7 @@ export function PolicyModal({ policy, onClose, onSaved }: Props) {
 
   const mutation = useMutation({
     mutationFn: () => {
-      const tenantId = (() => { try { return JSON.parse(localStorage.getItem('aegis_auth_user') || '{}').tenantId || 'tenant_demo'; } catch { return 'tenant_demo'; } })();
       const payload = {
-        tenantId,
         name,
         description,
         enabled,

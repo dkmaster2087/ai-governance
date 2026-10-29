@@ -25,8 +25,8 @@ const TABS: { id: Tab; label: string; icon: typeof Building2 }[] = [
 ];
 
 const api = createApiClient('/api');
-const policyApi = createApiClient('/api/policies');
-const complianceApi = createApiClient('/api/compliance');
+const policyApi = createApiClient('/api/v1/policies');
+const complianceApi = createApiClient('/api/v1/compliance');
 
 function tenantHeaders(tenantId: string) {
   return { 'x-tenant-id': tenantId };

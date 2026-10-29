@@ -64,7 +64,7 @@ export function CostPage() {
   const { isDark } = useTheme();
   const t = themeClasses(isDark);
   const { user, isPlatformAdmin } = useAuth();
-  const tenantId = user?.tenantId || 'tenant_demo';
+  const tenantId = user?.tenantId ?? '';
   const [period, setPeriod] = useState<string>('30d');
   const [activeCostModelIndex, setActiveCostModelIndex] = useState<number | undefined>(undefined);
 

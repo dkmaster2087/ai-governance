@@ -1,14 +1,8 @@
-import { createApiClient } from './http';
+import { createApiClient, sessionTenantId } from './http';
 
-const complianceApi = createApiClient('/api/compliance');
+const complianceApi = createApiClient('/api/v1/compliance');
 
-function getTenantId(): string {
-  try {
-    const stored = localStorage.getItem('aegis_auth_user');
-    if (stored) return JSON.parse(stored).tenantId || 'tenant_demo';
-  } catch {}
-  return 'tenant_demo';
-}
+const getTenantId = sessionTenantId;
 
 export interface EnableResult {
   framework: string;

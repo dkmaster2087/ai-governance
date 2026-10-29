@@ -1,96 +1,48 @@
-import { createApiClient } from './http';
+import { createApiClient, sessionTenantId } from './http';
 
-// In dev, Vite proxies /api → gateway, /analytics → analytics, /api/policies → policy-engine
+// The dashboard talks to the gateway at /api/… (proxied in dev). /analytics is the platform-only analytics service.
 const gateway = createApiClient('/api');
-const analytics = createApiClient('/analytics');
-const policyApi = createApiClient('/api/policies');
+const policyApi = createApiClient('/api/v1/policies');
 
 /** Gateway base URL for direct (non-proxied) requests */
 export function getGatewayUrl(): string {
   return window.location.origin.replace('5174', '3000');
 }
 
-/** Get tenantId from localStorage auth */
+/** The signed-in user's tenant. */
 export function getAuthTenantId(): string {
-  try {
-    const stored = localStorage.getItem('aegis_auth_user');
-    if (stored) return JSON.parse(stored).tenantId || 'tenant_demo';
-  } catch {}
-  return 'tenant_demo';
+  return sessionTenantId();
 }
 
 const headers = () => ({
   'x-tenant-id': getAuthTenantId(),
 });
 
-// ── Metrics ──────────────────────────────────────────────────────────────────
-export async function fetchSummary(period = '7d') {
-  const { data } = await analytics.get(`/v1/metrics/${getAuthTenantId()}/summary`, {
-    params: { period },
-  });
-  return data;
-}
-
-export async function fetchCostBreakdown(from?: string, to?: string) {
-  const { data } = await analytics.get(`/v1/metrics/${getAuthTenantId()}/cost`, {
-    params: { from, to },
-  });
-  return data;
-}
-
-export async function fetchModelDistribution() {
-  const { data } = await analytics.get(`/v1/metrics/${getAuthTenantId()}/models`);
-  return data;
-}
-
-export async function fetchViolations() {
-  const { data } = await analytics.get(`/v1/metrics/${getAuthTenantId()}/violations`);
-  return data;
-}
-
-// ── Audit Logs ────────────────────────────────────────────────────────────────
-export async function fetchAuditLogs(params?: {
-  from?: string;
-  to?: string;
-  userId?: string;
-  limit?: number;
-}) {
-  const { data } = await analytics.get(`/v1/logs/${getAuthTenantId()}`, { params });
-  return data;
-}
-
-// ── Policies ──────────────────────────────────────────────────────────────────
+// ── Policies (through the gateway, always the signed-in user's tenant) ──────────
 export async function fetchPolicies() {
-  const { data } = await policyApi.get(`/${getAuthTenantId()}`);
+  const { data } = await policyApi.get('');
   return data;
 }
 
 export async function createPolicy(payload: unknown) {
-  const { data } = await policyApi.post('/', payload);
+  const { data } = await policyApi.post('', payload);
   return data;
 }
 
 export async function updatePolicy(policyId: string, payload: unknown) {
-  const body = payload as any;
-  const tenantId = body.tenantId ?? getAuthTenantId();
-  const { data } = await policyApi.put(`/${tenantId}/${policyId}`, payload);
+  const { data } = await policyApi.put(`/${encodeURIComponent(policyId)}`, payload);
   return data;
 }
 
-export async function deletePolicy(policyId: string, tenantId = getAuthTenantId()) {
-  await policyApi.delete(`/${tenantId}/${policyId}`);
+export async function deletePolicy(policyId: string) {
+  await policyApi.delete(`/${encodeURIComponent(policyId)}`);
 }
 
 export async function updatePolicyEnabled(policyId: string, enabled: boolean) {
-  const tenantId = getAuthTenantId();
-  const { data } = await policyApi.put(`/${tenantId}/${policyId}`, {
-    tenantId,
-    enabled,
-  });
+  const { data } = await policyApi.put(`/${encodeURIComponent(policyId)}`, { enabled });
   return data;
 }
 
-// ── Models ────────────────────────────────────────────────────────────────────
 export async function fetchModels() {
   const { data } = await gateway.get('/v1/models', { headers: headers() });
   return data;

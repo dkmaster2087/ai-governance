@@ -85,7 +85,6 @@ export function CustomPolicyBuilder({ preloadedControlIds = [], onClose, onSaved
   const mutation = useMutation({
     mutationFn: () =>
       createPolicy({
-        tenantId: 'tenant_demo',
         name,
         description,
         enabled: true,

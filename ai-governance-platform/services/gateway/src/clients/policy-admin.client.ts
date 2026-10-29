@@ -41,4 +41,23 @@ export class PolicyAdminClient {
       );
     } catch (err) { this.rethrow(err); }
   }
+
+  async remove(tenantId: string, policyId: string): Promise<unknown> {
+    try {
+      const { data } = await axios.delete(`${this.baseUrl}/v1/policies/${encodeURIComponent(tenantId)}/${encodeURIComponent(policyId)}`, { timeout: 5000 });
+      return data;
+    } catch (err) { this.rethrow(err); }
+  }
+
+  /** Compliance calls, always under the given tenant. */
+  async compliance(method: 'get' | 'post' | 'delete', path: string, body?: unknown): Promise<unknown> {
+    try {
+      const { data } = await axios.request({ method, url: `${this.baseUrl}/v1/compliance${path}`, data: body, timeout: 10000 });
+      return data;
+    } catch (err) {
+      const e = err as { response?: { status?: number; data?: { error?: string } } };
+      if (e.response?.status === 404) throw new AppError('NOT_FOUND', e.response.data?.error ?? 'Not found', 404);
+      this.rethrow(err);
+    }
+  }
 }

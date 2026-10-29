@@ -8,7 +8,6 @@ import { Link } from 'react-router-dom';
 import clsx from 'clsx';
 import { fetchComplianceStatus, enableFramework, disableFramework, assessFramework } from '../lib/compliance-api';
 import { fetchPolicies, updatePolicy } from '../lib/api';
-import { mockCompliancePacks } from '../lib/mock-compliance';
 import { ControlDetailDrawer } from '../components/compliance/ControlDetailDrawer';
 import { CustomPolicyBuilder } from '../components/compliance/CustomPolicyBuilder';
 import { ConfirmDialog } from '../components/ui/ConfirmDialog';
@@ -57,10 +56,10 @@ export function CompliancePage() {
   const [confirmDisable, setConfirmDisable] = useState<{ framework: string; packName: string; linkedPolicyName: string | null } | null>(null);
   const queryClient = useQueryClient();
 
-  const { data } = useQuery({ queryKey: ['compliance-status'], queryFn: fetchComplianceStatus, staleTime: 0, gcTime: 0 });
+  const { data, isError: packsError, refetch: refetchPacks } = useQuery({ queryKey: ['compliance-status'], queryFn: fetchComplianceStatus, staleTime: 0, gcTime: 0 });
   const { data: policiesData } = useQuery({ queryKey: ['policies'], queryFn: fetchPolicies });
 
-  const packs = (Array.isArray(data) && data.length ? data : mockCompliancePacks) as Pack[];
+  const packs = (Array.isArray(data) ? data : []) as Pack[];
   const policies = (Array.isArray(policiesData) ? policiesData : []) as PolicyRecord[];
 
   const showToast = (message: string, framework: string) => {
@@ -150,6 +149,11 @@ export function CompliancePage() {
 
   return (
     <div className="space-y-6 w-full">
+      {packsError && (
+        <p role="alert" className="m-0 text-stop-text font-semibold">
+          Couldn’t load compliance frameworks. <button type="button" className="underline" onClick={() => refetchPacks()}>Try again</button>
+        </p>
+      )}
       {/* Summary bar */}
       <div className="grid grid-cols-3 gap-4">
         {(['enabled', 'partial', 'disabled'] as Status[]).map((s) => {

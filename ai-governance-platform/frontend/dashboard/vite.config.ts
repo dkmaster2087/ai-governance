@@ -14,16 +14,6 @@ export default defineConfig({
     port: Number(process.env.DEV_PORT) || 5174,
     proxy: {
       // More specific routes FIRST
-      '/api/compliance': {
-        target: POLICY_ENGINE,
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/compliance/, '/v1/compliance'),
-      },
-      '/api/policies': {
-        target: POLICY_ENGINE,
-        changeOrigin: true,
-        rewrite: (path) => path.replace(/^\/api\/policies/, '/v1/policies'),
-      },
       // Only /api/… goes to the gateway; app pages like /api-keys must not match.
       '^/api/': {
         target: GATEWAY,

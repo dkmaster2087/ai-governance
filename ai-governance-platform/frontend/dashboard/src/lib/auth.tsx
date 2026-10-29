@@ -1,7 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState, ReactNode } from 'react';
 import type { CognitoUserSession } from 'amazon-cognito-identity-js';
 import { AUTH_MODE, DEV_AUTH } from './auth-mode';
-import { createApiClient, setAuthHeaderProvider, UNAUTHORIZED_EVENT } from './http';
+import { createApiClient, setAuthHeaderProvider, setSessionTenant, UNAUTHORIZED_EVENT } from './http';
 import * as cognito from './cognito';
 import * as devAccounts from './dev-accounts';
 
@@ -203,6 +203,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const step = challenge === 'new_password' ? await cognito.completeNewPassword(value) : await cognito.submitMfaCode(value);
     return fromStep(step);
   };
+
+  // Kept in sync during render so data requests made by child pages always use the current tenant.
+  setSessionTenant(user?.tenantId ?? null);
 
   const role = user?.role;
   const isPlatformAdmin = role === 'platform_admin';

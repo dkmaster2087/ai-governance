@@ -13,6 +13,19 @@ export function getAuthHeaders(): Promise<Record<string, string>> {
   return authHeaderProvider();
 }
 
+let sessionTenant: string | null = null;
+
+/** Set by the auth module whenever the signed-in user changes. */
+export function setSessionTenant(tenantId: string | null) {
+  sessionTenant = tenantId;
+}
+
+/** The signed-in user's tenant. Throws if nobody is signed in, rather than guessing a tenant. */
+export function sessionTenantId(): string {
+  if (!sessionTenant) throw new Error('Not signed in');
+  return sessionTenant;
+}
+
 /** Fired when the backend rejects our credentials, so the app can send the user back to sign-in. */
 export const UNAUTHORIZED_EVENT = 'aegis:unauthorized';
 

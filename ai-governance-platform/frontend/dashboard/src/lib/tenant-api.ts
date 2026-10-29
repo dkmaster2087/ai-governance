@@ -1,4 +1,4 @@
-import { createApiClient } from './http';
+import { createApiClient, sessionTenantId } from './http';
 
 const gatewayApi = createApiClient('/api');
 
@@ -9,7 +9,7 @@ function headers(tenantId: string) {
 }
 
 // Platform admin — fetch all tenants
-export async function fetchTenants(callerTenantId = 'tenant_demo') {
+export async function fetchTenants(callerTenantId = sessionTenantId()) {
   const { data } = await gatewayApi.get('/v1/tenants', { headers: headers(callerTenantId) });
   return data;
 }
@@ -20,7 +20,7 @@ export async function fetchMyTenant(tenantId: string) {
   return data;
 }
 
-export async function createTenant(payload: unknown, callerTenantId = 'tenant_demo') {
+export async function createTenant(payload: unknown, callerTenantId = sessionTenantId()) {
   const { data } = await gatewayApi.post('/v1/tenants', payload, { headers: headers(callerTenantId) });
   return data;
 }
@@ -30,12 +30,12 @@ export async function updateTenant(tenantId: string, payload: unknown) {
   return data;
 }
 
-export async function suspendTenant(tenantId: string, callerTenantId = 'tenant_demo') {
+export async function suspendTenant(tenantId: string, callerTenantId = sessionTenantId()) {
   const { data } = await gatewayApi.post(`/v1/tenants/${tenantId}/suspend`, {}, { headers: headers(callerTenantId) });
   return data;
 }
 
-export async function activateTenant(tenantId: string, callerTenantId = 'tenant_demo') {
+export async function activateTenant(tenantId: string, callerTenantId = sessionTenantId()) {
   const { data } = await gatewayApi.post(`/v1/tenants/${tenantId}/activate`, {}, { headers: headers(callerTenantId) });
   return data;
 }

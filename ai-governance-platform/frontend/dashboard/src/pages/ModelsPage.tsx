@@ -41,13 +41,12 @@ export function ModelsPage() {
   const [testingId, setTestingId] = useState<string | null>(null);
   const queryClient = useQueryClient();
 
-  const { data } = useQuery({
+  const { data, isLoading: modelsLoading, isError: modelsError } = useQuery({
     queryKey: ['model-configs'],
     queryFn: fetchModelConfigs,
-    placeholderData: mockModelConfigs,
   });
 
-  const models: typeof mockModelConfigs = Array.isArray(data) && data.length ? data : mockModelConfigs;
+  const models: typeof mockModelConfigs = Array.isArray(data) ? data : [];
 
   const deleteMutation = useMutation({
     mutationFn: deleteModelConfig,
@@ -74,6 +73,13 @@ export function ModelsPage() {
 
   return (
     <div className="space-y-5">
+      {modelsError && <p role="alert" className="m-0 text-stop-text font-semibold">Couldn’t load models. Check that the gateway is reachable and try again.</p>}
+      {!modelsLoading && !modelsError && models.length === 0 && (
+        <div className="bg-white border border-line rounded-[14px] px-6 py-5">
+          <p className="m-0 font-semibold">No models yet.</p>
+          <p className="m-0 mt-1 text-ink-muted">Add the models your apps may use. Requests for any other model are refused.</p>
+        </div>
+      )}
       <div className="flex items-center justify-between">
         <div className="flex items-center gap-4">
           <div className={clsx('border rounded-xl px-4 py-2.5 text-center', t.card)}>

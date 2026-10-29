@@ -14,8 +14,8 @@ import { useAuth } from '../lib/auth';
 import { getLicenseList } from '../lib/license';
 import { createApiClient } from '../lib/http';
 
-const policyApi = createApiClient('/api/policies');
-const complianceApi = createApiClient('/api/compliance');
+const policyApi = createApiClient('/api/v1/policies');
+const complianceApi = createApiClient('/api/v1/compliance');
 
 export function PlatformDashboardPage() {
   const { isDark } = useTheme();
