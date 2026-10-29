@@ -7,7 +7,7 @@ import clsx from 'clsx';
 import { createApiClient } from '../lib/http';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
-import { getTenantLicense } from '../lib/license';
+import { fetchTenantLicenses, formatDate } from '../lib/license-api';
 import { getTenantUsers } from '../lib/auth';
 
 type Tab = 'overview' | 'analytics' | 'models' | 'policies' | 'compliance' | 'audit' | 'users' | 'cost' | 'license';
@@ -110,7 +110,12 @@ export function TenantDetailPage() {
     enabled: !!tenantId,
   });
 
-  const license = getTenantLicense(tenantId ?? '');
+  const { data: tenantLicenses = [] } = useQuery({
+    queryKey: ['tenant-licenses', tenantId],
+    queryFn: () => fetchTenantLicenses(tenantId!),
+    enabled: !!tenantId,
+  });
+  const license = tenantLicenses.find((l) => l.status === 'active') ?? tenantLicenses[0];
   const users = getTenantUsers(tenantId ?? '');
 
   const tenantName = tenantInfo?.name ?? tenantId?.replace('tenant_', '').replace(/_/g, ' ').replace(/\b\w/g, (c: string) => c.toUpperCase()) ?? 'Tenant';
@@ -188,8 +193,8 @@ export function TenantDetailPage() {
           </div>
           <div className={clsx('border rounded-2xl p-5', t.card)}>
             <Key className="w-5 h-5 text-brand-400 mb-3" />
-            <p className={clsx('text-sm font-mono font-bold', t.heading)}>{license?.licenseKey ?? '—'}</p>
-            <p className={clsx('text-xs', t.sub)}>License Key</p>
+            <p className={clsx('text-sm font-mono font-bold', t.heading)}>{license?.keyPrefix ?? '—'}</p>
+            <p className={clsx('text-xs', t.sub)}>License</p>
           </div>
         </div>
       )}
@@ -412,7 +417,7 @@ export function TenantDetailPage() {
                 <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
                   <div className={clsx('rounded-xl p-4', t.cardInner)}>
                     <p className={clsx('text-xs mb-1', t.muted)}>License Key</p>
-                    <p className={clsx('text-sm font-mono font-medium', t.heading)}>{license.licenseKey}</p>
+                    <p className={clsx('text-sm font-mono font-medium', t.heading)}>{license.keyPrefix}</p>
                   </div>
                   <div className={clsx('rounded-xl p-4', t.cardInner)}>
                     <p className={clsx('text-xs mb-1', t.muted)}>Status</p>
@@ -420,14 +425,11 @@ export function TenantDetailPage() {
                   </div>
                   <div className={clsx('rounded-xl p-4', t.cardInner)}>
                     <p className={clsx('text-xs mb-1', t.muted)}>Users</p>
-                    <p className={clsx('text-sm font-medium', t.heading)}>{license.currentUsers} / {license.maxUsers}</p>
-                    <div className={clsx('h-1.5 rounded-full overflow-hidden mt-2', t.track)}>
-                      <div className="h-full bg-accent-400 rounded-full" style={{ width: `${(license.currentUsers / license.maxUsers) * 100}%` }} />
-                    </div>
+                    <p className={clsx('text-sm font-medium', t.heading)}>{license.maxUsers.toLocaleString()} included</p>
                   </div>
                   <div className={clsx('rounded-xl p-4', t.cardInner)}>
                     <p className={clsx('text-xs mb-1', t.muted)}>Expires</p>
-                    <p className={clsx('text-sm font-medium', t.heading)}>{license.expiresAt}</p>
+                    <p className={clsx('text-sm font-medium', t.heading)}>{formatDate(license.expiresAt)}</p>
                   </div>
                 </div>
               </div>

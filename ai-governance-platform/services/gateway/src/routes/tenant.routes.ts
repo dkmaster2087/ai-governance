@@ -8,8 +8,8 @@ import { createLogger } from '@ai-governance/utils';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import { tenantSettings } from '../services/tenant-settings.service';
-import { ApiKeyRepository, generateApiKey } from '../repositories/api-key.repository';
-import { requireAccess, requireTenantParam, PLATFORM_ADMIN } from '../auth/guards';
+import { ApiKey, ApiKeyRepository, generateApiKey, LicenseInfo } from '../repositories/api-key.repository';
+import { requireAccess, requireTenantParam, PLATFORM_ADMIN, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
 
 const logger = createLogger('gateway:tenants');
 
@@ -123,44 +123,105 @@ export async function tenantRoutes(app: FastifyInstance) {
     return reply.send({ tenantId, status: 'active' });
   });
 
-  // ── On-prem licenses ──────────────────────────────────────────────────────
-  // A license is a hashed, expiring credential with the 'reporting:ingest' scope, used by the on-prem agent.
+  // ── Licenses ──────────────────────────────────────────────────────────────
+  // A license is a hashed, expiring credential with the 'reporting:ingest' scope (used by the on-prem
+  // agent), plus plan details. The raw key is shown once, at issue time.
   const licenseKeys = new ApiKeyRepository();
   const issueLicenseSchema = z.object({
-    name: z.string().min(1).max(100).default('On-prem license'),
+    name: z.string().min(1).max(100).default('License'),
     validityDays: z.number().int().min(1).max(3650).default(365),
+    plan: z.enum(['starter', 'professional', 'enterprise']).default('professional'),
+    type: z.enum(['cloud', 'onprem']).default('cloud'),
+    maxUsers: z.number().int().min(1).max(1_000_000).default(50),
+  });
+  const reportingSchema = z.object({
+    usageMetrics: z.boolean(), costData: z.boolean(), complianceStatus: z.boolean(), auditLogs: z.boolean(),
   });
 
-  app.get('/tenants/:tenantId/licenses', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request) => {
+  const statusOf = (k: ApiKey): 'active' | 'expired' | 'revoked' =>
+    k.status === 'revoked' ? 'revoked' : k.expiresAt && new Date(k.expiresAt) < new Date() ? 'expired' : 'active';
+
+  const toView = (k: ApiKey, tenantName?: string) => ({
+    licenseId: k.keyId,
+    keyPrefix: k.keyPrefix,
+    tenantId: k.tenantId,
+    tenantName: tenantName ?? k.tenantId,
+    status: statusOf(k),
+    issuedAt: k.createdAt,
+    expiresAt: k.expiresAt,
+    lastUsedAt: k.lastUsedAt,
+    plan: k.license?.plan ?? 'professional',
+    type: k.license?.type ?? 'onprem',
+    maxUsers: k.license?.maxUsers ?? 0,
+    reportingConfig: k.license?.reportingConfig ?? { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: false },
+  });
+
+  const licensesOf = async (tenantId: string) =>
+    (await licenseKeys.getForTenant(tenantId)).filter((k) => k.scopes?.includes('reporting:ingest'));
+
+  /** Every license across tenants (platform admins). */
+  app.get('/licenses', { preHandler: requireAccess(PLATFORM_ADMIN) }, async () => {
+    const result = await client.send(new ScanCommand({ TableName: table, ProjectionExpression: 'tenantId, #n', ExpressionAttributeNames: { '#n': 'name' } }));
+    const tenants = (result.Items ?? []) as Array<{ tenantId: string; name?: string }>;
+    const lists = await Promise.all(tenants.map(async (t) => (await licensesOf(t.tenantId)).map((k) => toView(k, t.name))));
+    return lists.flat().sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
+  });
+
+  /** The caller's own current license, without the key. */
+  app.get('/license', { preHandler: requireAccess(TENANT_READ) }, async (request, reply) => {
+    const all = (await licensesOf(request.tenantId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const current = all.find((k) => statusOf(k) === 'active') ?? all[0];
+    if (!current) return reply.status(404).send({ error: 'No license', code: 'NOT_FOUND' });
+    const tenant = await client.send(new GetCommand({ TableName: table, Key: { tenantId: request.tenantId } }));
+    return toView(current, tenant.Item?.name as string | undefined);
+  });
+
+  /** Choose what the on-prem agent may report back (tenant admins). */
+  app.put('/license/reporting', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
+    const parsed = reportingSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'Invalid reporting settings', code: 'INVALID_SETTINGS' });
+    const current = (await licensesOf(request.tenantId)).find((k) => statusOf(k) === 'active');
+    if (!current) return reply.status(404).send({ error: 'No active license', code: 'NOT_FOUND' });
+    const base = toView(current);
+    await licenseKeys.setLicenseInfo(request.tenantId, current.keyId, { plan: base.plan, type: base.type, maxUsers: base.maxUsers, reportingConfig: parsed.data });
+    return { reportingConfig: parsed.data };
+  });
+
+  app.get('/tenants/:tenantId/licenses', { preHandler: [requireAccess({ roles: ['tenant_admin', 'tenant_auditor'] }), requireTenantParam] }, async (request) => {
     const { tenantId } = request.params as { tenantId: string };
-    const keys = await licenseKeys.getForTenant(tenantId);
-    return keys
-      .filter((k) => k.scopes?.includes('reporting:ingest'))
-      .map(({ keyHash: _hash, ...rest }) => rest);
+    return (await licensesOf(tenantId)).map((k) => toView(k));
   });
 
   app.post('/tenants/:tenantId/licenses', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
-    const body = issueLicenseSchema.parse(request.body ?? {});
+    const parsed = issueLicenseSchema.safeParse(request.body ?? {});
+    if (!parsed.success) return reply.status(400).send({ error: 'Invalid license', code: 'INVALID_LICENSE' });
+    const body = parsed.data;
     const tenant = await client.send(new GetCommand({ TableName: table, Key: { tenantId } }));
     if (!tenant.Item) return reply.status(404).send({ error: 'Tenant not found' });
 
     const { raw, hash, prefix, keyId } = generateApiKey(tenantId);
     const expiresAt = new Date(Date.now() + body.validityDays * 86400000).toISOString();
+    const license: LicenseInfo = {
+      plan: body.plan, type: body.type, maxUsers: body.maxUsers,
+      reportingConfig: { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: false },
+    };
     await licenseKeys.create({
       tenantId, keyId, keyHash: hash, keyPrefix: prefix, name: body.name,
       scopes: ['reporting:ingest'], status: 'active', rateLimit: 60,
-      createdAt: new Date().toISOString(), expiresAt, createdBy: request.userId,
+      createdAt: new Date().toISOString(), expiresAt, createdBy: request.userId, license,
     });
-    logger.info('License issued', { tenantId, keyId, expiresAt });
+    logger.info('License issued', { tenantId, keyId, expiresAt, plan: body.plan });
     return reply.status(201).send({
-      licenseId: keyId, licenseKey: raw, keyPrefix: prefix, tenantId, expiresAt,
+      ...toView({ tenantId, keyId, keyHash: hash, keyPrefix: prefix, name: body.name, scopes: ['reporting:ingest'], status: 'active', rateLimit: 60, createdAt: new Date().toISOString(), expiresAt, createdBy: request.userId, license }, tenant.Item.name as string),
+      licenseKey: raw,
       message: 'Store this license key securely. It will not be shown again.',
     });
   });
 
   app.post('/tenants/:tenantId/licenses/:licenseId/revoke', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
     const { tenantId, licenseId } = request.params as { tenantId: string; licenseId: string };
+    if (!(await licensesOf(tenantId)).some((k) => k.keyId === licenseId)) return reply.status(404).send({ error: 'License not found', code: 'NOT_FOUND' });
     await licenseKeys.revoke(tenantId, licenseId);
     return reply.send({ licenseId, status: 'revoked' });
   });

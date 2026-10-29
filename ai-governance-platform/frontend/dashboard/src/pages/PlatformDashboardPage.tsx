@@ -11,7 +11,7 @@ import { useState } from 'react';
 import { fetchTenants } from '../lib/tenant-api';
 import { mockTenants } from '../lib/mock-tenants';
 import { useAuth } from '../lib/auth';
-import { getLicenseList } from '../lib/license';
+import { fetchAllLicenses } from '../lib/license-api';
 import { createApiClient } from '../lib/http';
 
 const policyApi = createApiClient('/api/v1/policies');
@@ -71,9 +71,9 @@ export function PlatformDashboardPage() {
     enabled: tenants.length > 0,
   });
 
-  const licenses = getLicenseList();
-  const activeLicenses = licenses.filter((l) => l.status === 'active' || l.status === 'trial').length || tenants.filter((t) => t.status === 'active').length;
-  const totalUsers = licenses.reduce((s, l) => s + l.currentUsers, 0) || tenants.reduce((s, t) => s + (t.usageThisMonth?.requests ? 1 : 0), 0);
+  const { data: licenses = [] } = useQuery({ queryKey: ['licenses'], queryFn: fetchAllLicenses });
+  const activeLicenses = licenses.filter((l) => l.status === 'active').length;
+  const totalUsers = licenses.filter((l) => l.status === 'active').reduce((s, l) => s + l.maxUsers, 0);
   const totalRequests = tenants.reduce((s, tn) => s + (tn.usageThisMonth?.requests ?? 0), 0);
   const monthlyRevenue = tenants.reduce((s, tn) => s + (tn.usageThisMonth?.cost ?? 0), 0);
 
@@ -104,7 +104,7 @@ export function PlatformDashboardPage() {
       <div className="grid grid-cols-2 lg:grid-cols-5 gap-4">
         <StatCard label="Total Tenants" value={tenants.length} icon={Building2} color="brand" href="/tenants" />
         <StatCard label="Active Licenses" value={activeLicenses} icon={Key} color="green" href="/licenses" />
-        <StatCard label="Total Users" value={totalUsers.toLocaleString()} icon={Users} color="yellow" />
+        <StatCard label="Licensed users" value={totalUsers.toLocaleString()} icon={Users} color="yellow" />
         <StatCard label="Monthly Revenue" value={`$${monthlyRevenue.toFixed(2)}`} icon={DollarSign} color="green" href="/cost" />
         <StatCard label="Total Requests" value={totalRequests.toLocaleString()} icon={Activity} color="brand" trendValue="+18%" trend="up" />
       </div>

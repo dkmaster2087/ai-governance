@@ -21,6 +21,16 @@ export interface ApiKey {
   expiresAt?: string;
   lastUsedAt?: string;
   createdBy: string;
+  /** Present on on-prem license keys (scope 'reporting:ingest'). */
+  license?: LicenseInfo;
+}
+
+export interface LicenseInfo {
+  plan: string;
+  type: 'cloud' | 'onprem';
+  maxUsers: number;
+  /** What the on-prem agent is allowed to report back. */
+  reportingConfig: { usageMetrics: boolean; costData: boolean; complianceStatus: boolean; auditLogs: boolean };
 }
 
 /** Generate a secure API key: aegis_<tenantShort>_<random32hex> */
@@ -112,6 +122,17 @@ export class ApiKeyRepository {
       ExpressionAttributeValues: { ':s': 'revoked' },
     }));
     logger.info('API key revoked', { tenantId, keyId });
+  }
+
+  /** Replace the license details on a license key. */
+  async setLicenseInfo(tenantId: string, keyId: string, license: LicenseInfo): Promise<void> {
+    await this.client.send(new UpdateCommand({
+      TableName: this.table,
+      Key: { tenantId, keyId },
+      UpdateExpression: 'SET license = :l',
+      ConditionExpression: 'attribute_exists(keyId)',
+      ExpressionAttributeValues: { ':l': license },
+    }));
   }
 
   /** Update last used timestamp */

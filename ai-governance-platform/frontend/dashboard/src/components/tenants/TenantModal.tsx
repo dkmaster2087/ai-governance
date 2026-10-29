@@ -7,7 +7,6 @@ import { Toggle } from '../ui/Toggle';
 import { useTheme } from '../../lib/theme';
 import { themeClasses } from '../../lib/theme-classes';
 import { registerTenantAccount } from '../../lib/auth';
-import { generateLicenseKey, storeTenantLicense } from '../../lib/license';
 
 interface Props {
   tenant?: any;
@@ -89,7 +88,6 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
   const t = themeClasses(isDark);
   const isEdit = !!tenant?.tenantId;
   const [activeTab, setActiveTab] = useState<'basic' | 'settings' | 'license'>('basic');
-  const [copied, setCopied] = useState(false);
 
   const [name, setName] = useState(tenant?.name ?? '');
   const [adminEmail, setAdminEmail] = useState(tenant?.adminEmail ?? '');
@@ -104,35 +102,6 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
   const [piiMasking, setPiiMasking] = useState(tenant?.settings?.piiMaskingEnabled ?? true);
   const [allowExternal, setAllowExternal] = useState(tenant?.settings?.allowExternalProviders ?? false);
 
-  // License fields
-  const [maxUsers, setMaxUsers] = useState(tenant?.license?.maxUsers ?? 50);
-  const [validityMonths, setValidityMonths] = useState(tenant?.license?.validityMonths ?? 12);
-  const [licenseKey] = useState(() => tenant?.license?.licenseKey ?? generateLicenseKey());
-
-  const copyLicenseKey = () => {
-    navigator.clipboard.writeText(licenseKey);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  };
-
-  const saveLicense = (tenantId: string) => {
-    const now = new Date();
-    const expiry = new Date(now);
-    expiry.setMonth(expiry.getMonth() + validityMonths);
-    storeTenantLicense({
-      licenseKey,
-      tenantId,
-      tenantName: name,
-      plan,
-      type: deploymentMode === 'onprem' ? 'onprem' : 'cloud',
-      status: 'active',
-      maxUsers,
-      currentUsers: 1,
-      issuedAt: now.toISOString().slice(0, 10),
-      expiresAt: expiry.toISOString().slice(0, 10),
-      reportingConfig: { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: deploymentMode !== 'onprem' },
-    });
-  };
 
   const mutation = useMutation({
     mutationFn: () => {
@@ -156,27 +125,8 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
       return isEdit ? updateTenant(tenant.tenantId, payload) : createTenant(payload);
     },
     onSuccess: (data) => {
-      const tenantId = data?.tenantId || tenant?.tenantId || `tenant_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-      // Store license
-      saveLicense(tenantId);
+      const tenantId = data?.tenantId || tenant?.tenantId;
       // Register login account for the new tenant admin
-      if (!isEdit && adminEmail) {
-        registerTenantAccount({
-          email: adminEmail,
-          password: adminPassword || 'welcome123',
-          name: `${name} Admin`,
-          role: 'tenant_admin',
-          tenantId,
-          tenantName: name,
-        });
-      }
-      onSaved();
-    },
-    onError: (err: unknown) => {
-      // Fallback for when backend is unavailable
-      const tenantId = tenant?.tenantId || `tenant_${name.toLowerCase().replace(/[^a-z0-9]/g, '_')}`;
-      saveLicense(tenantId);
-      // Still register the account for demo purposes
       if (!isEdit && adminEmail) {
         registerTenantAccount({
           email: adminEmail,
@@ -259,42 +209,9 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
               </FieldSelect>
             </div>
           ) : activeTab === 'license' ? (
-            <div className="space-y-4">
-              <div>
-                <label className={clsx('block text-xs mb-1.5', t.sub)}>License Key</label>
-                <div className="flex items-center gap-2">
-                  <code className={clsx('flex-1 font-mono text-sm px-3 py-2.5 rounded-lg border', t.input)}>{licenseKey}</code>
-                  <button onClick={copyLicenseKey} className={clsx('flex items-center gap-1.5 px-3 py-2.5 rounded-lg text-xs font-medium transition-colors', copied ? 'bg-accent-500/20 text-accent-400' : t.btnSecondary)}>
-                    {copied ? <Check className="w-3.5 h-3.5" /> : <Copy className="w-3.5 h-3.5" />}
-                    {copied ? 'Copied' : 'Copy'}
-                  </button>
-                </div>
-                <p className={clsx('text-xs mt-1', t.faint)}>Auto-generated. Share with tenant for on-prem activation.</p>
-              </div>
-              <div className="grid grid-cols-2 gap-4">
-                <FieldInput tc={t} label="Max licensed users" id="t-maxusers" type="number" min={1} value={maxUsers} onChange={(e) => setMaxUsers(+e.target.value)} hint="Maximum users under this license" />
-                <FieldSelect tc={t} label="Validity period" id="t-validity" value={validityMonths} onChange={(e) => setValidityMonths(+e.target.value)}>
-                  <option value={1}>1 month</option>
-                  <option value={3}>3 months</option>
-                  <option value={6}>6 months</option>
-                  <option value={12}>1 year</option>
-                  <option value={24}>2 years</option>
-                  <option value={36}>3 years</option>
-                </FieldSelect>
-              </div>
-              <div className={clsx('rounded-xl p-4 space-y-2', t.cardInner)}>
-                <p className={clsx('text-xs font-medium', t.heading)}>License Summary</p>
-                <div className="grid grid-cols-2 gap-2 text-xs">
-                  <span className={t.muted}>Plan</span>
-                  <span className={clsx('font-medium capitalize', t.body)}>{plan}</span>
-                  <span className={t.muted}>Deployment</span>
-                  <span className={clsx('font-medium', t.body)}>{deploymentMode === 'onprem' ? 'On-Premises' : 'SaaS'}</span>
-                  <span className={t.muted}>Max Users</span>
-                  <span className={clsx('font-medium', t.body)}>{maxUsers}</span>
-                  <span className={t.muted}>Validity</span>
-                  <span className={clsx('font-medium', t.body)}>{validityMonths >= 12 ? `${validityMonths / 12} year${validityMonths > 12 ? 's' : ''}` : `${validityMonths} month${validityMonths > 1 ? 's' : ''}`} from activation</span>
-                </div>
-              </div>
+            <div className="space-y-2">
+              <p className={clsx('text-sm', t.body)}>Licenses are issued from the <strong>Licenses</strong> page once the tenant exists.</p>
+              <p className={clsx('text-xs', t.muted)}>The key is shown once, when you issue it, so you can pass it to the tenant securely.</p>
             </div>
           ) : (
             <div className="space-y-4">
@@ -315,6 +232,11 @@ export function TenantModal({ tenant, onClose, onSaved }: Props) {
           )}
         </div>
 
+        {mutation.isError && (
+          <p role="alert" className="mx-6 mb-0 mt-2 text-sm font-semibold text-stop-text">
+            {isEdit ? 'Changes weren’t saved.' : 'The tenant wasn’t created.'} {(mutation.error as { response?: { data?: { error?: string } } })?.response?.data?.error ?? 'Check the details and try again.'}
+          </p>
+        )}
         {/* Footer */}
         <div className={clsx('px-6 py-4 border-t flex gap-3', t.border)}>
           <button onClick={onClose} className={clsx('flex-1 py-2.5 rounded-xl text-sm font-medium transition-colors', t.btnSecondary)}>
