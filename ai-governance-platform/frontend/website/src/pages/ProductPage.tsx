@@ -1,100 +1,115 @@
+import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
-import { Shield, Lock, Eye, Zap, BarChart3, GitBranch, AlertTriangle, Globe, Cpu, Key, Users, DollarSign, ArrowRight, ScanLine, Chrome, Network } from 'lucide-react';
+import { Container, CtaLink, Eyebrow, PageHeader, Panel, PipelineIllustration } from '../components/ui';
 
-const capabilities = [
-  { icon: Shield, title: 'Policy Engine', description: 'Keyword blocking, model restrictions, PII detection, content classification. 6 compliance frameworks built in — NIST AI RMF, SOC 2, GDPR, HIPAA, ISO 42001, PIPEDA.' },
-  { icon: Lock, title: 'PII & Data Protection', description: 'Regex + Amazon Comprehend for deep PII detection. Mask, block, or tokenize sensitive data before it reaches any AI model. Response scanning on the way back.' },
-  { icon: Eye, title: 'Full Audit Trail', description: 'Every prompt, response, and policy decision logged. Time-period filtering, CSV/PDF export, per-user and per-tenant breakdowns.' },
-  { icon: Network, title: 'Transparent Proxy Mode', description: 'Route IDE traffic (Kiro, Copilot, Cursor) through Aegis without any code changes. Supports OpenAI, Anthropic, Cohere, Mistral as passthrough targets.' },
-  { icon: Zap, title: 'Multi-Model Routing', description: 'Managed mode with API key storage, or proxy mode with client credentials. Route by cost, policy, or capability across Bedrock, OpenAI, Anthropic.' },
-  { icon: BarChart3, title: 'Cost & Usage Analytics', description: 'Per-tenant and per-user cost tracking, model distribution charts, daily cost trends, budget alerts, and top-user breakdowns.' },
-  { icon: AlertTriangle, title: 'Shadow AI Detection', description: 'Chrome extension monitors and blocks unauthorized AI tool usage. Per-tenant config, real-time blocking, risk scoring dashboard.' },
-  { icon: ScanLine, title: 'Content Scanner', description: 'Upload documents up to 500MB for PII and sensitive content scanning. Text extraction, progress tracking, detailed findings report.' },
-  { icon: GitBranch, title: 'Multi-Tenant Architecture', description: 'Full tenant isolation at every layer. SaaS and on-prem deployment modes. License key management with user counts and validity periods.' },
-  { icon: Users, title: 'Role-Based Access', description: 'Four roles: Platform Admin, Tenant Admin, Auditor, Chat-Only User. Route guards, dynamic sidebar, per-role dashboards.' },
-  { icon: Cpu, title: 'Model Configuration', description: 'Configure models per tenant with max tokens, context windows, provider API keys. Validation against model limits. Status badges and connection testing.' },
-  { icon: Globe, title: 'Drop-In Compatible', description: 'OpenAI-compatible API. Point existing apps at Aegis with a URL change. Enterprise proxy mode requires zero client-side changes.' },
-];
-
-const integrationModes = [
-  {
-    title: 'Managed Mode',
-    description: 'Aegis holds the API keys and routes to providers. Clients use Aegis as their AI endpoint.',
-    flow: 'Client App → Aegis Gateway → Policy Check → PII Mask → AI Provider → Response Scan → Client',
-    useCases: ['Internal apps', 'Governed AI chat', 'Backend services'],
-  },
-  {
-    title: 'Proxy Mode',
-    description: 'Aegis is transparent. Client credentials pass through. Corporate proxy redirects AI traffic to Aegis.',
-    flow: 'IDE / Browser → Corporate Proxy → Aegis Gateway → Policy Check → Audit Log → AI Provider → Client',
-    useCases: ['IDE governance (Kiro, Copilot)', 'Browser AI tools', 'Zero client-side changes'],
-  },
-];
+function Feature({ eyebrow, title, children, sample, docs }: { eyebrow: string; title: ReactNode; children: ReactNode; sample: ReactNode; docs: string }) {
+  return (
+    <section className="py-16 border-t border-line grid gap-10 items-start" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+      <div>
+        <Eyebrow className="mb-3">{eyebrow}</Eyebrow>
+        <h2 className="m-0 text-[32px] leading-[1.12] font-bold tracking-[-0.02em]">{title}</h2>
+        <div className="mt-4 text-ink-muted text-[16px] leading-relaxed flex flex-col gap-3">{children}</div>
+        <Link to={docs} className="inline-block mt-4 font-semibold text-ink hover:text-stop no-underline">Read the docs →</Link>
+      </div>
+      <div>
+        {sample}
+        <p className="m-0 mt-2 text-xs text-ink-muted">Sample from the dashboard.</p>
+      </div>
+    </section>
+  );
+}
 
 export function ProductPage() {
   return (
-    <div className="pt-24 pb-24">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <h1 className="text-4xl sm:text-5xl font-bold text-white mb-4">The AI Control Plane</h1>
-          <p className="text-slate-400 text-lg max-w-2xl mx-auto">
-            Aegis AI sits between your enterprise and every AI provider. Every request is inspected, governed, and logged — in managed or transparent proxy mode.
-          </p>
-        </div>
+    <Container>
+      <PageHeader eyebrow="Product" title="One gateway, three checks, and a record of every decision.">
+        Aegis sits between your company and AI providers. Every request passes the same checks in the same order, and the dashboard
+        shows what they did rather than another wall of charts.
+      </PageHeader>
 
-        {/* Integration modes */}
-        <div className="grid md:grid-cols-2 gap-6 mb-16">
-          {integrationModes.map((mode) => (
-            <div key={mode.title} className="glass rounded-2xl p-8">
-              <h3 className="text-xl font-bold text-white mb-2">{mode.title}</h3>
-              <p className="text-slate-400 text-sm mb-4">{mode.description}</p>
-              <div className="font-mono text-xs text-slate-500 bg-white/5 rounded-xl px-4 py-3 mb-4 leading-relaxed">
-                {mode.flow}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {mode.useCases.map((uc) => (
-                  <span key={uc} className="text-xs px-2.5 py-1 rounded-full bg-brand-600/20 text-brand-300">{uc}</span>
-                ))}
-              </div>
-            </div>
-          ))}
-        </div>
+      <Panel className="px-6 sm:px-8 pt-7 pb-5 mb-6"><PipelineIllustration /></Panel>
 
-        {/* Capabilities */}
-        <h2 className="text-2xl font-bold text-white mb-8 text-center">Platform Capabilities</h2>
-        <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6 mb-16">
-          {capabilities.map((cap) => (
-            <div key={cap.title} className="glass rounded-2xl p-6 hover:bg-white/10 transition-colors group">
-              <div className="w-10 h-10 rounded-lg bg-brand-600/20 flex items-center justify-center mb-4 group-hover:bg-brand-600/30 transition-colors">
-                <cap.icon className="w-5 h-5 text-brand-400" />
-              </div>
-              <h3 className="text-white font-semibold mb-2">{cap.title}</h3>
-              <p className="text-slate-400 text-sm leading-relaxed">{cap.description}</p>
-            </div>
-          ))}
-        </div>
+      <Feature
+        eyebrow="Gateway"
+        title="The home screen is your traffic, drawn as it flows."
+        docs="/docs"
+        sample={
+          <Panel className="p-6">
+            <p className="m-0 text-[22px] leading-snug font-bold tracking-[-0.015em]">In the last 7 days, Aegis stopped <span className="text-stop">17</span> risky AI requests and cleaned 31 more before they left Demo Corp.</p>
+          </Panel>
+        }
+      >
+        <p className="m-0">Apps on the left, each check in order, providers on the right. What a check stops drops out beneath it in red.</p>
+        <p className="m-0">Below it: the decisions waiting for you, and a plain-English feed of what just happened.</p>
+      </Feature>
 
-        {/* Compliance frameworks */}
-        <div className="glass rounded-2xl p-8 mb-16">
-          <h2 className="text-lg font-semibold text-white mb-6 text-center">Built-In Compliance Frameworks</h2>
-          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-4">
-            {['NIST AI RMF', 'SOC 2', 'GDPR', 'HIPAA', 'ISO 42001', 'PIPEDA'].map((fw) => (
-              <div key={fw} className="text-center py-4 px-3 rounded-xl bg-white/5 hover:bg-white/10 transition-colors">
-                <Shield className="w-5 h-5 text-brand-400 mx-auto mb-2" />
-                <span className="text-white text-sm font-medium">{fw}</span>
-              </div>
-            ))}
-          </div>
-          <p className="text-slate-500 text-xs text-center mt-4">Enable a framework to auto-create linked policies with required controls. Disable to deactivate.</p>
-        </div>
+      <Feature
+        eyebrow="Stopped"
+        title={<>Everything that was <span className="text-stop">stopped</span>, grouped by why.</>}
+        docs="/docs/rules"
+        sample={
+          <Panel className="p-6 flex flex-col gap-3">
+            <div className="flex items-baseline gap-4"><span className="text-[40px] font-extrabold text-stop leading-none">25</span><span className="text-lg font-bold">Block confidential keywords</span></div>
+            <p className="m-0 text-ink-muted">billing-api (20) · support-bot (5) · 4 people</p>
+            <div className="bg-canvas border border-line-subtle rounded-[10px] px-4 py-3 font-mono text-[13px]">Summarise the attached <mark className="bg-stop-soft text-stop-text font-bold px-1 rounded">confidential</mark> pricing memo…</div>
+          </Panel>
+        }
+      >
+        <p className="m-0">Each rule that fired gets one card: how often, which apps and people, and a short excerpt of exactly what triggered it.</p>
+        <p className="m-0">Personal data in the excerpt is masked. If the trigger itself is personal data, only its type is kept, such as [SSN].</p>
+      </Feature>
 
-        {/* CTA */}
-        <div className="text-center">
-          <Link to="/contact" className="inline-flex items-center gap-2 px-8 py-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold transition-all hover:scale-105">
-            Book a Demo <ArrowRight className="w-5 h-5" />
-          </Link>
-        </div>
-      </div>
-    </div>
+      <Feature
+        eyebrow="Shadow AI"
+        title={<>See who goes <span className="text-stop">around</span> the gateway, then decide.</>}
+        docs="/docs/browser-extension"
+        sample={
+          <Panel className="p-6 flex flex-wrap items-center gap-6 justify-between">
+            <div><div className="text-xl font-bold">ChatGPT <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-line-subtle text-ink-soft align-middle">Undecided</span></div><div className="font-mono text-xs text-ink-muted">chatgpt.com, chat.openai.com</div></div>
+            <div className="flex gap-6"><div><div className="text-2xl font-extrabold">18</div><div className="text-xs text-ink-muted">visits</div></div><div><div className="text-2xl font-extrabold">6</div><div className="text-xs text-ink-muted">people</div></div></div>
+            <div className="flex gap-2"><span className="px-3.5 py-2 rounded-lg bg-ink text-white font-semibold text-sm">Block</span><span className="px-3.5 py-2 rounded-lg border border-line-strong text-sm">Allow</span></div>
+          </Panel>
+        }
+      >
+        <p className="m-0">The browser extension records visits to AI tools outside the gateway. You decide per tool: block it, allow it, or keep watching.</p>
+        <p className="m-0">People who hit a blocked tool see a plain page explaining it isn’t approved and pointing them to tools that are.</p>
+      </Feature>
+
+      <Feature
+        eyebrow="Rules"
+        title="Rules read like sentences, and show what they caught."
+        docs="/docs/rules"
+        sample={
+          <Panel className="p-6 flex flex-col gap-3">
+            <p className="m-0 font-semibold">Stop prompts that mention <span className="font-mono text-[13px] bg-ink-tint rounded px-1.5">confidential, top secret</span>.</p>
+            <p className="m-0 font-bold text-stop">25 stopped this week</p>
+          </Panel>
+        }
+      >
+        <p className="m-0">Words and phrases, patterns, approved models and personal-data types. Switch any rule on or off; framework rules can be paused but not deleted.</p>
+        <p className="m-0">Controls from compliance frameworks that the gateway doesn’t enforce are listed separately, so nothing looks more protective than it is.</p>
+      </Feature>
+
+      <Feature
+        eyebrow="Evidence"
+        title="Every request has a case file you can hand to an auditor."
+        docs="/docs/evidence"
+        sample={
+          <Panel className="p-6 flex flex-col gap-2">
+            <p className="m-0 text-xs font-bold uppercase tracking-[0.06em] text-stop">Stopped · check 1, policy rules</p>
+            <p className="m-0 text-xl font-bold leading-snug">A billing-api prompt was stopped and never reached OpenAI.</p>
+            <ol className="m-0 pl-5 text-ink-muted"><li>Received from billing-api</li><li><span className="text-stop font-semibold">Stopped by a policy rule</span></li><li>Not sent</li></ol>
+          </Panel>
+        }
+      >
+        <p className="m-0">Search by person, app, rule or request ID. Each record shows what happened at every check, the masked trigger, prompt fingerprints and how long it’s kept.</p>
+        <p className="m-0">Download any record as a file. The gateway never stores the text of prompts that were delivered.</p>
+      </Feature>
+
+      <section className="py-16 border-t border-line flex flex-wrap gap-4 items-center justify-between">
+        <h2 className="m-0 text-[28px] font-bold tracking-[-0.02em]">Want to see it on your own traffic?</h2>
+        <CtaLink to="/contact">Book a demo</CtaLink>
+      </section>
+    </Container>
   );
 }

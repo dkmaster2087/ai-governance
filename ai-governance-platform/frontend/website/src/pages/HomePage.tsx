@@ -1,174 +1,124 @@
 import { Link } from 'react-router-dom';
-import { Shield, Lock, Eye, Zap, ArrowRight, CheckCircle, ChevronRight } from 'lucide-react';
+import { Container, CtaLink, Eyebrow, Panel, PipelineIllustration } from '../components/ui';
 
-const features = [
+const RESULTS = [
   {
-    icon: Shield,
-    title: 'Policy Enforcement',
-    description: 'Keyword blocking, model restrictions, PII detection, compliance frameworks — 6 standards built in. Evaluated in real time on every request.',
+    lead: 'Confidential work',
+    red: 'never reaches',
+    tail: 'a model.',
+    body: 'Policy rules stop prompts that mention your confidential terms, match your patterns, contain health data, or use a model you haven’t approved. Nothing is sent.',
+    link: { to: '/docs/rules', label: 'How rules work' },
   },
   {
-    icon: Lock,
-    title: 'PII Protection',
-    description: 'Automatic detection and masking of sensitive data using Amazon Comprehend and regex rules. Scans both requests and responses.',
+    lead: 'Personal data leaves as',
+    red: '',
+    tail: 'placeholders.',
+    body: 'Emails, phone numbers, Social Security and card numbers are removed in place before a prompt leaves the company. The app keeps working.',
+    link: { to: '/docs/personal-data', label: 'What gets cleaned' },
   },
   {
-    icon: Eye,
-    title: 'Full Audit Trail',
-    description: 'Every prompt, response, and policy decision logged with per-user cost tracking. CSV/PDF export. Time-period filtering.',
+    lead: 'AI use that goes',
+    red: 'around you',
+    tail: 'becomes visible.',
+    body: 'A managed browser extension shows who uses ChatGPT, Claude and other tools outside the gateway. Decide tool by tool: block, allow or keep watching.',
+    link: { to: '/docs/browser-extension', label: 'Shadow AI' },
   },
   {
-    icon: Zap,
-    title: 'Managed + Proxy Mode',
-    description: 'Managed mode with API key storage, or transparent proxy mode for IDE traffic (Kiro, Copilot). Supports OpenAI, Anthropic, Bedrock, Cohere, Mistral.',
+    lead: 'Every decision comes with',
+    red: '',
+    tail: 'evidence.',
+    body: 'Each request has a case file: what happened at each check, what triggered a stop (with personal data masked), fingerprints and retention. Download it for an auditor.',
+    link: { to: '/docs/evidence', label: 'Evidence' },
   },
 ];
 
-const stats = [
-  { value: '< 50ms', label: 'Added latency' },
-  { value: '99.9%', label: 'Uptime SLA' },
-  { value: '6', label: 'Compliance frameworks' },
-  { value: '4', label: 'AI providers supported' },
+const WAYS_IN = [
+  { title: 'Your apps', body: 'Point any OpenAI-compatible client at the gateway and use an Aegis API key. One line of configuration.', to: '/docs/quick-start' },
+  { title: 'Developers’ IDEs', body: 'Your corporate proxy sends Cursor, Copilot and other IDE traffic through Aegis. Developers keep their own provider keys.', to: '/docs/proxy-mode' },
+  { title: 'Employees’ browsers', body: 'Roll the extension out through Chrome policy. Settings are locked, so it can’t be switched off.', to: '/docs/browser-extension' },
 ];
-
-const trustedBy = ['Fortune 500 Healthcare', 'Global Financial Services', 'Government Agencies', 'Legal & Compliance Teams'];
 
 export function HomePage() {
   return (
-    <div className="pt-16">
-      {/* Hero */}
-      <section className="relative min-h-screen flex items-center overflow-hidden">
-        {/* Center glow */}
-        <div className="absolute top-1/3 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-brand-600/15 rounded-full blur-[120px] animate-glow-pulse" />
-
-        <div className="relative max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-24 text-center">
-          <div className="inline-flex items-center gap-2 px-3 py-1.5 rounded-full glass text-sm text-brand-300 mb-8">
-            <span className="w-2 h-2 rounded-full bg-accent-400 animate-pulse-slow" />
-            Now available: On-premises deployment for enterprise
-            <ChevronRight className="w-3 h-3" />
-          </div>
-
-          <h1 className="text-5xl sm:text-6xl lg:text-7xl font-bold text-white leading-tight mb-6">
-            AI Governance for the{' '}
-            <span className="gradient-text">Enterprise</span>
+    <>
+      <section className="bg-canvas border-b border-line">
+        <Container className="pt-16 sm:pt-24 pb-14">
+          <Eyebrow className="mb-4">The AI gateway for security teams</Eyebrow>
+          <h1 className="m-0 text-[42px] sm:text-[60px] leading-[1.04] font-bold tracking-[-0.035em] max-w-[1000px]">
+            Every AI request your company makes goes through one gateway. The risky ones <span className="text-stop">stop there</span>.
           </h1>
-
-          <p className="text-xl text-slate-400 max-w-2xl mx-auto mb-10 leading-relaxed">
-            A centralized AI control plane that enforces policy, masks sensitive data, and audits every interaction — without slowing your teams down.
+          <p className="m-0 mt-6 text-lg sm:text-xl text-ink-muted max-w-[720px] leading-relaxed">
+            Aegis checks each prompt before it leaves: it stops confidential material, removes personal data, shows you AI use that goes
+            around it, and keeps evidence for every decision.
           </p>
-
-          <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-            <Link
-              to="/contact"
-              className="px-8 py-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold text-lg transition-all hover:scale-105 flex items-center gap-2"
-            >
-              Book a Demo <ArrowRight className="w-5 h-5" />
-            </Link>
-            <Link
-              to="/product"
-              className="px-8 py-4 rounded-xl glass text-white font-semibold text-lg hover:bg-white/10 transition-all"
-            >
-              See How It Works
-            </Link>
+          <div className="mt-8 flex flex-wrap gap-3">
+            <CtaLink to="/contact">Book a demo</CtaLink>
+            <CtaLink to="/docs" variant="secondary">Read the docs</CtaLink>
           </div>
+          <Panel className="mt-14 px-6 sm:px-8 pt-7 pb-5">
+            <PipelineIllustration />
+          </Panel>
+        </Container>
+      </section>
 
-          {/* Stats */}
-          <div className="mt-20 grid grid-cols-2 md:grid-cols-4 gap-6 max-w-3xl mx-auto">
-            {stats.map((stat) => (
-              <div key={stat.label} className="glass rounded-xl p-4">
-                <div className="text-2xl font-bold text-white">{stat.value}</div>
-                <div className="text-sm text-slate-400 mt-1">{stat.label}</div>
+      <section aria-labelledby="results">
+        <Container className="py-20">
+          <Eyebrow className="mb-3"><span id="results">What changes</span></Eyebrow>
+          <div className="grid gap-x-14 gap-y-14 mt-8" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
+            {RESULTS.map((r) => (
+              <div key={r.tail} className="border-t-2 border-ink pt-5 flex flex-col gap-3">
+                <h2 className="m-0 text-[30px] leading-[1.12] font-bold tracking-[-0.02em]">
+                  {r.lead} {r.red && <span className="text-stop">{r.red}</span>} {r.tail}
+                </h2>
+                <p className="m-0 text-ink-muted text-[16px] leading-relaxed">{r.body}</p>
+                <Link to={r.link.to} className="font-semibold text-ink hover:text-stop no-underline">{r.link.label} →</Link>
               </div>
             ))}
           </div>
-        </div>
+        </Container>
       </section>
 
-      {/* How it works */}
-      <section className="py-24 bg-slate-900/50">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="text-center mb-16">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">Every AI request, under control</h2>
-            <p className="text-slate-400 text-lg max-w-xl mx-auto">
-              Aegis AI sits between your apps and AI providers. Transparent to developers, powerful for compliance teams.
-            </p>
-          </div>
-
-          {/* Flow diagram */}
-          <div className="flex flex-col md:flex-row items-center justify-center gap-4 mb-6">
-            {['Client / IDE', 'Aegis Gateway', 'Policy Engine', 'AI Provider', 'Response Scan', 'Client'].map((step, i, arr) => (
-              <div key={step} className="flex items-center gap-4">
-                <div className={`px-4 py-3 rounded-xl text-sm font-medium text-center min-w-[120px] ${
-                  step === 'Aegis Gateway' || step === 'Policy Engine'
-                    ? 'bg-brand-600 text-white'
-                    : step === 'Response Scan'
-                      ? 'bg-accent-600/30 text-accent-300'
-                      : 'glass text-slate-300'
-                }`}>
-                  {step}
-                </div>
-                {i < arr.length - 1 && (
-                  <ArrowRight className="w-4 h-4 text-slate-600 flex-shrink-0 hidden md:block" />
-                )}
-              </div>
+      <section aria-labelledby="ways-in" className="bg-canvas border-y border-line">
+        <Container className="py-20">
+          <Eyebrow className="mb-3"><span id="ways-in">Fits how you already work</span></Eyebrow>
+          <h2 className="m-0 text-[34px] leading-[1.1] font-bold tracking-[-0.02em] max-w-[760px]">Three ways traffic reaches Aegis. None of them needs your people to change how they work.</h2>
+          <div className="grid gap-5 mt-10" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
+            {WAYS_IN.map((w) => (
+              <Panel key={w.title} className="p-6 flex flex-col gap-3">
+                <h3 className="m-0 text-xl font-bold">{w.title}</h3>
+                <p className="m-0 text-ink-muted leading-relaxed">{w.body}</p>
+                <Link to={w.to} className="mt-auto font-semibold text-ink hover:text-stop no-underline">Set it up →</Link>
+              </Panel>
             ))}
           </div>
-          <p className="text-center text-slate-500 text-xs mb-16">Works in managed mode (Aegis holds keys) or transparent proxy mode (client credentials pass through)</p>
-
-          {/* Features grid */}
-          <div className="grid md:grid-cols-2 lg:grid-cols-4 gap-6">
-            {features.map((feature) => (
-              <div key={feature.title} className="glass rounded-2xl p-6 hover:bg-white/10 transition-colors group">
-                <div className="w-10 h-10 rounded-lg bg-brand-600/20 flex items-center justify-center mb-4 group-hover:bg-brand-600/30 transition-colors">
-                  <feature.icon className="w-5 h-5 text-brand-400" />
-                </div>
-                <h3 className="text-white font-semibold mb-2">{feature.title}</h3>
-                <p className="text-slate-400 text-sm leading-relaxed">{feature.description}</p>
-              </div>
-            ))}
-          </div>
-        </div>
+        </Container>
       </section>
 
-      {/* Trusted by */}
-      <section className="py-16 border-y border-white/10">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <p className="text-slate-500 text-sm uppercase tracking-widest mb-8">Built for regulated industries</p>
-          <div className="flex flex-wrap items-center justify-center gap-8">
-            {trustedBy.map((name) => (
-              <span key={name} className="text-slate-400 font-medium">{name}</span>
-            ))}
-          </div>
-        </div>
-      </section>
-
-      {/* CTA */}
-      <section className="py-24">
-        <div className="max-w-4xl mx-auto px-4 sm:px-6 lg:px-8 text-center">
-          <div className="glass rounded-3xl p-12 glow">
-            <h2 className="text-3xl sm:text-4xl font-bold text-white mb-4">
-              Ready to govern your AI?
-            </h2>
-            <p className="text-slate-400 text-lg mb-8">
-              Start with our SaaS offering or deploy on-premises in your own infrastructure.
-            </p>
-            <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
-              <Link
-                to="/contact"
-                className="px-8 py-4 rounded-xl bg-brand-600 hover:bg-brand-500 text-white font-semibold transition-all hover:scale-105"
-              >
-                Book a Demo
-              </Link>
-              <Link
-                to="/pricing"
-                className="px-8 py-4 rounded-xl glass text-white font-semibold hover:bg-white/10 transition-all"
-              >
-                View Pricing
-              </Link>
+      <section aria-labelledby="where">
+        <Container className="py-20 grid gap-12" >
+          <div className="grid gap-12" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+            <div>
+              <Eyebrow className="mb-3"><span id="where">Where it runs</span></Eyebrow>
+              <h2 className="m-0 text-[34px] leading-[1.1] font-bold tracking-[-0.02em]">In your own AWS account, so prompts stay inside your network.</h2>
+              <p className="m-0 mt-4 text-ink-muted text-[16px] leading-relaxed">Or use the hosted service. Either way, provider keys live in AWS Secrets Manager and every audit record is encrypted.</p>
+              <Link to="/deployment" className="inline-block mt-4 font-semibold text-ink hover:text-stop no-underline">Deployment options →</Link>
+            </div>
+            <div>
+              <Eyebrow className="mb-3">When something breaks</Eyebrow>
+              <h2 className="m-0 text-[34px] leading-[1.1] font-bold tracking-[-0.02em]">If a check can’t run, the request is blocked, not waved through.</h2>
+              <p className="m-0 mt-4 text-ink-muted text-[16px] leading-relaxed">You can choose to let requests through instead; when you do, each one is flagged in the evidence log.</p>
+              <Link to="/security" className="inline-block mt-4 font-semibold text-ink hover:text-stop no-underline">How Aegis is secured →</Link>
             </div>
           </div>
-        </div>
+        </Container>
       </section>
-    </div>
+
+      <section className="bg-ink text-white">
+        <Container className="py-16 flex flex-wrap items-center justify-between gap-6">
+          <h2 className="m-0 text-[32px] leading-[1.15] font-bold tracking-[-0.02em] max-w-[680px]">See what your company’s AI traffic looks like in a week.</h2>
+          <Link to="/contact" className="min-h-[48px] flex items-center px-6 rounded-lg bg-white text-ink font-semibold no-underline hover:bg-ink-tint">Book a demo</Link>
+        </Container>
+      </section>
+    </>
   );
 }

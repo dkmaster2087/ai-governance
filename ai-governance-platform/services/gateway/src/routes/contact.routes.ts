@@ -20,7 +20,11 @@ export async function contactRoutes(app: FastifyInstance) {
   const bucket = process.env.AUDIT_LOG_BUCKET || 'ai-governance-audit-logs';
 
   app.post('/contact', async (request, reply) => {
-    const body = contactSchema.parse(request.body);
+    const parsed = contactSchema.safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'Please check the form', code: 'INVALID_CONTACT', fields: parsed.error.issues.map((i) => i.path.join('.')) });
+    }
+    const body = parsed.data;
 
     const submission = {
       ...body,
@@ -38,10 +42,11 @@ export async function contactRoutes(app: FastifyInstance) {
           ContentType: 'application/json',
         })
       );
-      logger.info('Contact form submission stored', { email: body.email, company: body.company });
+      logger.info('Contact form submission stored', { company: body.company });
     } catch (err) {
-      // Don't fail the request if S3 write fails
-      logger.error('Failed to store contact submission', { error: err });
+      // Tell the visitor rather than silently losing their enquiry.
+      logger.error('Failed to store contact submission', { error: (err as Error).message });
+      return reply.status(503).send({ error: 'We couldn’t send your message. Please try again or email us.', code: 'CONTACT_UNAVAILABLE' });
     }
 
     return reply.status(201).send({

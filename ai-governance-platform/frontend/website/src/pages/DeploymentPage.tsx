@@ -1,132 +1,58 @@
-import { Link } from 'react-router-dom';
-import { Cloud, Server, ArrowRight, CheckCircle } from 'lucide-react';
+import { Container, CtaLink, Eyebrow, PageHeader, Panel } from '../components/ui';
 
-const saasFeatures = [
-  'Fully managed — no infrastructure to operate',
-  'Multi-tenant with strict tenant isolation',
-  'Automatic updates and security patches',
-  'Global availability via AWS regions',
-  'Pay-as-you-go pricing',
-  'Up and running in minutes',
-];
-
-const onPremFeatures = [
-  'Deploy in your own AWS account or data center',
-  'Complete data sovereignty — nothing leaves your environment',
-  'Air-gapped deployment option',
-  'License key management with user counts and validity periods',
-  'Configurable reporting — choose what syncs to SaaS platform',
-  'Integrate with existing VPN, proxy, MDM, Active Directory',
-  'Annual licensing with volume discounts',
-];
-
-const phases = [
+const OPTIONS = [
   {
-    phase: 'Phase 1',
-    title: 'Managed API Gateway',
-    description: 'Route internal app and developer AI calls through the managed gateway. Aegis holds API keys, enforces policies, and logs everything.',
-    coverage: 'Internal apps, backend services, governed AI chat',
-    effort: 'Low',
+    name: 'Hosted by us',
+    status: 'Available',
+    body: 'We run the gateway on AWS for you. Point your apps at your gateway address and you’re done.',
+    points: ['Separate tenant per company, isolated by verified identity', 'Sign-in with MFA for your team', 'Updates applied for you'],
   },
   {
-    phase: 'Phase 2',
-    title: 'Transparent Proxy Mode',
-    description: 'Deploy Aegis as a transparent proxy. Corporate proxy redirects IDE traffic (Kiro, Copilot, Cursor) through Aegis. Zero client-side changes.',
-    coverage: '+ IDE traffic, developer tools, browser AI usage',
-    effort: 'Medium',
+    name: 'In your AWS account',
+    status: 'Available',
+    body: 'Deploy the same gateway into your own AWS account with the provided infrastructure code. Prompts never leave your network.',
+    points: ['Runs in your VPC on ECS Fargate', 'Your KMS keys, your Secrets Manager, your audit buckets', 'Optional reporting to us, with a license key, of usage numbers only'],
   },
   {
-    phase: 'Phase 3',
-    title: 'Full Endpoint Control',
-    description: 'Deploy Shadow AI Guard browser extension. DNS filtering. Network-level enforcement. Complete visibility across all devices and AI tools.',
-    coverage: '+ Personal devices, BYOD, shadow AI detection and blocking',
-    effort: 'Medium',
+    name: 'On-premises and Kubernetes',
+    status: 'Planned',
+    body: 'A Helm chart and support for data centres without AWS, including air-gapped networks.',
+    points: ['Pluggable database and object storage', 'Offline license checks'],
   },
 ];
 
 export function DeploymentPage() {
   return (
-    <div className="pt-24 pb-24">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <h1 className="text-4xl sm:text-5xl font-bold text-white mb-4">Deployment Models</h1>
-          <p className="text-slate-400 text-lg max-w-xl mx-auto">
-            Choose the deployment model that fits your organization's security posture and compliance requirements.
-          </p>
-        </div>
-
-        {/* Two models */}
-        <div className="grid md:grid-cols-2 gap-8 mb-20">
-          {/* SaaS */}
-          <div className="glass rounded-2xl p-8">
-            <div className="w-12 h-12 rounded-xl bg-brand-600/20 flex items-center justify-center mb-6">
-              <Cloud className="w-6 h-6 text-brand-400" />
-            </div>
-            <h2 className="text-2xl font-bold text-white mb-2">SaaS</h2>
-            <p className="text-slate-400 mb-6">Managed cloud service. Ideal for teams that want to move fast without managing infrastructure.</p>
-            <ul className="space-y-3 mb-8">
-              {saasFeatures.map((f) => (
-                <li key={f} className="flex items-start gap-2 text-sm text-slate-300">
-                  <CheckCircle className="w-4 h-4 text-accent-400 flex-shrink-0 mt-0.5" />
-                  {f}
-                </li>
-              ))}
-            </ul>
-            <Link to="/pricing" className="inline-flex items-center gap-2 text-brand-400 hover:text-brand-300 text-sm font-medium">
-              View SaaS pricing <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-
-          {/* On-Prem */}
-          <div className="glass rounded-2xl p-8 border border-accent-500/30">
-            <div className="w-12 h-12 rounded-xl bg-accent-500/20 flex items-center justify-center mb-6">
-              <Server className="w-6 h-6 text-accent-400" />
-            </div>
-            <h2 className="text-2xl font-bold text-white mb-2">On-Premises</h2>
-            <p className="text-slate-400 mb-6">Deploy entirely within your own infrastructure. Full data sovereignty, no external dependencies.</p>
-            <ul className="space-y-3 mb-8">
-              {onPremFeatures.map((f) => (
-                <li key={f} className="flex items-start gap-2 text-sm text-slate-300">
-                  <CheckCircle className="w-4 h-4 text-accent-400 flex-shrink-0 mt-0.5" />
-                  {f}
-                </li>
-              ))}
-            </ul>
-            <Link to="/contact" className="inline-flex items-center gap-2 text-accent-400 hover:text-accent-300 text-sm font-medium">
-              Talk to our team <ArrowRight className="w-4 h-4" />
-            </Link>
-          </div>
-        </div>
-
-        {/* Rollout phases */}
-        <div>
-          <h2 className="text-2xl font-bold text-white mb-2 text-center">Phased Rollout Strategy</h2>
-          <p className="text-slate-400 text-center mb-10">Start with API control and expand coverage incrementally.</p>
-          <div className="grid md:grid-cols-3 gap-6">
-            {phases.map((p, i) => (
-              <div key={p.phase} className="glass rounded-2xl p-6">
-                <div className="flex items-center gap-3 mb-4">
-                  <div className="w-8 h-8 rounded-full bg-brand-600 flex items-center justify-center text-white text-sm font-bold">
-                    {i + 1}
-                  </div>
-                  <span className="text-brand-400 text-sm font-medium">{p.phase}</span>
-                </div>
-                <h3 className="text-white font-semibold mb-2">{p.title}</h3>
-                <p className="text-slate-400 text-sm mb-4">{p.description}</p>
-                <div className="text-xs text-slate-500">
-                  <span className="text-slate-400 font-medium">Coverage:</span> {p.coverage}
-                </div>
-                <div className="text-xs text-slate-500 mt-1">
-                  <span className="text-slate-400 font-medium">Implementation effort:</span>{' '}
-                  <span className={p.effort === 'Low' ? 'text-accent-400' : p.effort === 'Medium' ? 'text-yellow-400' : 'text-orange-400'}>
-                    {p.effort}
-                  </span>
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+    <Container>
+      <PageHeader eyebrow="Deployment" title="Run it where your data is allowed to be.">
+        The hosted service and the deploy-in-your-account option are the same software. Choose based on where prompts are allowed to travel.
+      </PageHeader>
+      <div className="grid gap-5 pb-16" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
+        {OPTIONS.map((o) => (
+          <Panel key={o.name} className="p-6 flex flex-col gap-3">
+            <span className={o.status === 'Planned' ? 'self-start text-xs font-semibold px-2 py-0.5 rounded-full border border-dashed border-line-strong text-ink-muted' : 'self-start text-xs font-semibold px-2 py-0.5 rounded-full bg-ink-tint text-ink'}>{o.status}</span>
+            <h2 className="m-0 text-2xl font-bold">{o.name}</h2>
+            <p className="m-0 text-ink-muted leading-relaxed">{o.body}</p>
+            <ul className="m-0 pl-5 flex flex-col gap-1.5">{o.points.map((p) => <li key={p}>{p}</li>)}</ul>
+          </Panel>
+        ))}
       </div>
-    </div>
+      <section className="py-14 border-t border-line grid gap-10" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
+        <div>
+          <Eyebrow className="mb-3">What you need</Eyebrow>
+          <h2 className="m-0 text-[28px] font-bold tracking-[-0.02em]">To deploy in your own account</h2>
+        </div>
+        <ul className="m-0 pl-5 flex flex-col gap-2 text-[16px]">
+          <li>An AWS account and permission to deploy with AWS CDK</li>
+          <li>Access to Amazon Bedrock, or API keys for the providers you use</li>
+          <li>A domain name and a TLS certificate for the gateway</li>
+          <li>Chrome policy management (Google Admin, Intune or Jamf) if you want the browser extension</li>
+        </ul>
+      </section>
+      <section className="py-14 border-t border-line flex flex-wrap gap-4 items-center justify-between">
+        <h2 className="m-0 text-[28px] font-bold tracking-[-0.02em]">Not sure which fits?</h2>
+        <CtaLink to="/contact">Talk to us</CtaLink>
+      </section>
+    </Container>
   );
 }

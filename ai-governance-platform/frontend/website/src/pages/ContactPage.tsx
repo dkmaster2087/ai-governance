@@ -1,214 +1,71 @@
 import { useState } from 'react';
-import { Mail, MapPin, Calendar, CheckCircle } from 'lucide-react';
+import { Container, PageHeader, Panel } from '../components/ui';
+import { API_URL } from '../lib/config';
 
 type FormState = 'idle' | 'submitting' | 'success' | 'error';
 
+const field = 'min-h-[44px] px-3.5 border border-line-strong rounded-lg bg-white text-ink w-full';
+
 export function ContactPage() {
-  const [formState, setFormState] = useState<FormState>('idle');
-  const [form, setForm] = useState({
-    firstName: '',
-    lastName: '',
-    email: '',
-    company: '',
-    role: '',
-    deploymentInterest: 'saas',
-    message: '',
-  });
+  const [state, setState] = useState<FormState>('idle');
+  const [error, setError] = useState('');
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', company: '', role: '', deploymentInterest: 'saas', message: '' });
+  const set = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
-  const handleChange = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => {
-    setForm((prev) => ({ ...prev, [e.target.name]: e.target.value }));
-  };
-
-  const handleSubmit = async (e: React.FormEvent) => {
+  const submit = async (e: React.FormEvent) => {
     e.preventDefault();
-    setFormState('submitting');
+    setState('submitting');
     try {
-      await fetch('http://localhost:3000/public/contact', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(form),
-      }).then((r) => {
-        if (!r.ok) throw new Error('Request failed');
-      });
-      setFormState('success');
-    } catch {
-      setFormState('error');
+      const res = await fetch(`${API_URL}/public/contact`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(form) });
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body.error || 'Something went wrong.');
+      }
+      setState('success');
+    } catch (err) {
+      setError((err as Error).message || 'Something went wrong.');
+      setState('error');
     }
   };
 
   return (
-    <div className="pt-24 pb-24">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="grid lg:grid-cols-2 gap-16 items-start">
-          {/* Left */}
-          <div>
-            <h1 className="text-4xl sm:text-5xl font-bold text-white mb-4">Let's talk</h1>
-            <p className="text-slate-400 text-lg mb-10 leading-relaxed">
-              Whether you're evaluating AI governance for the first time or replacing an existing solution, we'd love to show you what Aegis AI can do.
-            </p>
-
-            <div className="space-y-6 mb-10">
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-brand-600/20 flex items-center justify-center flex-shrink-0">
-                  <Calendar className="w-5 h-5 text-brand-400" />
-                </div>
-                <div>
-                  <h3 className="text-white font-semibold mb-1">Book a Demo</h3>
-                  <p className="text-slate-400 text-sm">30-minute live walkthrough tailored to your use case.</p>
-                </div>
-              </div>
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-brand-600/20 flex items-center justify-center flex-shrink-0">
-                  <Mail className="w-5 h-5 text-brand-400" />
-                </div>
-                <div>
-                  <h3 className="text-white font-semibold mb-1">Email Us</h3>
-                  <a href="mailto:hello@aegis-ai.com" className="text-brand-400 hover:text-brand-300 text-sm">
-                    hello@aegis-ai.com
-                  </a>
-                </div>
-              </div>
-              <div className="flex items-start gap-4">
-                <div className="w-10 h-10 rounded-lg bg-brand-600/20 flex items-center justify-center flex-shrink-0">
-                  <MapPin className="w-5 h-5 text-brand-400" />
-                </div>
-                <div>
-                  <h3 className="text-white font-semibold mb-1">Headquarters</h3>
-                  <p className="text-slate-400 text-sm">Calgary, Alberta, Canada</p>
-                </div>
-              </div>
+    <Container>
+      <PageHeader eyebrow="Contact" title="Let’s look at your AI traffic together.">
+        Tell us a little about your company. We’ll reply within one business day to set up a demo on your own traffic.
+      </PageHeader>
+      <div className="pb-20 max-w-[720px]">
+        {state === 'success' ? (
+          <Panel className="p-8">
+            <h2 className="m-0 text-2xl font-bold">Thanks, we’ve got it.</h2>
+            <p className="m-0 mt-2 text-ink-muted">We’ll be in touch within one business day.</p>
+          </Panel>
+        ) : (
+          <form onSubmit={submit} className="flex flex-col gap-4">
+            <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+              <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">First name</span><input name="firstName" required value={form.firstName} onChange={set} className={field} autoComplete="given-name" /></label>
+              <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Last name</span><input name="lastName" required value={form.lastName} onChange={set} className={field} autoComplete="family-name" /></label>
             </div>
-          </div>
-
-          {/* Form */}
-          <div className="glass rounded-2xl p-8">
-            {formState === 'success' ? (
-              <div className="text-center py-12">
-                <CheckCircle className="w-12 h-12 text-accent-400 mx-auto mb-4" />
-                <h3 className="text-xl font-bold text-white mb-2">Message received</h3>
-                <p className="text-slate-400">We'll be in touch within one business day.</p>
-              </div>
-            ) : formState === 'error' ? (
-              <div className="text-center py-12">
-                <p className="text-red-400 font-medium mb-2">Something went wrong</p>
-                <p className="text-slate-400 text-sm mb-4">Please try again or email us directly.</p>
-                <button onClick={() => setFormState('idle')} className="text-brand-400 hover:text-brand-300 text-sm">
-                  Try again
-                </button>
-              </div>
-            ) : (
-              <form onSubmit={handleSubmit} className="space-y-5">
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1.5" htmlFor="firstName">First name</label>
-                    <input
-                      id="firstName"
-                      name="firstName"
-                      type="text"
-                      required
-                      value={form.firstName}
-                      onChange={handleChange}
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-brand-500 transition-colors"
-                      placeholder="Jane"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1.5" htmlFor="lastName">Last name</label>
-                    <input
-                      id="lastName"
-                      name="lastName"
-                      type="text"
-                      required
-                      value={form.lastName}
-                      onChange={handleChange}
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-brand-500 transition-colors"
-                      placeholder="Smith"
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1.5" htmlFor="email">Work email</label>
-                  <input
-                    id="email"
-                    name="email"
-                    type="email"
-                    required
-                    value={form.email}
-                    onChange={handleChange}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-brand-500 transition-colors"
-                    placeholder="[email]"
-                  />
-                </div>
-
-                <div className="grid grid-cols-2 gap-4">
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1.5" htmlFor="company">Company</label>
-                    <input
-                      id="company"
-                      name="company"
-                      type="text"
-                      required
-                      value={form.company}
-                      onChange={handleChange}
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-brand-500 transition-colors"
-                      placeholder="Acme Corp"
-                    />
-                  </div>
-                  <div>
-                    <label className="block text-sm text-slate-400 mb-1.5" htmlFor="role">Your role</label>
-                    <input
-                      id="role"
-                      name="role"
-                      type="text"
-                      value={form.role}
-                      onChange={handleChange}
-                      className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-brand-500 transition-colors"
-                      placeholder="CTO, CISO, etc."
-                    />
-                  </div>
-                </div>
-
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1.5" htmlFor="deploymentInterest">Deployment interest</label>
-                  <select
-                    id="deploymentInterest"
-                    name="deploymentInterest"
-                    value={form.deploymentInterest}
-                    onChange={handleChange}
-                    className="w-full bg-slate-900 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm focus:outline-none focus:border-brand-500 transition-colors"
-                  >
-                    <option value="saas">SaaS</option>
-                    <option value="onprem">On-Premises</option>
-                    <option value="both">Both — evaluating options</option>
-                  </select>
-                </div>
-
-                <div>
-                  <label className="block text-sm text-slate-400 mb-1.5" htmlFor="message">Message</label>
-                  <textarea
-                    id="message"
-                    name="message"
-                    rows={4}
-                    value={form.message}
-                    onChange={handleChange}
-                    className="w-full bg-white/5 border border-white/10 rounded-lg px-4 py-2.5 text-white text-sm placeholder-slate-600 focus:outline-none focus:border-brand-500 transition-colors resize-none"
-                    placeholder="Tell us about your use case..."
-                  />
-                </div>
-
-                <button
-                  type="submit"
-                  disabled={formState === 'submitting'}
-                  className="w-full py-3 rounded-xl bg-brand-600 hover:bg-brand-500 disabled:opacity-60 text-white font-semibold transition-all"
-                >
-                  {formState === 'submitting' ? 'Sending...' : 'Send Message'}
-                </button>
-              </form>
-            )}
-          </div>
-        </div>
+            <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Work email</span><input name="email" type="email" required value={form.email} onChange={set} className={field} autoComplete="email" /></label>
+            <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+              <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Company</span><input name="company" required value={form.company} onChange={set} className={field} autoComplete="organization" /></label>
+              <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Your role <span className="font-normal text-ink-muted">(optional)</span></span><input name="role" value={form.role} onChange={set} className={field} autoComplete="organization-title" /></label>
+            </div>
+            <label className="flex flex-col gap-1.5">
+              <span className="text-sm font-semibold">Where would you run it?</span>
+              <select name="deploymentInterest" value={form.deploymentInterest} onChange={set} className={field}>
+                <option value="saas">Hosted by you</option>
+                <option value="onprem">In our own AWS account</option>
+                <option value="both">Not sure yet</option>
+              </select>
+            </label>
+            <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Anything we should know? <span className="font-normal text-ink-muted">(optional)</span></span><textarea name="message" rows={4} value={form.message} onChange={set} className={`${field} py-2.5`} /></label>
+            {state === 'error' && <p role="alert" className="m-0 text-stop-text font-semibold">{error}</p>}
+            <button type="submit" disabled={state === 'submitting'} className="self-start min-h-[48px] px-6 rounded-lg bg-ink text-white font-semibold disabled:opacity-60">
+              {state === 'submitting' ? 'Sending…' : 'Send'}
+            </button>
+          </form>
+        )}
       </div>
-    </div>
+    </Container>
   );
 }

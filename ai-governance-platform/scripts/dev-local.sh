@@ -44,13 +44,15 @@ case "${1:-start}" in
     start_service data-protection services/data-protection 3002 COMPREHEND_ENABLED=false
     start_service analytics services/analytics 3003
     start_service gateway services/gateway 3000 AUTH_DEV_MODE=true \
-      POLICY_ENGINE_URL=http://localhost:3001 DATA_PROTECTION_URL=http://localhost:3002 ALLOWED_ORIGINS=http://localhost:5174 \
+      POLICY_ENGINE_URL=http://localhost:3001 DATA_PROTECTION_URL=http://localhost:3002 ALLOWED_ORIGINS=http://localhost:5174,http://localhost:5173 \
       OPENAI_BASE_URL=http://localhost:4010/v1 GLOBAL_RATE_LIMIT=2000
+    if lsof -tiTCP:5173 -sTCP:LISTEN >/dev/null 2>&1; then echo "  website: port 5173 already in use, skipping"
+    else (cd "$ROOT/frontend/website" && nohup npx vite --port 5173 > "$LOGS/website.log" 2>&1 < /dev/null &) > /dev/null 2>&1; echo "  website → http://localhost:5173"; fi
     if lsof -tiTCP:5174 -sTCP:LISTEN >/dev/null 2>&1; then echo "  dashboard: port 5174 already in use, skipping"
     else (cd "$ROOT/frontend/dashboard" && nohup npx vite --port 5174 > "$LOGS/dashboard.log" 2>&1 < /dev/null &) > /dev/null 2>&1; echo "  dashboard → http://localhost:5174"; fi
     ;;
   stop)
-    for port in 3000 3001 3002 3003 4010 5174; do
+    for port in 3000 3001 3002 3003 4010 5173 5174; do
       pids=$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
       [ -n "$pids" ] && kill $pids && echo "  stopped :$port"
     done

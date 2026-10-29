@@ -1,44 +1,37 @@
-import { Shield, Lock, Key, FileCheck, Server, Eye } from 'lucide-react';
+import { Container, CtaLink, PageHeader } from '../components/ui';
 
-const pillars = [
-  { icon: Lock, title: 'Encryption at Rest & Transit', description: 'All data encrypted with AWS KMS customer-managed keys. TLS 1.3 enforced for all API traffic. S3 object lock for immutable audit logs.' },
-  { icon: Key, title: 'Identity & Access Control', description: 'Four roles: Platform Admin, Tenant Admin, Auditor, Chat-Only User. Route guards per role. License key management with user counts and validity periods.' },
-  { icon: Server, title: 'Network Isolation', description: 'All services run in private VPC subnets. VPC endpoints for AWS services — no traffic traverses the public internet. Single NAT gateway with egress control.' },
-  { icon: Eye, title: 'Audit & Monitoring', description: 'VPC Flow Logs, CloudTrail, and CloudWatch for full observability. Every API call logged. Alerts on anomalous usage patterns.' },
-  { icon: FileCheck, title: 'Compliance Frameworks', description: 'Six frameworks built in: NIST AI RMF, SOC 2, GDPR, HIPAA, ISO 42001, PIPEDA. Enable a framework to auto-create linked policies. 1:1 framework-policy linking with auto-enable/disable.' },
-  { icon: Shield, title: 'Vulnerability Management', description: 'Automated dependency scanning in CI/CD. Container image scanning via ECR. Regular penetration testing.' },
+const ITEMS = [
+  { title: 'Fails closed', body: 'If the policy or personal-data check can’t run, the request is blocked. Companies can choose to let requests through instead; each one is then flagged in the evidence log.' },
+  { title: 'Tenants are isolated by identity', body: 'Which company a request belongs to comes from its verified API key or sign-in, never from a header the caller sets. Every endpoint checks role and permission.' },
+  { title: 'Provider keys stay in Secrets Manager', body: 'API keys you add for OpenAI or other providers are stored in AWS Secrets Manager. The gateway’s database only keeps a reference and the last four characters.' },
+  { title: 'We don’t keep what was sent', body: 'For delivered requests, only a SHA-256 fingerprint of the prompt is kept. For stopped requests, a short excerpt around the trigger is kept as evidence, with personal data masked.' },
+  { title: 'Sign-in', body: 'The dashboard signs in through Amazon Cognito, with authenticator-app MFA. Users can’t change their own role or company. Single sign-on with Okta and Microsoft Entra is planned.' },
+  { title: 'Encrypted at rest', body: 'Audit records and configuration are encrypted with KMS keys; in your own AWS account, they’re your keys.' },
+  { title: 'Least-privilege API keys', body: 'Keys carry scopes: one for sending chat requests, one for the browser extension to report visits, and on-premises license keys issued only by us.' },
+  { title: 'Tamper-resistant extension', body: 'Settings pushed through Chrome policy can’t be changed by employees, so monitoring can’t be quietly switched off.' },
 ];
 
 export function SecurityPage() {
   return (
-    <div className="pt-24 pb-24">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-        <div className="text-center mb-16">
-          <h1 className="text-4xl sm:text-5xl font-bold text-white mb-4">Security & Compliance</h1>
-          <p className="text-slate-400 text-lg max-w-xl mx-auto">
-            Built for regulated industries. Security isn't a feature — it's the foundation.
-          </p>
-        </div>
-
-        <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-6 mb-16">
-          {pillars.map((p) => (
-            <div key={p.title} className="glass rounded-2xl p-6">
-              <div className="w-10 h-10 rounded-lg bg-brand-600/20 flex items-center justify-center mb-4">
-                <p.icon className="w-5 h-5 text-brand-400" />
-              </div>
-              <h3 className="text-white font-semibold mb-2">{p.title}</h3>
-              <p className="text-slate-400 text-sm leading-relaxed">{p.description}</p>
-            </div>
-          ))}
-        </div>
-
-        <div className="glass rounded-2xl p-8 text-center">
-          <h2 className="text-xl font-bold text-white mb-3">Privacy-Aware by Design</h2>
-          <p className="text-slate-400 max-w-2xl mx-auto text-sm leading-relaxed">
-            In compliance with Canadian PIPEDA and provincial privacy laws, Aegis AI is designed to minimize data retention, support prompt anonymization, and give organizations full control over what is logged and for how long. We can help you build a compliant AI monitoring program that respects employee privacy.
-          </p>
-        </div>
+    <Container>
+      <PageHeader eyebrow="Security" title="A security product should be boring to attack.">
+        How Aegis protects the prompts that pass through it and the people who use it.
+      </PageHeader>
+      <div className="grid gap-x-12 gap-y-10 pb-16" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
+        {ITEMS.map((i) => (
+          <section key={i.title} className="border-t-2 border-ink pt-4">
+            <h2 className="m-0 text-xl font-bold">{i.title}</h2>
+            <p className="m-0 mt-2 text-ink-muted leading-relaxed">{i.body}</p>
+          </section>
+        ))}
       </div>
-    </div>
+      <section className="py-14 border-t border-line flex flex-wrap gap-4 items-center justify-between">
+        <div>
+          <h2 className="m-0 text-[28px] font-bold tracking-[-0.02em]">Found a security issue?</h2>
+          <p className="m-0 mt-2 text-ink-muted">Tell us privately and we’ll respond within two business days.</p>
+        </div>
+        <CtaLink to="/contact" variant="secondary">Report it</CtaLink>
+      </section>
+    </Container>
   );
 }
