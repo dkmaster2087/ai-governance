@@ -1,41 +1,21 @@
 import { FastifyInstance } from 'fastify';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand, ScanCommand } from '@aws-sdk/lib-dynamodb';
 import { createLogger } from '@ai-governance/utils';
 import { requireAccess, requireTenantParam, TENANT_READ } from '../auth/guards';
+import { queryAuditLogs } from '../services/audit-query';
 
 const logger = createLogger('gateway:cost');
 
 export async function costRoutes(app: FastifyInstance) {
-  const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
-  const client = DynamoDBDocumentClient.from(dynamo);
-  const auditTable = process.env.AUDIT_LOGS_TABLE || 'ai-gov-audit-logs-dev';
 
-  /** Fetch audit logs for a tenant within a time range */
+  /** Audit records for a tenant within a time range (default: last 30 days), all pages. */
   async function fetchAuditLogs(tenantId: string, from?: string, to?: string) {
+    const toIso = to || new Date().toISOString();
+    const fromIso = from || new Date(Date.parse(toIso) - 30 * 86_400_000).toISOString();
     try {
-      const now = new Date();
-      const defaultFrom = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000).toISOString();
-      const fromDate = from || defaultFrom;
-      const toDate = to || now.toISOString();
-
-      const result = await client.send(
-        new QueryCommand({
-          TableName: auditTable,
-          KeyConditionExpression: 'tenantId = :tid AND #ts BETWEEN :from AND :to',
-          ExpressionAttributeNames: { '#ts': 'timestamp' },
-          ExpressionAttributeValues: {
-            ':tid': tenantId,
-            ':from': fromDate,
-            ':to': toDate,
-          },
-          IndexName: 'tenantId-timestamp-index',
-        })
-      );
-      return result.Items || [];
+      return (await queryAuditLogs(tenantId, fromIso, toIso)).logs;
     } catch (err) {
-      logger.error('Failed to query audit logs for cost', { tenantId, error: err });
-      return [];
+      logger.error('Failed to query audit logs for cost', { tenantId, error: (err as Error).message });
+      throw err;
     }
   }
 
@@ -68,6 +48,15 @@ export async function costRoutes(app: FastifyInstance) {
       costByModel[model].requests += 1;
     }
 
+    // Cost by app
+    const costByApp: Record<string, { cost: number; requests: number }> = {};
+    for (const log of logs as any[]) {
+      const appId = log.appId || 'unknown';
+      if (!costByApp[appId]) costByApp[appId] = { cost: 0, requests: 0 };
+      costByApp[appId].cost += log.estimatedCost || 0;
+      costByApp[appId].requests += 1;
+    }
+
     // Cost by user
     const costByUser: Record<string, { cost: number; requests: number }> = {};
     for (const log of logs as any[]) {
@@ -87,6 +76,9 @@ export async function costRoutes(app: FastifyInstance) {
         modelId,
         ...data,
       })),
+      costByApp: Object.entries(costByApp)
+        .map(([appId, data]) => ({ appId, ...data }))
+        .sort((a, b) => b.cost - a.cost),
       costByUser: Object.entries(costByUser)
         .map(([userId, data]) => ({ userId, ...data }))
         .sort((a, b) => b.cost - a.cost),

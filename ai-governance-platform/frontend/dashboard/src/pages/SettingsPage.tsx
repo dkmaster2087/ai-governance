@@ -1,185 +1,60 @@
 import { useState } from 'react';
-import { Save, Copy, Check, Shield, Chrome } from 'lucide-react';
-import clsx from 'clsx';
-import { Toggle } from '../components/ui/Toggle';
-import { useTheme } from '../lib/theme';
-import { themeClasses } from '../lib/theme-classes';
+import { Link } from 'react-router-dom';
+import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../lib/auth';
+import { fetchMyTenant } from '../lib/tenant-api';
+import { Panel, SectionLabel } from '../components/aegis/primitives';
 
-export function SettingsPage() {
-  const { isDark } = useTheme();
-  const t = themeClasses(isDark);
-  const { user } = useAuth();
-  const [saved, setSaved] = useState(false);
-  const [copied, setCopied] = useState<string | null>(null);
-  const [settings, setSettings] = useState({
-    tenantName: 'Demo Corp',
-    maxTokensPerRequest: 4096,
-    maxRequestsPerMinute: 100,
-    piiMaskingEnabled: true,
-    allowExternalProviders: true,
-    auditLogRetentionDays: 365,
-    dataResidencyRegion: 'us-east-1',
-  });
+const gatewayUrl = import.meta.env.VITE_GATEWAY_PUBLIC_URL || `${window.location.origin}/api`;
 
-  const handleSave = () => {
-    setSaved(true);
-    setTimeout(() => setSaved(false), 2000);
-  };
-
-  const copyToClipboard = (text: string, label: string) => {
-    navigator.clipboard.writeText(text);
-    setCopied(label);
-    setTimeout(() => setCopied(null), 2000);
-  };
-
-  const CopyButton = ({ value, label }: { value: string; label: string }) => (
-    <button
-      onClick={() => copyToClipboard(value, label)}
-      className={clsx('flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium transition-colors', copied === label ? 'bg-accent-500/20 text-accent-400' : t.btnSecondary)}
-    >
-      {copied === label ? <Check className="w-3 h-3" /> : <Copy className="w-3 h-3" />}
-      {copied === label ? 'Copied' : 'Copy'}
-    </button>
-  );
-
-  const Field = ({ label, children }: { label: string; children: React.ReactNode }) => (
-    <div className={clsx('flex items-center justify-between py-4 border-b last:border-0', t.border)}>
-      <label className={clsx('text-sm font-medium', t.body)}>{label}</label>
-      <div className="w-64">{children}</div>
+function CopyRow({ label, value, hint }: { label: string; value: string; hint?: string }) {
+  const [copied, setCopied] = useState(false);
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 py-3 border-b border-line-subtle last:border-b-0">
+      <div className="min-w-0">
+        <div className="text-sm font-semibold">{label}</div>
+        <code className="font-mono text-[13px] text-ink-soft [overflow-wrap:anywhere]">{value}</code>
+        {hint && <div className="text-xs text-ink-muted mt-0.5">{hint}</div>}
+      </div>
+      <button type="button" className="min-h-[36px] px-3 rounded-lg border border-line-strong bg-white text-sm"
+        onClick={async () => { try { await navigator.clipboard.writeText(value); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* unavailable */ } }}>
+        {copied ? 'Copied' : 'Copy'}
+      </button>
     </div>
   );
+}
+
+/** What's true about this company's setup, and the values people need to connect things. */
+export function SettingsPage() {
+  const { user } = useAuth();
+  const tenantId = user?.tenantId ?? '';
+  const { data: tenant } = useQuery({ queryKey: ['tenant', tenantId], queryFn: () => fetchMyTenant(tenantId), enabled: !!tenantId && user?.role !== 'platform_admin' });
+  const retention = tenant?.settings?.auditLogRetentionDays;
 
   return (
-    <div className="max-w-2xl space-y-6">
-      {/* Tenant */}
-      <div className={clsx('border rounded-xl p-6', t.card)}>
-        <h2 className={clsx('text-sm font-semibold mb-1', t.heading)}>Tenant Settings</h2>
-        <p className={clsx('text-xs mb-5', t.muted)}>Configuration for your organization</p>
-        <Field label="Organization Name">
-          <input
-            type="text"
-            value={settings.tenantName}
-            onChange={(e) => setSettings((s) => ({ ...s, tenantName: e.target.value }))}
-            className={clsx('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500', t.input)}
-          />
-        </Field>
-        <Field label="Data Residency Region">
-          <select
-            value={settings.dataResidencyRegion}
-            onChange={(e) => setSettings((s) => ({ ...s, dataResidencyRegion: e.target.value }))}
-            className={clsx('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500', t.input)}
-          >
-            <option value="us-east-1">US East (N. Virginia)</option>
-            <option value="us-west-2">US West (Oregon)</option>
-            <option value="ca-central-1">Canada (Central)</option>
-            <option value="eu-west-1">Europe (Ireland)</option>
-          </select>
-        </Field>
-      </div>
+    <div className="flex flex-col gap-6 max-w-[900px]">
+      <Panel className="px-7 py-5">
+        <SectionLabel className="mb-1">Company</SectionLabel>
+        <div className="py-3 border-b border-line-subtle"><div className="text-sm font-semibold">Name</div><div>{tenant?.name ?? user?.tenantName}</div></div>
+        <CopyRow label="Tenant ID" value={tenantId} />
+        <CopyRow label="Gateway address" value={gatewayUrl} hint="Point apps here with an API key. See the docs for IDEs." />
+        {retention !== undefined && (
+          <div className="py-3"><div className="text-sm font-semibold">Evidence kept for</div><div>{retention} days <span className="text-ink-muted">· set by your plan</span></div></div>
+        )}
+      </Panel>
 
-      {/* Limits */}
-      <div className={clsx('border rounded-xl p-6', t.card)}>
-        <h2 className={clsx('text-sm font-semibold mb-1', t.heading)}>Rate & Token Limits</h2>
-        <p className={clsx('text-xs mb-5', t.muted)}>Control usage across your organization</p>
-        <Field label="Max Tokens per Request">
-          <input
-            type="number"
-            value={settings.maxTokensPerRequest}
-            onChange={(e) => setSettings((s) => ({ ...s, maxTokensPerRequest: +e.target.value }))}
-            className={clsx('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500', t.input)}
-          />
-        </Field>
-        <Field label="Max Requests per Minute">
-          <input
-            type="number"
-            value={settings.maxRequestsPerMinute}
-            onChange={(e) => setSettings((s) => ({ ...s, maxRequestsPerMinute: +e.target.value }))}
-            className={clsx('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500', t.input)}
-          />
-        </Field>
-        <Field label="Audit Log Retention (days)">
-          <input
-            type="number"
-            value={settings.auditLogRetentionDays}
-            onChange={(e) => setSettings((s) => ({ ...s, auditLogRetentionDays: +e.target.value }))}
-            className={clsx('w-full border rounded-lg px-3 py-2 text-sm focus:outline-none focus:border-brand-500', t.input)}
-          />
-        </Field>
-      </div>
+      <Panel className="px-7 py-5">
+        <SectionLabel className="mb-1">When a check can’t run</SectionLabel>
+        <p className="m-0 py-2 text-ink-muted">Choose whether requests are blocked or let through (and flagged) on the <Link to="/rules" className="font-semibold text-ink">Rules</Link> page.</p>
+      </Panel>
 
-      {/* Features */}
-      <div className={clsx('border rounded-xl p-6', t.card)}>
-        <h2 className={clsx('text-sm font-semibold mb-1', t.heading)}>Features</h2>
-        <p className={clsx('text-xs mb-5', t.muted)}>Enable or disable platform capabilities</p>
-        <Field label="PII Masking">
-          <Toggle checked={settings.piiMaskingEnabled} onChange={(v) => setSettings((s) => ({ ...s, piiMaskingEnabled: v }))} />
-        </Field>
-        <Field label="Allow External AI Providers">
-          <Toggle checked={settings.allowExternalProviders} onChange={(v) => setSettings((s) => ({ ...s, allowExternalProviders: v }))} />
-        </Field>
-      </div>
-
-      {/* Browser Extension */}
-      <div className={clsx('border rounded-xl p-6', t.card)}>
-        <div className="flex items-center gap-2 mb-1">
-          <Chrome className="w-4 h-4 text-brand-400" />
-          <h2 className={clsx('text-sm font-semibold', t.heading)}>Shadow AI Guard — Browser Extension</h2>
-        </div>
-        <p className={clsx('text-xs mb-5', t.muted)}>Detect and block unauthorized AI tool usage across your organization</p>
-
-        <div className={clsx('flex items-center justify-between py-3 border-b', t.border)}>
-          <div>
-            <p className={clsx('text-sm font-medium', t.body)}>Tenant ID</p>
-            <p className={clsx('text-xs mt-0.5', t.muted)}>Use this when configuring the browser extension</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <code className={clsx('text-sm font-mono px-3 py-1.5 rounded-lg', t.cardInner)}>{user?.tenantId ?? '—'}</code>
-            {user?.tenantId && <CopyButton value={user.tenantId} label="tenantId" />}
-          </div>
-        </div>
-
-        <div className={clsx('flex items-center justify-between py-3 border-b', t.border)}>
-          <div>
-            <p className={clsx('text-sm font-medium', t.body)}>Gateway URL</p>
-            <p className={clsx('text-xs mt-0.5', t.muted)}>The extension reports events to this endpoint</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <code className={clsx('text-sm font-mono px-3 py-1.5 rounded-lg', t.cardInner)}>{window.location.origin.replace('5174', '3000')}</code>
-            <CopyButton value={window.location.origin.replace('5174', '3000')} label="gatewayUrl" />
-          </div>
-        </div>
-
-        <div className={clsx('flex items-center justify-between py-3', t.border)}>
-          <div>
-            <p className={clsx('text-sm font-medium', t.body)}>Dashboard URL</p>
-            <p className={clsx('text-xs mt-0.5', t.muted)}>Blocked requests redirect here</p>
-          </div>
-          <div className="flex items-center gap-2">
-            <code className={clsx('text-sm font-mono px-3 py-1.5 rounded-lg', t.cardInner)}>{window.location.origin}</code>
-            <CopyButton value={window.location.origin} label="platformUrl" />
-          </div>
-        </div>
-
-        <div className={clsx('mt-4 rounded-lg px-4 py-3 text-xs leading-relaxed', t.cardInner)}>
-          <p className={clsx('font-medium mb-2', t.heading)}>Setup Instructions</p>
-          <ol className={clsx('list-decimal list-inside space-y-1', t.sub)}>
-            <li>Open Chrome → <code className="font-mono">chrome://extensions</code></li>
-            <li>Enable "Developer mode" (top right)</li>
-            <li>Click "Load unpacked" → select the <code className="font-mono">extensions/shadow-ai-guard</code> folder</li>
-            <li>Click the extension icon → paste the Tenant ID above</li>
-            <li>Set mode to Monitor or Block → Save & Apply</li>
-          </ol>
-        </div>
-      </div>
-
-      <button
-        onClick={handleSave}
-        className="flex items-center gap-2 px-6 py-2.5 rounded-lg bg-brand-600 hover:bg-brand-500 text-white text-sm font-medium transition-all"
-      >
-        <Save className="w-4 h-4" />
-        {saved ? 'Saved!' : 'Save Changes'}
-      </button>
+      <Panel className="px-7 py-5">
+        <SectionLabel className="mb-1">Browser extension</SectionLabel>
+        <p className="m-0 py-2 text-ink-muted">Push these through Chrome policy (Google Admin, Intune or Jamf), with an API key that has only the browser extension permission from <Link to="/keys" className="font-semibold text-ink">API keys</Link>.</p>
+        <CopyRow label="tenantId" value={tenantId} />
+        <CopyRow label="gatewayUrl" value={gatewayUrl} />
+        <CopyRow label="platformUrl" value={window.location.origin} hint="Blocked tools send people to this site’s “not approved” page." />
+      </Panel>
     </div>
   );
 }
