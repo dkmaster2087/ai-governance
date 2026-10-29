@@ -3,7 +3,9 @@ import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
 import { createLogger } from '@ai-governance/utils';
 import { z } from 'zod';
-import { requireAccess, requireTenantParam, TENANT_READ } from '../auth/guards';
+import { requireAccess, requireTenantParam, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
+import { ShadowAiPolicyStore, applyPolicyChange, extensionConfig } from '../services/shadow-ai-policy';
+import { ShadowEvent, summarizeShadowAi } from '../services/shadow-ai-summary';
 
 const logger = createLogger('gateway:shadow-ai');
 
@@ -31,6 +33,16 @@ const eventsBodySchema = z.object({
     blocked: z.boolean(),
     userId: z.string().max(256).optional(),
   })).min(1).max(500),
+});
+
+const policyChangeSchema = z.object({
+  mode: z.enum(['monitor', 'block']).optional(),
+  decisions: z.record(z.string().max(300), z.enum(['blocked', 'allowed']).nullable()).optional(),
+});
+
+const summaryRangeSchema = z.object({
+  from: z.string().datetime({ offset: true }).optional(),
+  to: z.string().datetime({ offset: true }).optional(),
 });
 
 export async function shadowAIRoutes(app: FastifyInstance) {
@@ -80,24 +92,59 @@ export async function shadowAIRoutes(app: FastifyInstance) {
     return reply.status(200).send({ received: events.length, stored });
   });
 
-  // Get shadow AI config for a tenant (used by extension)
+  const policies = new ShadowAiPolicyStore();
+
+  // What the browser extension should watch and block, from the tenant's decisions.
   app.get('/shadow-ai/config/:tenantId', { preHandler: [requireAccess({ roles: ['tenant_admin', 'tenant_auditor'], scopes: ['shadow_ai:ingest'] }), requireTenantParam] }, async (request) => {
     const { tenantId } = request.params as { tenantId: string };
-    // In production this would come from a config table
-    // For now return defaults that the extension can override
-    return {
-      tenantId,
-      mode: 'monitor',
-      blockedDomains: [
-        'api.openai.com', 'chat.openai.com', 'chatgpt.com',
-        'api.anthropic.com', 'claude.ai',
-        'bard.google.com', 'gemini.google.com',
-        'perplexity.ai', 'copilot.microsoft.com',
-        'deepseek.com', 'chat.deepseek.com',
-      ],
-      allowedDomains: [],
-    };
+    return extensionConfig(tenantId, await policies.get(tenantId));
   });
+
+  app.get('/shadow-ai/policy', { preHandler: requireAccess(TENANT_READ) }, async (request) => policies.get(request.tenantId));
+
+  app.put('/shadow-ai/policy', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
+    const parsed = policyChangeSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'Invalid change', code: 'INVALID_POLICY', issues: parsed.error.issues });
+    const result = applyPolicyChange(await policies.get(request.tenantId), parsed.data);
+    if ('error' in result) return reply.status(400).send({ error: result.error, code: 'INVALID_POLICY' });
+    await policies.save(request.tenantId, result.policy);
+    logger.info('Shadow AI policy updated', { tenantId: request.tenantId, by: request.userId, change: parsed.data });
+    return result.policy;
+  });
+
+  // Visits to AI tools outside the gateway, grouped by tool, for the dashboard.
+  app.get('/shadow-ai/summary', { preHandler: requireAccess(TENANT_READ) }, async (request, reply) => {
+    const parsed = summaryRangeSchema.safeParse(request.query);
+    if (!parsed.success) return reply.status(400).send({ error: 'from and to must be ISO timestamps', code: 'INVALID_RANGE' });
+    const to = parsed.data.to ? new Date(parsed.data.to) : new Date();
+    const from = parsed.data.from ? new Date(parsed.data.from) : new Date(to.getTime() - 7 * 86_400_000);
+    if (from >= to || to.getTime() - from.getTime() > 31 * 86_400_000) {
+      return reply.status(400).send({ error: 'Range must be positive and at most 31 days', code: 'INVALID_RANGE' });
+    }
+    const [events, policy] = await Promise.all([readAllEvents(request.tenantId), policies.get(request.tenantId)]);
+    return summarizeShadowAi(events, policy, { from: from.toISOString(), to: to.toISOString() });
+  });
+
+  /** All stored events for a tenant (kept 30 days), following pagination with a safety cap. */
+  async function readAllEvents(tenantId: string): Promise<ShadowEvent[]> {
+    const out: ShadowEvent[] = [];
+    let lastKey: Record<string, unknown> | undefined;
+    try {
+      do {
+        const page = await dynamo.send(new QueryCommand({
+          TableName: table,
+          KeyConditionExpression: 'tenantId = :tid',
+          ExpressionAttributeValues: { ':tid': tenantId },
+          ExclusiveStartKey: lastKey,
+        }));
+        out.push(...((page.Items ?? []) as ShadowEvent[]));
+        lastKey = page.LastEvaluatedKey;
+      } while (lastKey && out.length < 50_000);
+    } catch (err) {
+      logger.warn('Shadow AI table not available', { tenantId, error: (err as Error).message });
+    }
+    return out;
+  }
 
   // Get aggregated shadow AI data for dashboard
   app.get('/shadow-ai/data/:tenantId', { preHandler: [requireAccess(TENANT_READ), requireTenantParam] }, async (request) => {

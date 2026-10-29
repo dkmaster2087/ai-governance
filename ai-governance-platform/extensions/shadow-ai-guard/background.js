@@ -32,7 +32,8 @@ const DEFAULT_CONFIG = {
     'deepseek.com',
     'chat.deepseek.com',
   ],
-  allowedDomains: [], // Tenant-specific exceptions
+  allowedDomains: [], // Approved tools: never blocked or recorded
+  enforcedDomains: [], // Tools the company has blocked: always blocked, whatever the mode
   blockPageMessage: 'This AI tool is not approved by your organization. Please use the approved AI gateway.',
 };
 
@@ -59,6 +60,15 @@ async function loadConfig() {
 
 // Service workers are restarted when idle, which resets globals; reload settings on every wake.
 const configReady = loadConfig();
+
+const matchesAny = (domain, list) => (list || []).some((d) => domain === d || domain.endsWith(`.${d}`));
+
+/** Blocked if the company blocked this tool, or blocks every undecided tool and this one isn't approved. */
+function isBlocked(domain) {
+  if (matchesAny(domain, config.allowedDomains)) return false;
+  if (matchesAny(domain, config.enforcedDomains)) return true;
+  return config.mode === 'block' && matchesAny(domain, config.blockedDomains);
+}
 
 function authHeaders() {
   return config.apiKey ? { Authorization: `Bearer ${config.apiKey}` } : {};
@@ -121,11 +131,10 @@ async function applyRules() {
     await chrome.declarativeNetRequest.updateDynamicRules({ removeRuleIds: removeIds });
   }
 
-  if (config.mode !== 'block') return; // Monitor mode — no blocking rules
-
-  const effectiveDomains = config.blockedDomains.filter(
-    (d) => !config.allowedDomains.includes(d)
-  );
+  // Tools blocked by decision, plus every watched tool when undecided tools are blocked too.
+  const candidates = [...(config.enforcedDomains || []), ...(config.mode === 'block' ? config.blockedDomains : [])];
+  const effectiveDomains = [...new Set(candidates)].filter((d) => !matchesAny(d, config.allowedDomains));
+  if (effectiveDomains.length === 0) return;
 
   const rules = effectiveDomains.map((domain, i) => ({
     id: i + 1,
@@ -165,13 +174,12 @@ function recordRequest(details) {
     const domain = url.hostname;
 
     // Check if this domain is in our monitored list
-    const isMonitored = config.blockedDomains.some(
-      (d) => domain === d || domain.endsWith(`.${d}`)
-    );
+    const isMonitored = matchesAny(domain, config.blockedDomains) || matchesAny(domain, config.enforcedDomains);
     if (!isMonitored) return;
 
     // Skip if it's an allowed domain for this tenant
-    if (config.allowedDomains.some((d) => domain === d || domain.endsWith(`.${d}`))) return;
+    if (matchesAny(domain, config.allowedDomains)) return;
+    const blocked = isBlocked(domain);
 
     const event = {
       id: `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
@@ -180,7 +188,7 @@ function recordRequest(details) {
       url: details.url,
       type: details.type,
       method: details.method || 'GET',
-      blocked: config.mode === 'block',
+      blocked,
       tenantId: config.tenantId,
     };
 
@@ -191,9 +199,9 @@ function recordRequest(details) {
 
     // Update badge
     chrome.action.setBadgeText({ text: String(eventLog.length) });
-    chrome.action.setBadgeBackgroundColor({ color: config.mode === 'block' ? '#ef4444' : '#f59e0b' });
+    chrome.action.setBadgeBackgroundColor({ color: blocked ? '#ef4444' : '#f59e0b' });
 
-    console.log(`[Aegis] ${config.mode === 'block' ? 'BLOCKED' : 'DETECTED'}: ${domain} (${details.type})`);
+    console.log(`[Aegis] ${blocked ? 'BLOCKED' : 'DETECTED'}: ${domain} (${details.type})`);
   }
 }
 

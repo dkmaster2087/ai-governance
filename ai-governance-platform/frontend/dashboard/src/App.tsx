@@ -1,9 +1,11 @@
-import { Routes, Route, Navigate } from 'react-router-dom';
+import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
 import { useAuth } from './lib/auth';
 import { Shell } from './components/layout/Shell';
 import { LoginPage } from './pages/LoginPage';
 import { GatewayPage } from './pages/GatewayPage';
 import { StoppedPage } from './pages/StoppedPage';
+import { ShadowAiPage } from './pages/TenantShadowPage';
+import { BlockedPage } from './pages/BlockedPage';
 import { PlatformDashboardPage } from './pages/PlatformDashboardPage';
 import { AuditLogsPage } from './pages/AuditLogsPage';
 import { PoliciesPage } from './pages/PoliciesPage';
@@ -51,6 +53,10 @@ function RequireAuditAccess({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const { user, restoring, hasDashboardAccess, isPlatformAdmin } = useAuth();
+  const location = useLocation();
+
+  // Where the browser extension sends people when it blocks an AI tool. Public, no sign-in.
+  if (location.pathname === '/blocked') return <BlockedPage />;
 
   // Don't redirect to sign-in while an existing session is still being restored.
   if (restoring) return null;
@@ -106,7 +112,7 @@ export default function App() {
           <Route path="/compliance" element={<RequireAdmin><CompliancePage /></RequireAdmin>} />
           <Route path="/models" element={<RequireAdmin><ModelsPage /></RequireAdmin>} />
           <Route path="/cost" element={<RequireAdmin><CostPage /></RequireAdmin>} />
-          <Route path="/shadow-ai" element={<RequireAdmin><ShadowAIPage /></RequireAdmin>} />
+          <Route path="/shadow-ai" element={<RequireAdmin><ShadowAiPage /></RequireAdmin>} />
           <Route path="/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
           <Route path="/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
           <Route path="/license" element={<RequireAdmin><TenantLicensePage /></RequireAdmin>} />

@@ -56,7 +56,7 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
 };
 
 /** Pages already rebuilt in the new style render their own headline; older ones get a plain title. */
-const REDESIGNED = new Set(['/gateway', '/stopped']);
+const REDESIGNED = new Set(['/gateway', '/stopped', '/shadow-ai']);
 
 function Logo() {
   return (
