@@ -24,6 +24,7 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
       { label: 'Evidence', href: '/evidence' },
     ],
     more: [
+      { label: 'API keys', href: '/keys' },
       { label: 'Models & keys', href: '/models' },
       { label: 'Spend', href: '/cost' },
       { label: 'Compliance', href: '/compliance' },
@@ -55,7 +56,7 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
 };
 
 /** Pages already rebuilt in the new style render their own headline; older ones get a plain title. */
-const REDESIGNED = new Set(['/gateway', '/stopped', '/shadow-ai', '/rules', '/evidence']);
+const REDESIGNED = new Set(['/gateway', '/stopped', '/shadow-ai', '/rules', '/evidence', '/keys']);
 
 /** The logo is also the way home. */
 function Logo({ to }: { to: string }) {

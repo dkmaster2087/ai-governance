@@ -7,6 +7,7 @@ import { StoppedPage } from './pages/StoppedPage';
 import { ShadowAiPage } from './pages/TenantShadowPage';
 import { BlockedPage } from './pages/BlockedPage';
 import { RulesPage } from './pages/RulesPage';
+import { ApiKeysPage } from './pages/ApiKeysPage';
 import { PlatformDashboardPage } from './pages/PlatformDashboardPage';
 import { EvidencePage } from './pages/EvidencePage';
 import { ModelsPage } from './pages/ModelsPage';
@@ -110,6 +111,7 @@ export default function App() {
           <Route path="/evidence" element={<RequireAuditAccess><EvidencePage /></RequireAuditAccess>} />
           <Route path="/audit-logs" element={<Navigate to="/evidence" replace />} />
           <Route path="/rules" element={<RequireAdmin><RulesPage /></RequireAdmin>} />
+          <Route path="/keys" element={<RequireAdmin><ApiKeysPage /></RequireAdmin>} />
           <Route path="/policies" element={<Navigate to="/rules" replace />} />
           <Route path="/compliance" element={<RequireAdmin><CompliancePage /></RequireAdmin>} />
           <Route path="/models" element={<RequireAdmin><ModelsPage /></RequireAdmin>} />

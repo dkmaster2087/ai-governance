@@ -24,7 +24,8 @@ export default defineConfig({
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api\/policies/, '/v1/policies'),
       },
-      '/api': {
+      // Only /api/… goes to the gateway; app pages like /api-keys must not match.
+      '^/api/': {
         target: GATEWAY,
         changeOrigin: true,
         rewrite: (path) => path.replace(/^\/api/, ''),

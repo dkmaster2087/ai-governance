@@ -56,3 +56,61 @@ describe('API Key Management', () => {
     });
   });
 });
+
+describe('API key routes', () => {
+  const repo = {
+    getForTenant: jest.fn(), create: jest.fn(), revoke: jest.fn(), delete: jest.fn(), findByHash: jest.fn(), touchLastUsed: jest.fn(),
+  };
+  jest.doMock('../repositories/api-key.repository', () => ({
+    ...jest.requireActual('../repositories/api-key.repository'),
+    ApiKeyRepository: jest.fn(() => repo),
+  }));
+
+  async function app() {
+    const Fastify = (await import('fastify')).default;
+    const { apiKeyRoutes } = await import('../routes/api-key.routes');
+    const a = Fastify();
+    a.decorateRequest('principal', null);
+    a.addHook('preHandler', async (req: any) => {
+      req.principal = { kind: 'user', homeTenantId: 't', userId: 'u', role: 'tenant_admin' };
+      req.tenantId = 't';
+      req.userId = 'u';
+    });
+    await a.register(apiKeyRoutes, { prefix: '/v1' });
+    return a;
+  }
+
+  const key = (keyId: string, scopes: string[]) => ({ tenantId: 't', keyId, keyHash: 'h', keyPrefix: 'p', name: keyId, scopes, status: 'active', rateLimit: 1, createdAt: '2026-01-01', createdBy: 'u' });
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    repo.getForTenant.mockResolvedValue([key('app', ['chat']), key('license', ['reporting:ingest'])]);
+  });
+
+  it('hides license keys from the tenant list', async () => {
+    const res = await (await app()).inject({ method: 'GET', url: '/v1/api-keys' });
+    expect(res.json().map((k: any) => k.keyId)).toEqual(['app']);
+  });
+
+  it('will not rotate, revoke or delete a license key', async () => {
+    const a = await app();
+    for (const url of ['/v1/api-keys/license/rotate', '/v1/api-keys/license/revoke']) {
+      expect((await a.inject({ method: 'POST', url })).statusCode).toBe(404);
+    }
+    expect((await a.inject({ method: 'DELETE', url: '/v1/api-keys/license' })).statusCode).toBe(404);
+    expect(repo.create).not.toHaveBeenCalled();
+    expect(repo.revoke).not.toHaveBeenCalled();
+  });
+
+  it('returns 404 instead of creating a record for an unknown key', async () => {
+    const res = await (await app()).inject({ method: 'POST', url: '/v1/api-keys/nope/revoke' });
+    expect(res.statusCode).toBe(404);
+    expect(repo.revoke).not.toHaveBeenCalled();
+  });
+
+  it('revokes the tenant’s own key', async () => {
+    const res = await (await app()).inject({ method: 'POST', url: '/v1/api-keys/app/revoke' });
+    expect(res.statusCode).toBe(200);
+    expect(repo.revoke).toHaveBeenCalledWith('t', 'app');
+  });
+});

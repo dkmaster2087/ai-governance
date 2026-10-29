@@ -14,12 +14,21 @@ const createKeySchema = z.object({
   expiresInDays: z.number().min(1).max(3650).optional(),
 });
 
+/** On-prem license keys are managed by the platform, not from a tenant's API key list. */
+const isLicense = (k: { scopes?: string[] }) => !!k.scopes?.includes('reporting:ingest');
+
 export async function apiKeyRoutes(app: FastifyInstance) {
   const repo = new ApiKeyRepository();
 
+  /** A tenant's own, non-license key, or null. */
+  async function ownKey(tenantId: string, keyId: string) {
+    const key = (await repo.getForTenant(tenantId)).find((k) => k.keyId === keyId);
+    return key && !isLicense(key) ? key : null;
+  }
+
   /** List all API keys for the tenant (hashes hidden) */
   app.get('/api-keys', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
-    const keys = await repo.getForTenant(request.tenantId);
+    const keys = (await repo.getForTenant(request.tenantId)).filter((k) => !isLicense(k));
     // Never return the hash — only prefix, name, status, etc.
     return keys.map((k) => ({
       keyId: k.keyId,
@@ -78,6 +87,7 @@ export async function apiKeyRoutes(app: FastifyInstance) {
   /** Revoke an API key */
   app.post('/api-keys/:keyId/revoke', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const { keyId } = request.params as { keyId: string };
+    if (!(await ownKey(request.tenantId, keyId))) return reply.status(404).send({ error: 'Key not found', code: 'NOT_FOUND' });
     await repo.revoke(request.tenantId, keyId);
     return reply.send({ keyId, status: 'revoked' });
   });
@@ -85,10 +95,8 @@ export async function apiKeyRoutes(app: FastifyInstance) {
   /** Rotate an API key (revoke old, create new with same config) */
   app.post('/api-keys/:keyId/rotate', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const { keyId: oldKeyId } = request.params as { keyId: string };
-    const keys = await repo.getForTenant(request.tenantId);
-    const oldKey = keys.find((k) => k.keyId === oldKeyId);
-
-    if (!oldKey) return reply.status(404).send({ error: 'Key not found' });
+    const oldKey = await ownKey(request.tenantId, oldKeyId);
+    if (!oldKey) return reply.status(404).send({ error: 'Key not found', code: 'NOT_FOUND' });
 
     // Revoke old key
     await repo.revoke(request.tenantId, oldKeyId);
@@ -122,6 +130,7 @@ export async function apiKeyRoutes(app: FastifyInstance) {
   /** Delete an API key permanently */
   app.delete('/api-keys/:keyId', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const { keyId } = request.params as { keyId: string };
+    if (!(await ownKey(request.tenantId, keyId))) return reply.status(404).send({ error: 'Key not found', code: 'NOT_FOUND' });
     await repo.delete(request.tenantId, keyId);
     return reply.send({ keyId, deleted: true });
   });
