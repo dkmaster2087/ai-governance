@@ -15,8 +15,8 @@ const data: RulesResponse = {
       config: {}, enabled: true, policyEnabled: true, effect: 'not_enforced', stopped: 0, flagged: 0 },
   ],
 };
-const changeRule = vi.fn(async () => ({}));
-const addRule = vi.fn(async () => ({}));
+const changeRule = vi.fn(async (..._args: unknown[]) => ({}));
+const addRule = vi.fn(async (..._args: unknown[]) => ({}));
 vi.mock('../lib/rules-api', async (orig) => ({
   ...(await orig<typeof import('../lib/rules-api')>()),
   fetchRules: vi.fn(async () => data),

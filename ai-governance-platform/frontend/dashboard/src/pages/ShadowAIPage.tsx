@@ -7,7 +7,15 @@ import { format } from 'date-fns';
 import { createApiClient } from '../lib/http';
 
 const gatewayApi = createApiClient('/api');
-import { mockShadowAIData } from '../lib/mock-shadow-ai';
+import type { mockShadowAIData } from '../lib/mock-shadow-ai';
+
+type ShadowData = typeof mockShadowAIData;
+
+/** Shown while loading or when a tenant has no events. Never sample data. */
+const EMPTY: ShadowData = {
+  summary: { totalBypassAttempts: 0, uniqueUsers: 0, blockedEndpoints: [], riskScore: 0, trend: '0' },
+  bypassAttempts: [], topBypassUsers: [], endpointBreakdown: [], recentEvents: [],
+} as unknown as ShadowData;
 import { StatCard } from '../components/ui/StatCard';
 import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
@@ -57,10 +65,9 @@ export function ShadowAIPage() {
 
   const activeTenantId = isPlatformAdmin ? selectedTenant : (user?.tenantId || 'tenant_platform');
 
-  const { data = mockShadowAIData, refetch, isLoading } = useQuery({
+  const { data = EMPTY, refetch, isLoading } = useQuery<ShadowData>({
     queryKey: ['shadow-ai', activeTenantId],
     queryFn: () => fetchShadowAIData(activeTenantId),
-    placeholderData: mockShadowAIData,
     refetchInterval: 30000,
   });
 
@@ -78,7 +85,7 @@ export function ShadowAIPage() {
   const filteredEvents = filterByTime(data.recentEvents || []);
   const filteredUsers = filterByTime(data.topBypassUsers?.map((u: any) => ({ ...u, timestamp: u.lastSeen })) || []);
 
-  const hasRealData = data.summary.totalBypassAttempts > 0 && data !== mockShadowAIData;
+  const hasRealData = data.summary.totalBypassAttempts > 0;
   const riskColor = data.summary.riskScore >= 75 ? 'text-red-400' : data.summary.riskScore >= 50 ? 'text-orange-400' : data.summary.riskScore >= 25 ? 'text-yellow-400' : 'text-accent-400';
 
   return (

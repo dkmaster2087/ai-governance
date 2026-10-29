@@ -135,7 +135,7 @@ export function ModelsPage() {
                   <div className="flex items-center gap-1.5 mb-0.5">
                     <h3 className={clsx('font-semibold text-sm truncate', t.heading)}>{model.name}</h3>
                     {model.isDefault && (
-                      <Star className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" title="Default model" />
+                      <Star className="w-3.5 h-3.5 text-yellow-400 flex-shrink-0" aria-label="Default model" />
                     )}
                   </div>
                   <p className={clsx('text-xs font-mono truncate', t.muted)}>{model.modelId}</p>
@@ -250,7 +250,7 @@ export function ModelsPage() {
 
       {modalOpen && (
         <ModelConfigModal
-          model={editTarget}
+          model={editTarget as Parameters<typeof ModelConfigModal>[0]['model']}
           onClose={() => setModalOpen(false)}
           onSaved={() => {
             setModalOpen(false);

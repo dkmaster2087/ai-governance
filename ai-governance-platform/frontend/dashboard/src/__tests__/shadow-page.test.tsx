@@ -13,7 +13,7 @@ const summary: ShadowAiSummary = {
   ],
   people: [{ user: 'm.okoro', visits: 6, tools: ['ChatGPT'] }],
 };
-const update = vi.fn(async () => ({}));
+const update = vi.fn(async (_change: unknown) => ({}));
 vi.mock('../lib/shadow-api', () => ({ fetchShadowSummary: vi.fn(async () => summary), updateShadowPolicy: (c: unknown) => update(c) }));
 let admin = true;
 vi.mock('../lib/auth', () => ({ useAuth: () => ({ user: { tenantId: 't' }, isAdmin: admin }) }));

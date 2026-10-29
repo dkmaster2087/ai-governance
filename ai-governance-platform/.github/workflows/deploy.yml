@@ -48,24 +48,14 @@ jobs:
         id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
 
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
-
-      - name: Install & build
-        run: |
-          npm ci
-          npx turbo run build --filter=@ai-governance/${{ matrix.service }}
-
       - name: Build & push Docker image
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
           STAGE: ${{ inputs.stage || 'dev' }}
         run: |
           IMAGE_URI=$ECR_REGISTRY/ai-gov-${{ matrix.service }}-$STAGE:${{ github.sha }}
-          docker build -t $IMAGE_URI services/${{ matrix.service }}
+          # The Dockerfiles build from the repository root (npm workspaces)
+          docker build -f ai-governance-platform/services/${{ matrix.service }}/Dockerfile -t $IMAGE_URI ai-governance-platform
           docker push $IMAGE_URI
           docker tag $IMAGE_URI $ECR_REGISTRY/ai-gov-${{ matrix.service }}-$STAGE:latest
           docker push $ECR_REGISTRY/ai-gov-${{ matrix.service }}-$STAGE:latest

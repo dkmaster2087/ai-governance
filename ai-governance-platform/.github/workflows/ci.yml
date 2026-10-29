@@ -27,6 +27,14 @@ jobs:
         working-directory: ai-governance-platform
         run: npm ci
 
+      - name: Build shared packages
+        working-directory: ai-governance-platform
+        run: npm run build -w shared/types -w shared/utils
+
+      - name: Test shared utils
+        working-directory: ai-governance-platform/shared/utils
+        run: npx jest --ci
+
       # Gateway tests
       - name: Test Gateway
         working-directory: ai-governance-platform/services/gateway
@@ -36,6 +44,18 @@ jobs:
       - name: Test Policy Engine
         working-directory: ai-governance-platform/services/policy-engine
         run: npx jest --runInBand --ci --coverage
+
+      - name: Test Data Protection
+        working-directory: ai-governance-platform/services/data-protection
+        run: npx jest --runInBand --ci
+
+      - name: Test Analytics
+        working-directory: ai-governance-platform/services/analytics
+        run: npx jest --runInBand --ci
+
+      - name: Test Infrastructure
+        working-directory: ai-governance-platform/infra
+        run: npx jest --ci
 
       # Reporting Agent tests
       - name: Test Reporting Agent
@@ -69,23 +89,30 @@ jobs:
         working-directory: ai-governance-platform
         run: npm ci
 
-      # Build frontend
+      - name: Build shared packages
+        working-directory: ai-governance-platform
+        run: npm run build -w shared/types -w shared/utils
+
+      # Frontends: type check + production build
       - name: Build Dashboard
         working-directory: ai-governance-platform/frontend/dashboard
-        run: npx vite build
+        run: npm run build
 
       - name: Build Website
         working-directory: ai-governance-platform/frontend/website
-        run: npx vite build
+        run: npm run build
 
-      # Build backend services (TypeScript compile check)
-      - name: Build Gateway
-        working-directory: ai-governance-platform/services/gateway
-        run: npx tsc --noEmit
+      # Backend services
+      - name: Build services
+        working-directory: ai-governance-platform
+        run: npm run build -w services/gateway -w services/policy-engine -w services/data-protection -w services/analytics -w services/reporting-agent
 
-      - name: Build Policy Engine
-        working-directory: ai-governance-platform/services/policy-engine
-        run: npx tsc --noEmit
+      - name: Synthesize infrastructure
+        working-directory: ai-governance-platform/infra
+        run: npx cdk synth --context stage=dev -q
+        env:
+          CDK_DEFAULT_ACCOUNT: '123456789012'
+          CDK_DEFAULT_REGION: us-east-1
 
   docker:
     name: Build Docker Images
@@ -110,10 +137,10 @@ jobs:
         uses: aws-actions/amazon-ecr-login@v2
 
       - name: Build and push
-        working-directory: ai-governance-platform/services/${{ matrix.service }}
+        working-directory: ai-governance-platform
         run: |
           IMAGE=${{ steps.ecr.outputs.registry }}/ai-gov-${{ matrix.service }}:${{ github.sha }}
-          docker build -t $IMAGE .
+          docker build -f services/${{ matrix.service }}/Dockerfile -t $IMAGE .
           docker push $IMAGE
           docker tag $IMAGE ${{ steps.ecr.outputs.registry }}/ai-gov-${{ matrix.service }}:latest
           docker push ${{ steps.ecr.outputs.registry }}/ai-gov-${{ matrix.service }}:latest

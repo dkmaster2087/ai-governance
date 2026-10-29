@@ -3,13 +3,13 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
 
-const createKey = vi.fn(async () => ({ keyId: 'k2', key: 'aegis_demo_secretvalue' }));
+const createKey = vi.fn(async (..._args: unknown[]) => ({ keyId: 'k2', key: 'aegis_demo_secretvalue' }));
 vi.mock('../lib/api-keys-api', () => ({
   listKeys: vi.fn(async () => [
     { keyId: 'k1', keyPrefix: 'aegis_demo_ab...', name: 'support-bot', scopes: ['chat', 'models'], status: 'active', createdAt: '2026-10-01', createdBy: 'u' },
     { keyId: 'k0', keyPrefix: 'aegis_demo_cd...', name: 'old-app', scopes: ['chat'], status: 'revoked', createdAt: '2026-09-01', createdBy: 'u' },
   ]),
-  createKey: (...a: unknown[]) => createKey(...(a as [])),
+  createKey: (...a: unknown[]) => createKey(...a),
   revokeKey: vi.fn(), rotateKey: vi.fn(), deleteKey: vi.fn(),
 }));
 vi.mock('../lib/auth', () => ({ useAuth: () => ({ user: { tenantId: 't' } }) }));
