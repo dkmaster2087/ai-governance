@@ -1,35 +1,59 @@
-# Aegis AI — Enterprise AI Governance Platform
+# Aegis — the AI gateway for security teams
 
-A centralized AI control plane that enforces policy, masks sensitive data, and audits every AI interaction.
+Every AI request a company makes passes through one gateway. Aegis checks each prompt before it leaves:
+it stops confidential material, removes personal data, shows AI use that goes around it, and keeps evidence
+for every decision.
 
-## Structure
+- **Product overview:** [docs/FEATURES.md](docs/FEATURES.md)
+- **How it fits together:** [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+- **Customer docs** live on the website (`frontend/website`, `/docs`).
+
+## Repository
 
 ```
-ai-governance-platform/
-├── services/
-│   ├── gateway/          # AI proxy — Fastify, port 3000
-│   ├── policy-engine/    # Policy evaluation — Fastify, port 3001
-│   ├── data-protection/  # PII masking — Fastify, port 3002
-│   └── analytics/        # Metrics & audit queries — Fastify, port 3003
-├── frontend/
-│   ├── website/          # Marketing site — React + Vite + Tailwind
-│   └── dashboard/        # Ops dashboard — React + Vite (coming)
-├── infra/                # AWS CDK — all infrastructure
-└── shared/
-    ├── types/            # Shared TypeScript types
-    └── utils/            # Shared utilities
+services/
+  gateway/          Public API: auth, chat completions, proxy mode, rules, evidence, shadow AI (Fastify, :3000)
+  policy-engine/    Evaluates rules and compliance packs (internal, :3001)
+  data-protection/  Removes personal data from prompts and responses (internal, :3002)
+  analytics/        Usage metrics for the platform view (internal, :3003)
+  reporting-agent/  Optional on-prem agent that reports usage with a license key (:3005)
+frontend/
+  dashboard/        The app (React + Vite + Tailwind, :5174)
+  website/          Public website and docs (React + Vite + Tailwind, :5173)
+extensions/
+  shadow-ai-guard/  Chrome extension for shadow AI (managed through Chrome policy)
+infra/              AWS CDK stacks
+shared/             Shared types and utilities
+scripts/            Local development helpers
 ```
 
-## Quick Start
+## Run it locally
+
+Requires Docker and Node.js 20+.
 
 ```bash
-cp .env.example .env
 npm install
-npm run build
-npm run dev
+scripts/dev-local.sh start      # LocalStack, services, mock model, website and dashboard
+node scripts/seed-traffic.mjs   # optional: realistic sample traffic
 ```
 
-## CDK Deploy
+- Dashboard: http://localhost:5174, demo sign-in `admin@democorp.com` / `demo123`
+- Website: http://localhost:5173
+- Gateway: http://localhost:3000
+
+`scripts/dev-local.sh stop` stops the Node processes; `status` shows what's running. Logs are in `.dev-logs/`.
+Locally the gateway runs with `AUTH_DEV_MODE=true`, which accepts the demo accounts; it refuses to start
+with that setting outside dev/local/test stages.
+
+## Tests
+
+```bash
+npm test                                  # all packages
+(cd services/gateway && npx jest)         # one package
+(cd frontend/dashboard && npx vitest run)
+```
+
+## Deploy to AWS
 
 ```bash
 cd infra
@@ -38,39 +62,25 @@ npx cdk bootstrap
 npx cdk deploy --all --context stage=dev
 ```
 
-## CDK Teardown
+Before a production deploy, see "Known gaps" in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the public
+listener needs a TLS certificate and the audit table needs its time index.
 
-```bash
-cd infra
-npx cdk destroy --all --force --context stage=dev
-```
+### Configuration
 
-Or trigger via GitHub Actions → Deploy workflow → set `destroy: true`.
+| Variable | Service | Purpose |
+|---|---|---|
+| `COGNITO_USER_POOL_ID`, `COGNITO_CLIENT_ID` | gateway | Verify dashboard sign-ins |
+| `VITE_COGNITO_USER_POOL_ID`, `VITE_COGNITO_CLIENT_ID` | dashboard | Sign-in for deployed dashboards |
+| `GOVERNANCE_FAIL_MODE` | gateway | Default when a check can't run: `closed` (block) or `open` |
+| `PROVIDER_KEYS_SECRET_PREFIX` | gateway | Secrets Manager prefix for customers' provider keys |
+| `AUTH_DEV_MODE` | gateway | Local demo sign-in only; refused outside dev stages |
+| `VITE_API_URL`, `VITE_DASHBOARD_URL` | website | Gateway and dashboard addresses |
 
-## Tests
-
-```bash
-npm test                          # all packages
-npx turbo run test --filter=...   # specific package
-```
-
-## GitHub Secrets Required
+### GitHub secrets for CI/CD
 
 | Secret | Description |
-|--------|-------------|
+|---|---|
 | `AWS_DEPLOY_ROLE_ARN` | IAM role ARN for OIDC deployment |
 | `AWS_ACCOUNT_ID` | AWS account ID |
-| `WEBSITE_BUCKET_NAME` | S3 bucket for website |
+| `WEBSITE_BUCKET_NAME` | S3 bucket for the website |
 | `CLOUDFRONT_DISTRIBUTION_ID` | CloudFront distribution ID |
-
-## Architecture
-
-```
-Client → API Gateway → ECS Gateway → Policy Engine → PII Masking → AI Provider
-                                                                  ↓
-                                                          Response Filter → Client
-                                                                  ↓
-                                                          S3 Audit Logs (KMS encrypted)
-```
-
-VPC: 2 public subnets + 4 private subnets (2 app, 2 data) across 2 AZs. Single NAT Gateway.
