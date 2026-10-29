@@ -7,7 +7,7 @@ import {
 import clsx from 'clsx';
 import { format } from 'date-fns';
 import { fetchModelConfigs, deleteModelConfig, testModelConfig } from '../lib/api';
-import { mockModelConfigs } from '../lib/mock-data';
+import type { mockModelConfigs } from '../lib/mock-data';
 import { Badge } from '../components/ui/Badge';
 import { ModelConfigModal } from '../components/models/ModelConfigModal';
 import { useTheme } from '../lib/theme';

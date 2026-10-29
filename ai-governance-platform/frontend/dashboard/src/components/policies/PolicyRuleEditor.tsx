@@ -6,7 +6,7 @@ import { Toggle } from '../ui/Toggle';
 import { useTheme } from '../../lib/theme';
 import { themeClasses } from '../../lib/theme-classes';
 import { fetchModelConfigs } from '../../lib/api';
-import { mockModelConfigs } from '../../lib/mock-data';
+import type { mockModelConfigs } from '../../lib/mock-data';
 
 export type RuleType =
   | 'keyword_block'
@@ -89,10 +89,9 @@ function ModelRestrictionConfig({ allowedModels, onChange }: { allowedModels: st
   const { data } = useQuery({
     queryKey: ['model-configs'],
     queryFn: fetchModelConfigs,
-    placeholderData: mockModelConfigs,
   });
 
-  const models: typeof mockModelConfigs = Array.isArray(data) && data.length ? data : mockModelConfigs;
+  const models: typeof mockModelConfigs = Array.isArray(data) ? data : [];
 
   const toggleModel = (modelId: string) => {
     if (allowedModels.includes(modelId)) {
