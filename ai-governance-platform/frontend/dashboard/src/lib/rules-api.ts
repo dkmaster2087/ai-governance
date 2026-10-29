@@ -58,5 +58,6 @@ export const setFailMode = async (governanceFailMode: 'open' | 'closed') =>
 /** The error message the gateway sent, if any. */
 export function errorMessage(err: unknown): string {
   const e = err as { response?: { data?: { error?: string; message?: string } } };
-  return e.response?.data?.error ?? e.response?.data?.message ?? 'Something went wrong. Try again.';
+  // Prefer the readable message; `error` is sometimes a machine code such as INVALID_RULES.
+  return e.response?.data?.message ?? e.response?.data?.error ?? 'Something went wrong. Try again.';
 }

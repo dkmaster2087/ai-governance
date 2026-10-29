@@ -60,8 +60,8 @@ tenants via `X-Tenant-Id`; everyone else is limited to their own.
 
 ## Known gaps before production
 
-- The CDK public listener has no TLS certificate, so `cdk synth` fails; add an ACM certificate.
-- The CDK audit table lacks `tenantId-timestamp-index`, which the dashboard summaries query.
+- Production deploys need `-c certificateArn=…` for HTTPS; the service Dockerfiles haven't been built on a
+  developer machine yet (CI builds them).
 - Streaming responses and secrets detection are not built yet.
 - Policy engine, data protection and analytics have no service-to-service authentication; they rely on
   being reachable only inside the VPC.

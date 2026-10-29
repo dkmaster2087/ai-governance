@@ -47,6 +47,9 @@ export async function buildApp() {
     timeWindow: '1 minute',
   });
 
+  // Error handler: set before any routes so every plugin inherits it.
+  app.setErrorHandler(errorHandler);
+
   // Auth & validation
   await app.register(requestTracing);
   await app.register(authMiddleware);
@@ -69,9 +72,6 @@ export async function buildApp() {
   await app.register(evidenceRoutes, { prefix: '/v1' });
   await app.register(policiesRoutes, { prefix: '/v1' });
   await app.register(metricsRoutes, { prefix: '/internal' });
-
-  // Error handler
-  app.setErrorHandler(errorHandler);
 
   // Graceful shutdown
   setupGracefulShutdown(app);

@@ -62,8 +62,9 @@ npx cdk bootstrap
 npx cdk deploy --all --context stage=dev
 ```
 
-Before a production deploy, see "Known gaps" in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md): the public
-listener needs a TLS certificate and the audit table needs its time index.
+Production needs a TLS certificate for the gateway's public listener:
+`npx cdk deploy --all --context stage=prod --context certificateArn=arn:aws:acm:…`. Without one, non-production
+stages serve plain HTTP. See "Known gaps" in [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 ### Configuration
 
