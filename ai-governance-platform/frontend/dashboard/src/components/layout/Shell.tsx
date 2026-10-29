@@ -1,5 +1,5 @@
 import { useRef } from 'react';
-import { NavLink, useLocation, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { useAuth, UserRole } from '../../lib/auth';
 
@@ -13,7 +13,7 @@ interface RoleNav {
   more: NavItem[];
 }
 
-// Direction I navigation. Evidence uses the existing Audit Logs page until its redesign lands.
+// Direction I navigation.
 const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
   tenant_admin: {
     primary: [
@@ -21,7 +21,7 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
       { label: 'Stopped', href: '/stopped' },
       { label: 'Shadow AI', href: '/shadow-ai' },
       { label: 'Rules', href: '/rules' },
-      { label: 'Evidence', href: '/audit-logs' },
+      { label: 'Evidence', href: '/evidence' },
     ],
     more: [
       { label: 'Models & keys', href: '/models' },
@@ -36,7 +36,7 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
     primary: [
       { label: 'Gateway', href: '/gateway' },
       { label: 'Stopped', href: '/stopped' },
-      { label: 'Evidence', href: '/audit-logs' },
+      { label: 'Evidence', href: '/evidence' },
     ],
     more: [],
   },
@@ -55,16 +55,17 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
 };
 
 /** Pages already rebuilt in the new style render their own headline; older ones get a plain title. */
-const REDESIGNED = new Set(['/gateway', '/stopped', '/shadow-ai', '/rules']);
+const REDESIGNED = new Set(['/gateway', '/stopped', '/shadow-ai', '/rules', '/evidence']);
 
-function Logo() {
+/** The logo is also the way home. */
+function Logo({ to }: { to: string }) {
   return (
-    <span className="flex items-center gap-2.5 font-extrabold text-[17px] tracking-[0.06em] uppercase">
+    <Link to={to} aria-label="Aegis home" className="flex items-center gap-2.5 min-h-[44px] font-extrabold text-[17px] tracking-[0.06em] uppercase text-ink no-underline">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
         <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z" />
       </svg>
       Aegis
-    </span>
+    </Link>
   );
 }
 
@@ -93,8 +94,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
 
   return (
     <div className="min-h-full bg-canvas text-ink font-sans text-sm leading-[1.45]">
-      <header className="flex flex-wrap items-center gap-x-8 gap-y-2 px-5 sm:px-10 min-h-[64px] bg-white border-b border-line">
-        <Logo />
+      <header className="sticky top-0 z-30 flex flex-wrap items-center gap-x-8 gap-y-2 px-5 sm:px-10 min-h-[64px] bg-white border-b border-line">
+        <Logo to={user?.role === 'platform_admin' ? '/overview' : '/gateway'} />
         <nav aria-label="Main" className="flex flex-wrap items-center gap-x-6 gap-y-1">
           {nav.primary.map((n) => (
             <NavLink key={n.href} to={n.href} className={linkClass}>{n.label}</NavLink>

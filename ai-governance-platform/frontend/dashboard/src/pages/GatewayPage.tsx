@@ -173,7 +173,7 @@ export function GatewayPage() {
               <Panel aria-label="Just now" className="flex-[1_1_420px] min-w-0 px-5 py-[18px] flex flex-col">
                 <div className="flex justify-between items-baseline mb-1.5">
                   <SectionLabel>Just now</SectionLabel>
-                  <ArrowLink to="/audit-logs">Evidence log</ArrowLink>
+                  <ArrowLink to="/evidence">Evidence log</ArrowLink>
                 </div>
                 {data.recent.map((e, i) => {
                   const style = OUTCOME_STYLE[e.outcome];

@@ -22,6 +22,7 @@ import { getSecurityConfig } from './config/security';
 import { metricsRoutes } from './routes/metrics.routes';
 import { gatewayRoutes } from './routes/gateway.routes';
 import { rulesRoutes } from './routes/rules.routes';
+import { evidenceRoutes } from './routes/evidence.routes';
 
 export async function buildApp() {
   const securityConfig = getSecurityConfig();
@@ -64,6 +65,7 @@ export async function buildApp() {
   await app.register(reportingRoutes, { prefix: '/v1' });
   await app.register(gatewayRoutes, { prefix: '/v1' });
   await app.register(rulesRoutes, { prefix: '/v1' });
+  await app.register(evidenceRoutes, { prefix: '/v1' });
   await app.register(metricsRoutes, { prefix: '/internal' });
 
   // Error handler
