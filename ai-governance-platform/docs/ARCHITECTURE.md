@@ -59,6 +59,11 @@ tenants via `X-Tenant-Id`; everyone else is limited to their own.
 | Audit records | DynamoDB `audit-logs` (index `tenantId-timestamp-index`) + S3 archive |
 | Shadow-AI events (30-day TTL) | DynamoDB `shadow-ai` |
 
+## Deployment modes
+
+Hosted by us, or everything in the customer's AWS account. A third mode, where we run the dashboard and
+the customer runs the request path, is planned in [HYBRID.md](HYBRID.md).
+
 ## Known gaps before production
 
 - Production deploys need `-c certificateArn=…` for HTTPS; the service Dockerfiles haven't been built on a
