@@ -9,7 +9,7 @@ import { themeClasses } from '../lib/theme-classes';
 import { renderActiveShape } from '../components/ui/ActivePieShape';
 import { useState } from 'react';
 import { fetchTenants } from '../lib/tenant-api';
-import { mockTenants } from '../lib/mock-tenants';
+import type { mockTenants } from '../lib/mock-tenants';
 import { useAuth } from '../lib/auth';
 import { fetchAllLicenses } from '../lib/license-api';
 import { createApiClient } from '../lib/http';
@@ -35,9 +35,8 @@ export function PlatformDashboardPage() {
   const { data: rawTenants } = useQuery({
     queryKey: ['tenants', user?.tenantId],
     queryFn: () => fetchTenants(user?.tenantId),
-    placeholderData: mockTenants,
   });
-  const tenants: typeof mockTenants = Array.isArray(rawTenants) && rawTenants.length ? rawTenants : mockTenants;
+  const tenants: typeof mockTenants = Array.isArray(rawTenants) ? rawTenants : [];
 
   // Fetch compliance per tenant (aggregate)
   const { data: complianceMap = {} } = useQuery({

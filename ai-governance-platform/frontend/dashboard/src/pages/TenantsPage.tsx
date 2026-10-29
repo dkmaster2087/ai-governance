@@ -8,7 +8,7 @@ import {
 import clsx from 'clsx';
 import { format } from 'date-fns';
 import { fetchTenants, suspendTenant, activateTenant } from '../lib/tenant-api';
-import { mockTenants } from '../lib/mock-tenants';
+import type { mockTenants } from '../lib/mock-tenants';
 import { TenantModal } from '../components/tenants/TenantModal';
 import { useAuth } from '../lib/auth';
 import { useTheme } from '../lib/theme';
@@ -46,10 +46,9 @@ export function TenantsPage() {
   const { data } = useQuery({
     queryKey: ['tenants', user?.tenantId],
     queryFn: () => fetchTenants(user?.tenantId),
-    placeholderData: mockTenants,
   });
 
-  const tenants: typeof mockTenants = Array.isArray(data) && data.length ? data : mockTenants;
+  const tenants: typeof mockTenants = Array.isArray(data) ? data : [];
 
   const suspendMutation = useMutation({
     mutationFn: (id: string) => suspendTenant(id, user?.tenantId),

@@ -7,7 +7,7 @@ import { useTheme } from '../lib/theme';
 import { themeClasses } from '../lib/theme-classes';
 import { StatCard } from '../components/ui/StatCard';
 import { fetchTenants } from '../lib/tenant-api';
-import { mockTenants } from '../lib/mock-tenants';
+import type { mockTenants } from '../lib/mock-tenants';
 import { useAuth } from '../lib/auth';
 
 const PERIODS = [
@@ -77,9 +77,8 @@ export function AnalyticsPage() {
   const { data: rawTenants } = useQuery({
     queryKey: ['tenants', user?.tenantId],
     queryFn: () => fetchTenants(user?.tenantId),
-    placeholderData: mockTenants,
   });
-  const tenants: typeof mockTenants = Array.isArray(rawTenants) && rawTenants.length ? rawTenants : mockTenants;
+  const tenants: typeof mockTenants = Array.isArray(rawTenants) ? rawTenants : [];
 
   const TENANT_OPTIONS = [
     { id: 'all', name: 'All Tenants' },
