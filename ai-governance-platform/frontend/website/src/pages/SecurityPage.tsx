@@ -8,6 +8,7 @@ const ITEMS = [
   { title: 'Sign-in', body: 'The dashboard signs in through Amazon Cognito, with authenticator-app MFA. Users can’t change their own role or company. Single sign-on with Okta and Microsoft Entra is planned.' },
   { title: 'Encrypted at rest', body: 'Audit records and configuration are encrypted with KMS keys; in your own AWS account, they’re your keys.' },
   { title: 'Least-privilege API keys', body: 'Keys carry scopes: one for sending chat requests, one for the browser extension to report visits, and on-premises license keys issued only by us.' },
+  { title: 'Assessments stay in your environment', body: 'Collectors are read-only, keep only matches against known AI services as daily counts, and build the report in your own storage. People appear as codes; the key stays with you.' },
   { title: 'Tamper-resistant extension', body: 'Settings pushed through Chrome policy can’t be changed by employees, so monitoring can’t be quietly switched off.' },
 ];
 

@@ -59,6 +59,13 @@ tenants via `X-Tenant-Id`; everyone else is limited to their own.
 | Audit records | DynamoDB `audit-logs` (index `tenantId-timestamp-index`) + S3 archive |
 | Shadow-AI events (30-day TTL) | DynamoDB `shadow-ai` |
 
+## Websites
+
+- `frontend/website` (port 5173): the public sales site. It tells the inspect → protect → enforce story and
+  labels every piece Available, Beta or Coming; it has no technical docs.
+- `frontend/docs` (port 5175): setup and reference docs (gateway, IDEs, extension, collectors, API). Not
+  linked from the sales site and marked `noindex`.
+
 ## Testing
 
 - **Unit tests** in each workspace (including `collector`): `npm test` from the root, plus the browser
@@ -85,7 +92,7 @@ The tenant field `deploymentMode` holds `saas` (Cloud) or `onprem` (Self-hosted 
 
 **Collectors** for AI usage assessments and continuous shadow-AI discovery are a separate component, not part
 of any of these installs. The same collector runs alongside all three, or on its own for an assessment with
-nothing else installed. Plan: [ASSESSMENT.md](ASSESSMENT.md); the core and the AWS collector are built in
+nothing else installed. Plan: [ASSESSMENT.md](ASSESSMENT.md); the core, the AWS collector and the on-premises collector are built in
 [collector/](../collector/README.md).
 
 ## Known gaps before production
@@ -96,7 +103,10 @@ nothing else installed. Plan: [ASSESSMENT.md](ASSESSMENT.md); the core and the A
 
 - Production deploys need `-c certificateArn=…` for HTTPS; the service Dockerfiles haven't been built on a
   developer machine yet (CI builds them).
-- Streaming responses and secrets detection are not built yet.
+- Secrets detection is not built yet.
+- Streamed answers are masked by the gateway's built-in patterns as they stream; the deeper data-protection
+  check runs only on non-streamed answers. A pattern longer than 96 characters (a whole private key) can slip
+  through when split across chunks.
 - A revoked API key stops working at once on the gateway instance that revoked it; other instances drop
   their cached copy within a minute.
 - Policy engine, data protection and analytics have no service-to-service authentication; they rely on

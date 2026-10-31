@@ -31,7 +31,7 @@ export function ContactPage() {
   return (
     <Container>
       <PageHeader eyebrow="Contact" title="Let’s look at your AI traffic together.">
-        Tell us a little about your company. We’ll reply within one business day to set up a demo on your own traffic.
+        Tell us a little about your company and which environments you run: AWS, Azure, Google Cloud, data centres, web gateways. We’ll reply within one business day to scope an AI usage assessment.
       </PageHeader>
       <div className="pb-20 max-w-[720px]">
         {state === 'success' ? (

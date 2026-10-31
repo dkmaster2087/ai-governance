@@ -37,74 +37,46 @@ export function PageHeader({ eyebrow, title, children }: { eyebrow?: string; tit
   );
 }
 
-function Lane({ count }: { count: string }) {
+/** Whether something can be bought today. The site never presents a planned piece as available. */
+export function Status({ value, className }: { value: 'Available' | 'Beta' | 'Coming'; className?: string }) {
   return (
-    <div className="flex flex-col items-center gap-1.5 px-1">
-      <span className="font-mono text-[12px] sm:text-[13px] font-medium">{count}</span>
-      <div className="flex items-center w-full" aria-hidden="true">
-        <div className="flex-1 h-2 bg-ink rounded-l" />
-        <div className="w-0 h-0 border-y-[8px] border-y-transparent border-l-[11px] border-l-ink" />
-      </div>
-    </div>
+    <span className={clsx(
+      'inline-flex items-center self-start text-[11px] font-semibold uppercase tracking-[0.05em] px-2 py-0.5 rounded-full whitespace-nowrap',
+      value === 'Available' && 'bg-ink text-white',
+      value === 'Beta' && 'bg-ink-tint text-ink',
+      value === 'Coming' && 'border border-dashed border-line-strong text-ink-muted',
+      className,
+    )}>{value}</span>
   );
 }
 
-/**
- * The product in one picture: apps on the left, the checks every request passes, providers on the right.
- * Example numbers only; labelled as such wherever it's used.
- */
-export function PipelineIllustration() {
-  const checks = [
-    { n: 1, name: 'Policy rules', what: 'your words, patterns and approved models', drop: '225', verb: 'stopped', kind: 'stop' as const },
-    { n: 2, name: 'Secrets', what: 'API keys, tokens, private keys', drop: 'soon', verb: 'coming next', kind: 'soon' as const },
-    { n: 3, name: 'Personal data', what: 'emails, phone, SSN, card numbers', drop: '1,184', verb: 'cleaned, then sent', kind: 'clean' as const },
-  ];
+/** A section with an eyebrow and a headline. */
+export function Section({ id, eyebrow, title, intro, children, tone = 'white' }: { id?: string; eyebrow?: string; title: ReactNode; intro?: ReactNode; children?: ReactNode; tone?: 'white' | 'canvas' }) {
   return (
-    <figure className="m-0" aria-label="Example: 43,012 requests come in from apps, 225 are stopped by policy rules, 1,184 have personal data removed, and 42,787 reach AI providers.">
-      <div className="overflow-x-auto">
-        <div className="grid items-center min-w-[900px]" style={{ gridTemplateColumns: '150px minmax(40px,1fr) 150px minmax(40px,1fr) 150px minmax(40px,1fr) 150px minmax(40px,1fr) 150px', gridTemplateRows: 'auto 150px' }}>
-          <div style={{ gridColumn: 1, gridRow: 1 }} className="flex flex-col gap-1 text-[13px]">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-muted mb-1">Coming in</span>
-            {['support-bot', 'billing-api', 'Cursor (IDE)', 'hr-assistant'].map((a) => (
-              <span key={a} className="font-semibold border-b border-line-subtle py-1">{a}</span>
-            ))}
-          </div>
-          {['43,012', '42,787', '42,787', '42,787'].map((c, i) => (
-            <div key={i} style={{ gridColumn: 2 + i * 2, gridRow: 1 }}><Lane count={c} /></div>
-          ))}
-          {checks.map((c, i) => (
-            <div key={c.n} className="contents">
-              <div style={{ gridColumn: 3 + i * 2, gridRow: 1 }}
-                className={clsx('rounded-xl p-3.5 min-h-[128px] flex flex-col justify-between gap-2', c.kind === 'soon' ? 'bg-white border-2 border-dashed border-line-strong' : 'bg-ink text-white')}>
-                <span className={clsx('font-mono text-[11px]', c.kind === 'soon' ? 'text-ink-muted' : 'text-ink-on-dark-muted')}>check {c.n}</span>
-                <span className="text-[17px] font-bold leading-tight">{c.name}</span>
-                <span className={clsx('text-[11px]', c.kind === 'soon' ? 'text-ink-muted' : 'text-ink-on-dark')}>{c.what}</span>
-              </div>
-              <div style={{ gridColumn: 3 + i * 2, gridRow: 2 }} className="self-start flex flex-col items-center text-center">
-                <div aria-hidden="true" className={clsx('w-0 h-10 border-l-[3px]', c.kind === 'stop' && 'border-stop', c.kind === 'clean' && 'border-dashed border-ink', c.kind === 'soon' && 'border-dotted border-line-strong')} />
-                {c.kind === 'soon'
-                  ? <span className="pt-2 font-semibold text-ink-muted">{c.verb}</span>
-                  : <>
-                      <span className={clsx('pt-1 text-[32px] font-extrabold leading-none tracking-[-0.03em]', c.kind === 'stop' ? 'text-stop' : 'text-ink')}>{c.drop}</span>
-                      <span className={clsx('mt-1 text-sm font-semibold', c.kind === 'stop' ? 'text-stop' : 'text-ink')}>{c.verb}</span>
-                    </>}
-              </div>
-            </div>
-          ))}
-          <div style={{ gridColumn: 9, gridRow: 1 }} className="flex flex-col gap-1 text-[13px] pl-2">
-            <span className="text-[11px] font-semibold uppercase tracking-[0.06em] text-ink-muted mb-1">Delivered to</span>
-            {['Amazon Bedrock', 'OpenAI', 'Anthropic'].map((p) => (
-              <span key={p} className="font-semibold border-b border-line-subtle py-1">{p}</span>
-            ))}
-          </div>
-        </div>
-      </div>
-      <figcaption className="mt-2 text-xs text-ink-muted">Example week. Red: stopped at the gateway. Dashed: personal data removed, then sent on.</figcaption>
-    </figure>
+    <section aria-labelledby={id} className={clsx(tone === 'canvas' && 'bg-canvas border-y border-line')}>
+      <Container className="py-16 sm:py-20">
+        {eyebrow && <Eyebrow className="mb-3">{eyebrow}</Eyebrow>}
+        <h2 id={id} className="m-0 text-[30px] sm:text-[36px] leading-[1.1] font-bold tracking-[-0.02em] max-w-[820px]">{title}</h2>
+        {intro && <p className="m-0 mt-4 text-[17px] text-ink-muted leading-relaxed max-w-[760px]">{intro}</p>}
+        {children && <div className="mt-10">{children}</div>}
+      </Container>
+    </section>
   );
 }
 
-/** A code sample in the docs. */
+/** The closing call to action on each page. */
+export function ClosingCta({ title = 'Start with an AI usage assessment. Nothing leaves your environment.' }: { title?: string }) {
+  return (
+    <section className="bg-ink text-white">
+      <Container className="py-16 flex flex-wrap items-center justify-between gap-6">
+        <h2 className="m-0 text-[30px] leading-[1.15] font-bold tracking-[-0.02em] max-w-[700px]">{title}</h2>
+        <Link to="/contact" className="min-h-[48px] flex items-center px-6 rounded-lg bg-white text-ink font-semibold no-underline hover:bg-ink-tint">Book an assessment</Link>
+      </Container>
+    </section>
+  );
+}
+
+/** A code sample. */
 export function Code({ children, label }: { children: string; label?: string }) {
   return (
     <figure className="m-0 my-4">

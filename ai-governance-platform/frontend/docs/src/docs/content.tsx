@@ -76,7 +76,8 @@ client = OpenAI(
     default_headers={"X-App-Id": "support-bot"},
 )`}</Code>
         <P><C>X-App-Id</C> names the app in the dashboard. <C>X-User-Id</C> says which of your app’s users the request is for; it’s recorded for attribution, not used for authentication.</P>
-        <Note><strong>Not yet supported:</strong> streaming responses (<C>stream: true</C> returns a complete response) and image or file inputs.</Note>
+        <P>Streaming works as with OpenAI: send <C>stream: true</C> and the answer arrives as server-sent events. Personal data in the answer is removed as it streams.</P>
+        <Note><strong>Not yet supported:</strong> image or file inputs.</Note>
         <H2>4. Watch it on the Gateway page</H2>
         <P>Requests appear within seconds. Try a prompt containing the word “confidential” with the default rule switched on: it comes back as <C>403 POLICY_VIOLATION</C> and shows up on the Stopped page.</P>
       </>
@@ -97,7 +98,7 @@ client = OpenAI(
         <P>The developer’s <C>Authorization</C> or <C>x-api-key</C> header is the provider key and is passed through untouched. Your proxy adds the Aegis key in a separate header:</P>
         <Code>{`X-Aegis-Key: <an Aegis API key with the chat permission>`}</Code>
         <P>Requests without <C>X-Aegis-Key</C> are rejected. Prompts sent as content blocks and Anthropic system prompts are checked like any other text.</P>
-        <Note>Proxy mode is in beta. Responses are returned complete rather than streamed, which some IDE features expect; streaming support is next on the roadmap.</Note>
+        <Note>Proxy mode is in beta. Streamed answers pass straight through after the request is checked. Proxy mode applies your rules but doesn’t remove personal data.</Note>
       </>
     ),
   },
@@ -193,6 +194,31 @@ client = OpenAI(
           [<C>shadow_ai:ingest</C>, 'The browser extension reporting visits and reading its settings'],
         ]} />
         <P>A key belongs to one company; using it with another company’s ID is refused. Keys can be set to expire and revoked at any time.</P>
+      </>
+    ),
+  },
+  {
+    slug: 'collectors',
+    title: 'Collectors and the AI usage assessment',
+    summary: 'Find AI use in logs a company already has, and build the assessment report inside their environment.',
+    body: (
+      <>
+        <P>The collector is separate from the gateway and needs nothing else installed. It reads logs where they already are, keeps only lines that match a known AI service as daily counts, and builds an HTML report in the customer’s own storage. Nothing is sent to Aegis.</P>
+        <H2>What it keeps</H2>
+        <P>Daily counts per AI service, source and caller. Servers keep the name the log gives them; people become codes such as <C>user-3f9a…</C>, made with a key that stays in the customer’s <C>private/</C> folder with the code-to-name lookup.</P>
+        <H2>AWS</H2>
+        <P>Deploy <C>collector/deploy/aws/collector.yaml</C> with the names of the log buckets. It reads Route 53 Resolver DNS query logs, Network Firewall logs and CloudTrail (Amazon Bedrock and SageMaker calls). Turn on EventBridge notifications for each log bucket, put the Aegis gateway’s role in <C>Ignore</C>, then run the backfill command from the stack outputs. The report is at <C>reports/latest.html</C> in the results bucket.</P>
+        <H2>On-premises</H2>
+        <P>Run the container from <C>collector/deploy/onprem</C>. Point firewalls and proxies at it over syslog (UDP or TCP) and mount DNS server and proxy log folders under <C>/logs</C>.</P>
+        <Table head={['Product', 'How it arrives']} rows={[
+          ['Palo Alto Networks (URL filtering)', 'syslog'],
+          ['Fortinet FortiGate (web filter, DNS)', 'syslog'],
+          ['Check Point and other CEF sources', 'syslog'],
+          ['Squid', 'access log file'],
+          ['BIND, Windows DNS', 'query log files'],
+        ]} />
+        <H2>Not built yet</H2>
+        <P>Azure, Google Cloud, Zscaler, Netskope, Microsoft 365, Google Workspace and Okta/Entra sources, and sending results to an Aegis install. See <C>docs/ASSESSMENT.md</C> in the repository.</P>
       </>
     ),
   },

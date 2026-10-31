@@ -2,8 +2,8 @@ import { Link } from 'react-router-dom';
 import { Logo } from './Navbar';
 
 const COLUMNS = [
-  { title: 'Product', links: [['Overview', '/product'], ['Pricing', '/pricing'], ['Deployment', '/deployment'], ['Security', '/security']] },
-  { title: 'Docs', links: [['Quick start', '/docs/quick-start'], ['Connect IDEs', '/docs/proxy-mode'], ['Browser extension', '/docs/browser-extension'], ['API reference', '/docs/api']] },
+  { title: 'Product', links: [['How it works', '/how-it-works'], ['Assessment', '/assessment'], ['Gateway', '/gateway'], ['Deployment', '/deployment']] },
+  { title: 'Buying', links: [['Pricing', '/pricing'], ['Security', '/security'], ['Book an assessment', '/contact']] },
   { title: 'Company', links: [['About', '/about'], ['Contact', '/contact']] },
 ];
 
@@ -13,7 +13,7 @@ export function Footer() {
       <div className="max-w-[1200px] mx-auto px-5 sm:px-10 py-12 flex flex-wrap gap-x-16 gap-y-10">
         <div className="flex-[1_1_240px]">
           <Logo />
-          <p className="m-0 mt-2 text-ink-muted max-w-[280px]">The gateway every AI request in your company passes through.</p>
+          <p className="m-0 mt-2 text-ink-muted max-w-[280px]">Find every AI request your company makes, then put each one through a gateway you control.</p>
         </div>
         {COLUMNS.map((c) => (
           <nav key={c.title} aria-label={c.title} className="flex flex-col gap-1">
