@@ -61,7 +61,8 @@ tenants via `X-Tenant-Id`; everyone else is limited to their own.
 
 ## Testing
 
-- **Unit tests** in each workspace: `npm test` from the root. CI runs them on every push.
+- **Unit tests** in each workspace: `npm test` from the root, plus the browser extension's
+  `node --test extensions/shadow-ai-guard/tests/lib.test.mjs`.
 - **End-to-end request path** ([tests/e2e/request-path.test.mjs](../tests/e2e/request-path.test.mjs)): real
   requests through the gateway, policy engine, data protection and a mock model, checking what the app got
   back, what the model received and what the case file says. Covers clean prompts, personal-data removal in
@@ -72,10 +73,23 @@ tenants via `X-Tenant-Id`; everyone else is limited to their own.
 
 ## Deployment modes
 
-Hosted by us, or everything in the customer's AWS account. A third mode, where we run the dashboard and
-the customer runs the request path, is planned in [HYBRID.md](HYBRID.md).
+| | Cloud | Hybrid | Self-hosted |
+|---|---|---|---|
+| Request path (gateway, policy engine, data protection) | Our AWS | Customer | Customer |
+| Dashboard, rules, licenses | Our AWS | Our AWS | Customer |
+| Status | Available | Planned: [HYBRID.md](HYBRID.md) | Available in the customer's AWS account; on-premises and Kubernetes planned |
+
+The tenant field `deploymentMode` holds `saas` (Cloud) or `onprem` (Self-hosted in their AWS account).
+
+**Collectors** for AI usage assessments and continuous shadow-AI discovery are a separate component, not part
+of any of these installs. The same collector runs alongside all three, or on its own for an assessment with
+nothing else installed. Planned: [ASSESSMENT.md](ASSESSMENT.md).
 
 ## Known gaps before production
+
+- The CI and deploy workflows are in `ai-governance-platform/.github/workflows/`, but GitHub only runs workflows
+  from the repository root, so they don't run. Moving them also turns on `deploy.yml`, which deploys to AWS on
+  every push to `main`.
 
 - Production deploys need `-c certificateArn=…` for HTTPS; the service Dockerfiles haven't been built on a
   developer machine yet (CI builds them).

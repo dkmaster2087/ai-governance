@@ -67,6 +67,9 @@ spend; the dashboard pages for them link out to the customer's own admin page (s
   `tenant-summaries` table. The dashboard's Overview, Usage and Platform pages read from there.
 - Delivery is at-least-once with a summary ID, so a retried post never double counts.
 
+Shadow-AI collectors (see [ASSESSMENT.md](ASSESSMENT.md)) fit the same way: in hybrid mode they send their
+counts to the customer's data plane, which reports them up with everything else.
+
 ### 3. Evidence stays with them
 
 The dashboard shows case files (masked excerpt, rule, decision) for stopped requests. In hybrid mode those
