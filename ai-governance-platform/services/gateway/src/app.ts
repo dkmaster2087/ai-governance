@@ -40,7 +40,10 @@ export async function buildApp() {
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   });
   await app.register(cors, {
-    origin: securityConfig.allowedOrigins.length > 0 ? securityConfig.allowedOrigins : true,
+    // The browser extension calls from a chrome-extension:// origin and authenticates with an API key.
+    origin: securityConfig.allowedOrigins.length > 0
+      ? (origin, cb) => cb(null, !origin || securityConfig.allowedOrigins.includes(origin) || origin.startsWith('chrome-extension://'))
+      : true,
     credentials: true,
   });
   await app.register(rateLimit, {

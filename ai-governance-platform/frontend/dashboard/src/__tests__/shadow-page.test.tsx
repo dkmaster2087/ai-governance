@@ -14,7 +14,12 @@ const summary: ShadowAiSummary = {
   people: [{ user: 'm.okoro', visits: 6, tools: ['ChatGPT'] }],
 };
 const update = vi.fn(async (_change: unknown) => ({}));
-vi.mock('../lib/shadow-api', () => ({ fetchShadowSummary: vi.fn(async () => summary), updateShadowPolicy: (c: unknown) => update(c) }));
+const policy = { mode: 'monitor', decisions: {}, guidance: { message: 'Use the approved tools.', links: [{ name: 'Acme Assistant', url: 'https://assistant.acme.example' }] } };
+vi.mock('../lib/shadow-api', () => ({
+  fetchShadowSummary: vi.fn(async () => summary),
+  fetchShadowPolicy: vi.fn(async () => policy),
+  updateShadowPolicy: (c: unknown) => update(c),
+}));
 let admin = true;
 vi.mock('../lib/auth', () => ({ useAuth: () => ({ user: { tenantId: 't' }, isAdmin: admin }) }));
 
@@ -54,5 +59,26 @@ describe('Shadow AI page', () => {
     await screen.findByRole('heading', { name: 'ChatGPT' });
     expect(screen.queryByRole('button', { name: 'Block' })).toBeNull();
     expect(screen.queryByRole('button', { name: 'Unblock' })).toBeNull();
+  });
+
+  it('shows and saves what blocked employees see', async () => {
+    renderPage();
+    const panel = await screen.findByRole('region', { name: 'Block page' }).catch(() => null) ?? (await screen.findByLabelText('Block page'));
+    expect(await within(panel).findByText('“Use the approved tools.”')).toBeInTheDocument();
+    expect(within(panel).getByText(/Acme Assistant/)).toBeInTheDocument();
+    fireEvent.click(within(panel).getByRole('button', { name: 'Edit' }));
+    fireEvent.change(within(panel).getByLabelText('Message'), { target: { value: 'Please use Acme Assistant.' } });
+    fireEvent.click(within(panel).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(update).toHaveBeenCalledWith({
+      guidance: { message: 'Please use Acme Assistant.', links: [{ name: 'Acme Assistant', url: 'https://assistant.acme.example' }] },
+    }));
+  });
+
+  it('doesn’t let non-admins edit the block page', async () => {
+    admin = false;
+    renderPage();
+    const panel = await screen.findByLabelText('Block page');
+    await within(panel).findByText('“Use the approved tools.”');
+    expect(within(panel).queryByRole('button', { name: 'Edit' })).toBeNull();
   });
 });

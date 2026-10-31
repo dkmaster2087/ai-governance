@@ -1,104 +1,62 @@
-document.addEventListener('DOMContentLoaded', async () => {
-  // Read directly from storage first (more reliable than messaging)
-  const stored = await chrome.storage.local.get(['config', 'eventLog']);
-  let managed = {};
-  try { managed = (await chrome.storage.managed.get(null)) || {}; } catch { managed = {}; }
-  const config = { ...(stored.config || {}), ...managed };
-  const eventLog = stored.eventLog || [];
+import { safeLinks } from './lib.js';
 
-  // Mode badge
-  const badge = document.getElementById('modeBadge');
-  const mode = config.mode || 'monitor';
-  badge.textContent = mode === 'block' ? 'Blocking' : 'Monitoring';
-  badge.className = `mode mode-${mode}`;
+const $ = (id) => document.getElementById(id);
+const ago = (iso) => {
+  if (!iso) return 'never';
+  const m = Math.round((Date.now() - new Date(iso).getTime()) / 60000);
+  return m < 1 ? 'just now' : m < 60 ? `${m} min ago` : m < 1440 ? `${Math.round(m / 60)} h ago` : `${Math.round(m / 1440)} days ago`;
+};
 
-  // Stats
-  document.getElementById('eventCount').textContent = eventLog.length;
-  const blocked = eventLog.filter((e) => e.blocked).length;
-  document.getElementById('blockedCount').textContent = blocked;
-  const domains = new Set(eventLog.map((e) => e.domain));
-  document.getElementById('domainCount').textContent = domains.size;
+async function render() {
+  const s = await chrome.runtime.sendMessage({ type: 'STATUS' });
+  $('mode').textContent = s.mode === 'block' ? 'Blocking unapproved tools' : 'Watching';
+  $('summary').textContent = !s.configured
+    ? 'Not connected to your company’s Aegis yet.'
+    : s.mode === 'block'
+      ? 'AI tools your company hasn’t approved are blocked in this browser.'
+      : 'This browser tells your company which AI tools are opened. It doesn’t see what you type.';
 
-  // Config fields
-  document.getElementById('tenantId').value = config.tenantId || '';
-  document.getElementById('modeSelect').value = mode;
-  document.getElementById('gatewayUrl').value = config.gatewayUrl || 'http://localhost:3000';
-  // Never echo the stored key back into the page; leave blank to keep the current one.
-  document.getElementById('apiKey').placeholder = config.apiKey ? 'Saved (enter to replace)' : 'aegis_...';
+  const links = safeLinks(s.links);
+  const list = $('links');
+  list.replaceChildren(...links.map((l) => {
+    const li = document.createElement('li');
+    const a = document.createElement('a');
+    a.href = l.url; a.target = '_blank'; a.rel = 'noopener'; a.textContent = l.name;
+    li.append(a);
+    return li;
+  }));
+  $('approved').hidden = links.length === 0;
 
-  // Fields pushed by IT policy are read-only here.
-  const fieldIds = { tenantId: 'tenantId', mode: 'modeSelect', gatewayUrl: 'gatewayUrl', apiKey: 'apiKey' };
-  const managedKeys = Object.keys(managed);
-  for (const k of managedKeys) {
-    if (fieldIds[k]) document.getElementById(fieldIds[k]).disabled = true;
-  }
-  if (managedKeys.length > 0) document.getElementById('managedNote').style.display = '';
+  const facts = [
+    ['Managed by', s.managed ? 'Your IT team' : 'Nobody (test setup)'],
+    ['Reports as', s.identifyUsers ? 'Your work email' : 'This browser, not you by name'],
+    ['Settings checked', ago(s.lastSync)],
+    ['Last report', ago(s.lastReport)],
+  ];
+  $('facts').replaceChildren(...facts.flatMap(([k, v]) => {
+    const dt = document.createElement('dt'); dt.textContent = k;
+    const dd = document.createElement('dd'); dd.textContent = v;
+    return [dt, dd];
+  }));
 
-  // Dashboard link
-  const platformUrl = config.platformUrl || 'http://localhost:5174';
-  document.getElementById('dashLink').href = platformUrl + '/shadow-ai';
-  document.getElementById('dashLink').addEventListener('click', (e) => {
-    e.preventDefault();
-    chrome.tabs.create({ url: platformUrl + '/shadow-ai' });
-  });
+  $('setup').hidden = s.managed;
+  if (!s.managed) $('gatewayUrl').value = s.gatewayUrl || '';
+}
 
-  // Event list
-  const recentEvents = eventLog.slice(-10).reverse();
-  const list = document.getElementById('eventList');
-  if (recentEvents.length === 0) {
-    list.innerHTML = '<div class="empty">No activity detected yet</div>';
-  } else {
-    list.innerHTML = recentEvents.map((evt) => {
-      const time = new Date(evt.timestamp);
-      const ago = formatAgo(time);
-      return `<div class="event">
-        <span class="dot ${evt.blocked ? 'blocked' : 'detected'}"></span>
-        <span class="domain">${escapeHtml(evt.domain)}</span>
-        <span>${escapeHtml(evt.type || '')}</span>
-        <span class="time">${ago}</span>
-      </div>`;
-    }).join('');
-  }
-
-  // Save config
-  document.getElementById('saveBtn').addEventListener('click', async () => {
-    const newConfig = {
-      ...config,
-      tenantId: document.getElementById('tenantId').value.trim(),
-      mode: document.getElementById('modeSelect').value,
-      gatewayUrl: document.getElementById('gatewayUrl').value.trim(),
-    };
-    const newKey = document.getElementById('apiKey').value.trim();
-    if (newKey) newConfig.apiKey = newKey;
-    for (const k of managedKeys) delete newConfig[k];
-    await chrome.storage.local.set({ config: newConfig });
-    // Also notify background worker
-    chrome.runtime.sendMessage({ type: 'UPDATE_CONFIG', config: newConfig });
-    document.getElementById('saveBtn').textContent = 'Saved!';
-    setTimeout(() => { document.getElementById('saveBtn').textContent = 'Save & Apply'; }, 1500);
-  });
-
-  // Clear events
-  document.getElementById('clearBtn').addEventListener('click', async () => {
-    await chrome.storage.local.set({ eventLog: [] });
-    chrome.runtime.sendMessage({ type: 'CLEAR_EVENTS' });
-    document.getElementById('eventCount').textContent = '0';
-    document.getElementById('blockedCount').textContent = '0';
-    document.getElementById('domainCount').textContent = '0';
-    document.getElementById('eventList').innerHTML = '<div class="empty">No activity detected yet</div>';
-  });
+$('save').addEventListener('click', async () => {
+  const { local = {} } = await chrome.storage.local.get('local');
+  const key = $('apiKey').value.trim();
+  await chrome.storage.local.set({ local: { ...local, gatewayUrl: $('gatewayUrl').value.trim(), ...(key ? { apiKey: key } : {}) } });
+  $('apiKey').value = '';
+  $('save').textContent = 'Saved';
+  setTimeout(() => { $('save').textContent = 'Save'; render(); }, 1200);
 });
 
-function formatAgo(date) {
-  const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
-  if (seconds < 60) return `${seconds}s ago`;
-  const minutes = Math.floor(seconds / 60);
-  if (minutes < 60) return `${minutes}m ago`;
-  const hours = Math.floor(minutes / 60);
-  if (hours < 24) return `${hours}h ago`;
-  return `${Math.floor(hours / 24)}d ago`;
-}
+$('sync').addEventListener('click', async () => {
+  $('sync').textContent = 'Checking…';
+  await chrome.runtime.sendMessage({ type: 'SYNC_NOW' });
+  $('sync').textContent = 'Check for new settings';
+  render();
+});
 
-function escapeHtml(value) {
-  return String(value).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
-}
+render();

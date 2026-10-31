@@ -72,6 +72,11 @@ jobs:
         working-directory: ai-governance-platform/frontend/website
         run: npx vitest --run
 
+      # Browser extension logic
+      - name: Test Browser Extension
+        working-directory: ai-governance-platform
+        run: node --test extensions/shadow-ai-guard/tests/lib.test.mjs
+
   build:
     name: Build
     runs-on: ubuntu-latest

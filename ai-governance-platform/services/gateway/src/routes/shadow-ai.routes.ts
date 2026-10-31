@@ -13,11 +13,11 @@ interface ShadowAIEvent {
   id: string;
   timestamp: string;
   domain: string;
-  url?: string;
   type?: string;
   method?: string;
   blocked: boolean;
   tenantId: string;
+  source?: string;
   userId?: string;
 }
 
@@ -27,8 +27,11 @@ const eventsBodySchema = z.object({
     id: z.string().max(128).optional(),
     timestamp: z.string().max(64).optional(),
     domain: z.string().min(1).max(255),
+    // Older extension versions send the full address; it is accepted and discarded, never stored.
     url: z.string().max(2048).optional(),
     type: z.string().max(64).optional(),
+    /** Where the sighting came from: the browser extension today, log connectors later. */
+    source: z.string().max(64).regex(/^[a-z0-9_:-]+$/).optional(),
     method: z.string().max(32).optional(),
     blocked: z.boolean(),
     userId: z.string().max(256).optional(),
@@ -38,6 +41,10 @@ const eventsBodySchema = z.object({
 const policyChangeSchema = z.object({
   mode: z.enum(['monitor', 'block']).optional(),
   decisions: z.record(z.string().max(300), z.enum(['blocked', 'allowed']).nullable()).optional(),
+  guidance: z.object({
+    message: z.string().max(300).optional(),
+    links: z.array(z.object({ name: z.string().max(60), url: z.string().max(500) })).max(10).optional(),
+  }).optional(),
 });
 
 const summaryRangeSchema = z.object({
@@ -74,9 +81,9 @@ export async function shadowAIRoutes(app: FastifyInstance) {
             tenantId,
             eventId: evt.id || `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             timestamp: evt.timestamp || new Date().toISOString(),
-            domain: evt.domain,
-            url: evt.url,
+            domain: evt.domain.toLowerCase(),
             type: evt.type || 'unknown',
+            source: evt.source || 'browser_extension',
             method: evt.method || 'BROWSER',
             blocked: evt.blocked,
             userId: evt.userId || 'unknown',
@@ -94,7 +101,11 @@ export async function shadowAIRoutes(app: FastifyInstance) {
 
   const policies = new ShadowAiPolicyStore();
 
-  // What the browser extension should watch and block, from the tenant's decisions.
+  // What the browser extension should watch and block, for the tenant its API key belongs to.
+  app.get('/shadow-ai/config', { preHandler: requireAccess({ roles: ['tenant_admin', 'tenant_auditor'], scopes: ['shadow_ai:ingest'] }) }, async (request) =>
+    extensionConfig(request.tenantId, await policies.get(request.tenantId)));
+
+  // Same, by tenant ID (older extension versions).
   app.get('/shadow-ai/config/:tenantId', { preHandler: [requireAccess({ roles: ['tenant_admin', 'tenant_auditor'], scopes: ['shadow_ai:ingest'] }), requireTenantParam] }, async (request) => {
     const { tenantId } = request.params as { tenantId: string };
     return extensionConfig(tenantId, await policies.get(tenantId));

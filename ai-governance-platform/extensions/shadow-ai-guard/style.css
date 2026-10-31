@@ -1,0 +1,28 @@
+:root { --ink: #14213D; --muted: #5B6478; --line: #E3E6EC; --canvas: #F6F7F9; --stop: #C8322A; }
+* { box-sizing: border-box; }
+body { margin: 0; font: 15px/1.5 -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; color: var(--ink); background: #fff; }
+h1 { font-size: 28px; line-height: 1.2; margin: 6px 0 12px; letter-spacing: -0.01em; }
+h2 { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 20px 0 8px; }
+a { color: var(--ink); font-weight: 600; }
+ul { list-style: none; margin: 0; padding: 0; }
+.lead { color: #2B3550; margin: 0; }
+.fine { color: var(--muted); font-size: 13px; }
+.eyebrow { color: var(--stop); font-weight: 600; font-size: 13px; margin: 0; }
+
+.page { background: var(--canvas); min-height: 100vh; display: grid; place-items: center; padding: 24px 16px; }
+.card { background: #fff; border: 1px solid var(--line); border-radius: 12px; padding: 32px; max-width: 560px; width: 100%; }
+.card li { display: flex; justify-content: space-between; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); }
+.card li span { color: var(--muted); font-size: 13px; }
+.card .fine { margin: 24px 0 0; }
+
+.popup { width: 340px; padding: 16px; }
+.popup header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.pill { font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; color: var(--muted); }
+.popup li { padding: 6px 0; border-top: 1px solid var(--line); }
+dl { display: grid; grid-template-columns: auto 1fr; gap: 4px 12px; margin: 16px 0; font-size: 13px; }
+dt { color: var(--muted); }
+dd { margin: 0; }
+label { display: block; font-size: 13px; margin: 8px 0; }
+input { display: block; width: 100%; margin-top: 4px; padding: 7px 9px; border: 1px solid #C9CED8; border-radius: 8px; font: inherit; }
+button { font: inherit; font-weight: 600; padding: 8px 14px; border-radius: 8px; border: 1px solid var(--ink); background: var(--ink); color: #fff; cursor: pointer; margin-top: 8px; }
+button.secondary { background: #fff; color: var(--ink); width: 100%; }

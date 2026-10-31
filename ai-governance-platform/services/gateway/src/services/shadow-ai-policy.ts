@@ -4,14 +4,30 @@ import { AI_TOOLS, toolById } from './ai-tools';
 
 export type ToolDecision = 'blocked' | 'allowed';
 
+export interface GuidanceLink { name: string; url: string }
+
+/** What employees see when the extension blocks a tool. */
+export interface BlockGuidance {
+  message: string;
+  /** Approved alternatives the company names itself (an internal assistant, an enterprise ChatGPT workspace). */
+  links: GuidanceLink[];
+}
+
+export const DEFAULT_GUIDANCE: BlockGuidance = {
+  message: 'Your company hasn’t approved this AI tool. Use one of the approved tools instead.',
+  links: [],
+};
+export const MAX_GUIDANCE_LINKS = 5;
+
 /** A tenant's choices for AI tools reached outside the gateway. */
 export interface ShadowAiPolicy {
   /** What the extension does for tools without a decision: just record visits, or block them. */
   mode: 'monitor' | 'block';
   decisions: Record<string, ToolDecision>;
+  guidance: BlockGuidance;
 }
 
-export const DEFAULT_SHADOW_POLICY: ShadowAiPolicy = { mode: 'monitor', decisions: {} };
+export const DEFAULT_SHADOW_POLICY: ShadowAiPolicy = { mode: 'monitor', decisions: {}, guidance: DEFAULT_GUIDANCE };
 
 /** Stored on the tenant record so it moves with the tenant. */
 export class ShadowAiPolicyStore {
@@ -21,7 +37,14 @@ export class ShadowAiPolicyStore {
   async get(tenantId: string): Promise<ShadowAiPolicy> {
     const result = await this.client.send(new GetCommand({ TableName: this.table, Key: { tenantId }, ProjectionExpression: 'shadowAi' }));
     const stored = result.Item?.shadowAi as Partial<ShadowAiPolicy> | undefined;
-    return { mode: stored?.mode === 'block' ? 'block' : 'monitor', decisions: { ...(stored?.decisions ?? {}) } };
+    return {
+      mode: stored?.mode === 'block' ? 'block' : 'monitor',
+      decisions: { ...(stored?.decisions ?? {}) },
+      guidance: {
+        message: stored?.guidance?.message || DEFAULT_GUIDANCE.message,
+        links: [...(stored?.guidance?.links ?? [])],
+      },
+    };
   }
 
   async save(tenantId: string, policy: ShadowAiPolicy): Promise<void> {
@@ -35,18 +58,42 @@ export class ShadowAiPolicyStore {
   }
 }
 
+export interface PolicyChange {
+  mode?: 'monitor' | 'block';
+  decisions?: Record<string, ToolDecision | null>;
+  guidance?: { message?: string; links?: GuidanceLink[] };
+}
+
+/** Only plain https links, so the block page can't be used to send people somewhere odd. */
+function validLink(l: GuidanceLink): boolean {
+  try {
+    const u = new URL(l.url);
+    return u.protocol === 'https:' && !u.username && !u.password && l.name.trim().length > 0;
+  } catch {
+    return false;
+  }
+}
+
 /** Apply a change: a decision of null clears it (back to undecided). Unknown tool ids are rejected. */
-export function applyPolicyChange(
-  current: ShadowAiPolicy,
-  change: { mode?: 'monitor' | 'block'; decisions?: Record<string, ToolDecision | null> }
-): { policy: ShadowAiPolicy } | { error: string } {
+export function applyPolicyChange(current: ShadowAiPolicy, change: PolicyChange): { policy: ShadowAiPolicy } | { error: string } {
   const decisions = { ...current.decisions };
   for (const [id, decision] of Object.entries(change.decisions ?? {})) {
     if (!toolById(id)) return { error: `Unknown tool: ${id}` };
     if (decision === null) delete decisions[id];
     else decisions[id] = decision;
   }
-  return { policy: { mode: change.mode ?? current.mode, decisions } };
+  let guidance = current.guidance;
+  if (change.guidance) {
+    const links = change.guidance.links ?? guidance.links;
+    if (links.length > MAX_GUIDANCE_LINKS) return { error: `At most ${MAX_GUIDANCE_LINKS} links` };
+    const bad = links.find((l) => !validLink(l));
+    if (bad) return { error: `Links must be https addresses with a name: ${bad.url}` };
+    guidance = {
+      message: change.guidance.message?.trim() || (change.guidance.message === undefined ? guidance.message : DEFAULT_GUIDANCE.message),
+      links: links.map((l) => ({ name: l.name.trim(), url: l.url })),
+    };
+  }
+  return { policy: { mode: change.mode ?? current.mode, decisions, guidance } };
 }
 
 /** What the browser extension enforces, derived from the policy. */
@@ -65,5 +112,18 @@ export function extensionConfig(tenantId: string, policy: ShadowAiPolicy) {
     enforcedDomains: domainsOf(blocked),
     // Never blocked or recorded.
     allowedDomains: domainsOf(allowed),
+    // What the block page shows: the company's message, its own links, then approved tools from the list.
+    blockPage: {
+      message: policy.guidance.message,
+      links: dedupe([
+        ...policy.guidance.links,
+        ...allowed.map(toolById).filter((t) => t?.url).map((t) => ({ name: t!.name, url: t!.url! })),
+      ]),
+    },
   };
+}
+
+function dedupe(links: GuidanceLink[]): GuidanceLink[] {
+  const seen = new Set<string>();
+  return links.filter((l) => !seen.has(l.url) && seen.add(l.url));
 }

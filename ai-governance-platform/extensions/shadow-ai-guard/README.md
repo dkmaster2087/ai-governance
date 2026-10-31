@@ -1,60 +1,45 @@
-# Aegis AI — Shadow AI Guard (Chrome Extension)
+# Aegis Shadow AI Guard (Chrome extension, beta)
 
-Browser extension that detects and blocks unauthorized AI tool usage, managed per-tenant from the Aegis AI governance platform.
+Tells the company which AI tools are opened in its browsers, blocks the ones it decided to block, and points
+people to the approved ones. Decisions are made on the dashboard's Shadow AI page.
 
-## Install (Development)
+## What it records
 
-1. Open Chrome → `chrome://extensions`
-2. Enable "Developer mode" (top right)
-3. Click "Load unpacked"
-4. Select this `shadow-ai-guard` folder
+For each AI tool on the watch list: the domain, the time, whether it was a page visit or a background call,
+whether it was blocked, and who (a random ID per browser, or the Chrome profile's work email if IT turns that
+on). Repeat sightings of the same tool within ten minutes count once. It never records the page address, what
+people type or what the tool answers.
 
-## Configure
+## Settings (Chrome policy)
 
-1. Click the extension icon in the toolbar
-2. Enter your Tenant ID (from the governance dashboard)
-3. Set mode: **Monitor** (log only) or **Block** (redirect)
-4. Set Gateway URL (default: `http://localhost:3000`)
-5. Click "Save & Apply"
+Force-install it with Google Admin, Intune or Jamf and set these managed values (`schema.json`):
 
-## How it works
+| Key | Value |
+|---|---|
+| `gatewayUrl` | The Aegis gateway, e.g. `https://gateway.example.com` |
+| `apiKey` | An Aegis API key with only the `shadow_ai:ingest` permission. The tenant comes from the key. |
+| `identifyUsers` | `true` to report the profile's work email; otherwise a random ID per browser |
 
-- **Monitor mode**: Logs attempts to access AI tools (OpenAI, Claude, Gemini, etc.) without blocking. Events appear in the Shadow AI dashboard.
-- **Block mode**: Redirects requests to blocked AI domains to a governance page. Events are still logged.
+Policy values can't be changed by employees. Everything else (watch list, monitor or block for undecided tools,
+blocked and approved tools, the block page's message and links) comes from the gateway every five minutes,
+and the gateway can't change where the extension reports or with which key.
 
-## Monitored domains
+Without policy, the popup offers a test setup (gateway address and key) for trying it out.
 
-- api.openai.com, chat.openai.com
-- api.anthropic.com, claude.ai
-- bard.google.com, gemini.google.com
-- perplexity.ai
-- api.cohere.ai, api.mistral.ai
-- api.together.ai, api.groq.com
-- api-inference.huggingface.co
-- api.replicate.com
+## Files
 
-## Tenant configuration
+- `lib.js`: the decisions (settings precedence, blocking rules, what to record). No Chrome APIs.
+- `background.js`: service worker: syncs settings, applies blocking rules, records and reports sightings.
+- `blocked.html`/`blocked.js`: the page shown instead of a blocked tool.
+- `popup.html`/`popup.js`: status for employees; test setup when not managed.
 
-Admins can customize per-tenant:
-- Which domains to block vs allow
-- Block or monitor mode
-- Custom allowed domains (e.g., Azure OpenAI for specific tenants)
-- Sync interval for config updates
+## Tests
 
-Config syncs from the governance platform every 5 minutes.
+```bash
+node --test extensions/shadow-ai-guard/tests/lib.test.mjs
+```
 
-## Authentication and managed deployment
+## Permissions
 
-The extension authenticates to the gateway with an Aegis API key that has the `shadow_ai:ingest` scope.
-Create one from the dashboard (API Keys → scope `shadow_ai:ingest`); the tenant is taken from the key.
-
-For company-wide rollout, push settings through Chrome policy (Google Admin, Intune, Jamf) instead of the popup.
-Values set by policy override the popup and can't be changed by the user. Supported keys (see `schema.json`):
-
-| Key | Meaning |
-|-----|---------|
-| `tenantId` | Aegis tenant ID |
-| `apiKey` | API key with the `shadow_ai:ingest` scope |
-| `gatewayUrl` | Gateway base URL |
-| `platformUrl` | Dashboard URL |
-| `mode` | `monitor` or `block` |
+`<all_urls>` host access is needed because the watch list comes from the gateway and can include tools added
+later; the extension only acts on domains on that list. `identity.email` is used only when `identifyUsers` is on.

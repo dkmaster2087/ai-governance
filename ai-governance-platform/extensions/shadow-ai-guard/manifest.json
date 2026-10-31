@@ -1,34 +1,22 @@
 {
   "manifest_version": 3,
-  "name": "Aegis AI \u2014 Shadow AI Guard",
-  "version": "1.0.0",
-  "description": "Detects and blocks unauthorized AI tool usage. Managed by your organization's AI governance platform.",
+  "name": "Aegis AI — Shadow AI Guard",
+  "version": "1.1.0",
+  "description": "Tells your company which AI tools are used in this browser and steers you to the approved ones. Managed by your IT team.",
   "permissions": [
     "declarativeNetRequest",
     "storage",
     "alarms",
-    "webRequest"
+    "webRequest",
+    "identity",
+    "identity.email"
   ],
   "host_permissions": [
-    "https://*.openai.com/*",
-    "https://*.chatgpt.com/*",
-    "https://*.anthropic.com/*",
-    "https://*.claude.ai/*",
-    "https://*.bard.google.com/*",
-    "https://*.gemini.google.com/*",
-    "https://*.aistudio.google.com/*",
-    "https://*.perplexity.ai/*",
-    "https://*.huggingface.co/api/*",
-    "https://*.replicate.com/api/*",
-    "https://*.cohere.ai/*",
-    "https://*.mistral.ai/*",
-    "https://*.together.ai/*",
-    "https://*.groq.com/*",
-    "https://*.copilot.microsoft.com/*",
-    "https://*.deepseek.com/*"
+    "<all_urls>"
   ],
   "background": {
-    "service_worker": "background.js"
+    "service_worker": "background.js",
+    "type": "module"
   },
   "action": {
     "default_popup": "popup.html",
@@ -43,16 +31,21 @@
     "48": "icons/icon48.png",
     "128": "icons/icon128.png"
   },
-  "declarative_net_request": {
-    "rule_resources": [
-      {
-        "id": "dynamic_rules",
-        "enabled": true,
-        "path": "rules.json"
-      }
-    ]
-  },
   "storage": {
     "managed_schema": "schema.json"
-  }
+  },
+  "web_accessible_resources": [
+    {
+      "resources": [
+        "blocked.html",
+        "blocked.js",
+        "lib.js",
+        "style.css"
+      ],
+      "matches": [
+        "<all_urls>"
+      ]
+    }
+  ],
+  "minimum_chrome_version": "120"
 }

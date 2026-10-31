@@ -1,10 +1,8 @@
 {
   "type": "object",
   "properties": {
-    "tenantId": { "title": "Aegis tenant ID", "type": "string" },
-    "apiKey": { "title": "Aegis API key with the shadow_ai:ingest scope", "type": "string" },
-    "gatewayUrl": { "title": "Aegis gateway URL", "type": "string" },
-    "platformUrl": { "title": "Aegis dashboard URL", "type": "string" },
-    "mode": { "title": "monitor or block", "type": "string", "enum": ["monitor", "block"] }
+    "gatewayUrl": { "title": "Aegis gateway address", "description": "For example https://gateway.example.com", "type": "string" },
+    "apiKey": { "title": "Aegis API key with the shadow_ai:ingest permission", "type": "string" },
+    "identifyUsers": { "title": "Report the work email the Chrome profile is signed in with (otherwise a random ID per browser)", "type": "boolean" }
   }
 }

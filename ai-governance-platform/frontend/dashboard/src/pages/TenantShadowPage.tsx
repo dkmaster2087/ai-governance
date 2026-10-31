@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { RangeKey, RANGE_LABELS } from '../lib/gateway-api';
-import { fetchShadowSummary, ShadowAiSummary, updateShadowPolicy } from '../lib/shadow-api';
+import { fetchShadowPolicy, fetchShadowSummary, GuidanceLink, ShadowAiSummary, updateShadowPolicy } from '../lib/shadow-api';
+import { errorMessage } from '../lib/rules-api';
 import { Button, Note, Panel, SectionLabel, Segmented, formatCount } from '../components/aegis/primitives';
 
 const RANGE_OPTIONS = (Object.keys(RANGE_LABELS) as RangeKey[]).map((value) => ({ value, label: RANGE_LABELS[value].button }));
@@ -64,6 +65,70 @@ function ToolRow({
   );
 }
 
+const input = 'min-h-[38px] px-3 border border-line-strong rounded-lg bg-white w-full';
+
+/** What employees see when the extension blocks a tool: a message and the approved alternatives. */
+function BlockPagePanel({ canEdit, approvedTools }: { canEdit: boolean; approvedTools: string[] }) {
+  const queryClient = useQueryClient();
+  const policy = useQuery({ queryKey: ['shadow-policy'], queryFn: fetchShadowPolicy });
+  const [editing, setEditing] = useState(false);
+  const [message, setMessage] = useState('');
+  const [links, setLinks] = useState<GuidanceLink[]>([]);
+  const save = useMutation({
+    mutationFn: () => updateShadowPolicy({ guidance: { message, links: links.filter((l) => l.name.trim() || l.url.trim()) } }),
+    onSuccess: () => { setEditing(false); queryClient.invalidateQueries({ queryKey: ['shadow-policy'] }); },
+  });
+  const g = policy.data?.guidance;
+  if (!g) return null;
+
+  const start = () => { setMessage(g.message); setLinks(g.links.length ? g.links : [{ name: '', url: '' }]); setEditing(true); };
+  const setLink = (i: number, patch: Partial<GuidanceLink>) => setLinks(links.map((l, j) => (j === i ? { ...l, ...patch } : l)));
+
+  return (
+    <Panel aria-label="Block page" className="px-[22px] py-[18px]">
+      <div className="flex flex-wrap justify-between items-start gap-4">
+        <div className="min-w-0">
+          <p className="m-0 font-semibold">When the extension blocks a tool, people see</p>
+          {!editing && (
+            <>
+              <p className="m-0 mt-1 text-ink-soft">“{g.message}”</p>
+              <p className="m-0 mt-1 text-sm text-ink-muted">
+                {[...g.links.map((l) => l.name), ...approvedTools].length
+                  ? <>With links to: {[...g.links.map((l) => l.name), ...approvedTools].join(', ')}.</>
+                  : 'No approved alternatives to link to yet. Add your own, or approve a tool below.'}
+              </p>
+            </>
+          )}
+        </div>
+        {canEdit && !editing && <Button variant="secondary" onClick={start}>Edit</Button>}
+      </div>
+      {editing && (
+        <form className="mt-4 flex flex-col gap-3" onSubmit={(e) => { e.preventDefault(); save.mutate(); }}>
+          <label className="text-sm font-semibold">Message
+            <textarea value={message} maxLength={300} rows={2} onChange={(e) => setMessage(e.target.value)} className={`${input} mt-1 py-2 font-normal`} />
+          </label>
+          <div>
+            <p className="m-0 text-sm font-semibold">Your approved tools <span className="font-normal text-ink-muted">(tools you approve below are added after these)</span></p>
+            {links.map((l, i) => (
+              <div key={i} className="grid grid-cols-[minmax(0,1fr)_minmax(0,2fr)_auto] gap-2 mt-2">
+                <input aria-label={`Link ${i + 1} name`} placeholder="Acme Assistant" value={l.name} maxLength={60} onChange={(e) => setLink(i, { name: e.target.value })} className={input} />
+                <input aria-label={`Link ${i + 1} address`} placeholder="https://assistant.acme.com" value={l.url} type="url" onChange={(e) => setLink(i, { url: e.target.value })} className={input} />
+                <Button type="button" variant="ghost" onClick={() => setLinks(links.filter((_, j) => j !== i))}>Remove</Button>
+              </div>
+            ))}
+            {links.length < 5 && <Button type="button" variant="ghost" className="mt-1" onClick={() => setLinks([...links, { name: '', url: '' }])}>Add a link</Button>}
+          </div>
+          <div className="flex gap-2">
+            <Button type="submit" disabled={save.isPending}>{save.isPending ? 'Saving…' : 'Save'}</Button>
+            <Button type="button" variant="ghost" onClick={() => setEditing(false)}>Cancel</Button>
+          </div>
+          {save.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(save.error)}</p>}
+        </form>
+      )}
+    </Panel>
+  );
+}
+
 export function ShadowAiPage() {
   const { user, isAdmin } = useAuth();
   const queryClient = useQueryClient();
@@ -116,6 +181,8 @@ export function ShadowAiPage() {
         </Panel>
       )}
 
+      {data && <BlockPagePanel canEdit={isAdmin} approvedTools={data.tools.filter((t) => t.decision === 'allowed').map((t) => t.name)} />}
+
       {change.isError && <p role="alert" className="m-0 text-stop-text font-semibold">That change wasn’t saved. Try again.</p>}
       {isError && (
         <Panel className="px-6"><Note title="Couldn’t load shadow AI activity."><button type="button" className="underline font-semibold" onClick={() => refetch()}>Try again</button></Note></Panel>
@@ -161,7 +228,7 @@ export function ShadowAiPage() {
 
       {data && (
         <p className="m-0 text-xs text-ink-muted">
-          Only browsers with the Aegis extension are counted. Visits are kept for {data.retentionDays} days, so trends need the previous period to fall inside that.
+          Only browsers with the Aegis extension are counted. A person is their work email when your IT team turns that on, otherwise one browser. Visits are kept for {data.retentionDays} days, so trends need the previous period to fall inside that.
         </p>
       )}
     </div>

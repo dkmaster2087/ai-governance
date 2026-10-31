@@ -20,8 +20,9 @@ to let requests through instead; those are flagged in their evidence record.
   OpenAI-compatible APIs. Streaming responses are not supported yet.
 - **IDEs (beta):** the corporate proxy sends provider calls to `/v1/proxy/{openai|anthropic|cohere|mistral}/…`
   with an `X-Aegis-Key` header; the developer's own provider key passes through untouched.
-- **Browsers:** the Shadow AI Guard extension, deployed through Chrome policy, records and blocks AI tools used
-  outside the gateway.
+- **Browsers (beta):** the Shadow AI Guard extension, deployed through Chrome policy (`gatewayUrl`, `apiKey`,
+  optional `identifyUsers`), records which AI tools are opened (domain only, once per tool per ten minutes),
+  blocks the ones the tenant blocked, and shows a block page with the tenant's message and approved tools.
 
 ## Dashboard
 
@@ -29,7 +30,7 @@ to let requests through instead; those are flagged in their evidence record.
 |---|---|
 | Gateway | Traffic as a pipeline (apps → checks → providers), decisions waiting, a plain-English feed |
 | Stopped | Stopped requests grouped by rule, with apps, people, per-day counts and the masked trigger |
-| Shadow AI | AI tools used outside the gateway, by tool; Block / Allow / keep watching per tool |
+| Shadow AI | AI tools used outside the gateway, by tool; Block / Allow / keep watching per tool; the block page's message and approved-tool links |
 | Rules | Rules as sentences grouped by check, with weekly results; add, edit, switch off; fail mode |
 | Evidence | Every decision, searchable; a case file per request with a downloadable export |
 | API keys | Keys with scoped permissions and optional expiry; create, replace, revoke |

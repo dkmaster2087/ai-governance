@@ -1,5 +1,5 @@
 import { toolForDomain, toolById } from '../services/ai-tools';
-import { applyPolicyChange, extensionConfig, DEFAULT_SHADOW_POLICY } from '../services/shadow-ai-policy';
+import { applyPolicyChange, extensionConfig, DEFAULT_SHADOW_POLICY, DEFAULT_GUIDANCE } from '../services/shadow-ai-policy';
 import { summarizeShadowAi } from '../services/shadow-ai-summary';
 
 describe('AI tool catalog', () => {
@@ -22,7 +22,7 @@ describe('shadow AI policy', () => {
     const a = applyPolicyChange(DEFAULT_SHADOW_POLICY, { decisions: { chatgpt: 'blocked', claude: 'allowed' } });
     expect('policy' in a && a.policy.decisions).toEqual({ chatgpt: 'blocked', claude: 'allowed' });
     const b = applyPolicyChange((a as any).policy, { decisions: { chatgpt: null }, mode: 'block' });
-    expect('policy' in b && b.policy).toEqual({ mode: 'block', decisions: { claude: 'allowed' } });
+    expect('policy' in b && b.policy).toEqual({ mode: 'block', decisions: { claude: 'allowed' }, guidance: DEFAULT_GUIDANCE });
   });
 
   it('rejects unknown tools', () => {
@@ -30,11 +30,37 @@ describe('shadow AI policy', () => {
   });
 
   it('turns decisions into what the extension enforces', () => {
-    const cfg = extensionConfig('t', { mode: 'monitor', decisions: { chatgpt: 'blocked', claude: 'allowed' } });
+    const cfg = extensionConfig('t', { mode: 'monitor', decisions: { chatgpt: 'blocked', claude: 'allowed' }, guidance: DEFAULT_GUIDANCE });
     expect(cfg.enforcedDomains).toEqual(['chatgpt.com', 'chat.openai.com']);
     expect(cfg.allowedDomains).toEqual(['claude.ai']);
     expect(cfg.blockedDomains).toContain('gemini.google.com');
     expect(cfg.mode).toBe('monitor');
+  });
+});
+
+describe('block page guidance', () => {
+  const internal = { name: 'Acme Assistant', url: 'https://assistant.acme.example' };
+
+  it('lists the company’s own links first, then approved tools, without repeats', () => {
+    const r = applyPolicyChange(DEFAULT_SHADOW_POLICY, {
+      decisions: { claude: 'allowed', chatgpt: 'blocked' },
+      guidance: { message: 'Use the approved tools.', links: [internal, { name: 'Claude', url: 'https://claude.ai' }] },
+    });
+    const cfg = extensionConfig('t', (r as any).policy);
+    expect(cfg.blockPage).toEqual({ message: 'Use the approved tools.', links: [internal, { name: 'Claude', url: 'https://claude.ai' }] });
+  });
+
+  it('accepts only named https links, at most five', () => {
+    expect(applyPolicyChange(DEFAULT_SHADOW_POLICY, { guidance: { links: [{ name: 'x', url: 'javascript:alert(1)' }] } })).toHaveProperty('error');
+    expect(applyPolicyChange(DEFAULT_SHADOW_POLICY, { guidance: { links: [{ name: 'x', url: 'http://plain.example' }] } })).toHaveProperty('error');
+    expect(applyPolicyChange(DEFAULT_SHADOW_POLICY, { guidance: { links: [{ name: ' ', url: 'https://a.example' }] } })).toHaveProperty('error');
+    const six = Array.from({ length: 6 }, (_, i) => ({ name: `L${i}`, url: `https://l${i}.example` }));
+    expect(applyPolicyChange(DEFAULT_SHADOW_POLICY, { guidance: { links: six } })).toHaveProperty('error');
+  });
+
+  it('falls back to the default message when cleared', () => {
+    const r = applyPolicyChange(DEFAULT_SHADOW_POLICY, { guidance: { message: '  ' } });
+    expect((r as any).policy.guidance.message).toBe(DEFAULT_GUIDANCE.message);
   });
 });
 
@@ -58,7 +84,7 @@ describe('summarizeShadowAi', () => {
   });
 
   it('keeps decided tools listed even without visits', () => {
-    const s = summarizeShadowAi(events, { mode: 'monitor', decisions: { deepseek: 'blocked' } }, range);
+    const s = summarizeShadowAi(events, { mode: 'monitor', decisions: { deepseek: 'blocked' }, guidance: DEFAULT_GUIDANCE }, range);
     expect(s.tools.find((t) => t.id === 'deepseek')).toMatchObject({ visits: 0, decision: 'blocked' });
   });
 

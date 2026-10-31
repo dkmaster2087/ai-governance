@@ -3,17 +3,19 @@ export interface AiTool {
   id: string;
   name: string;
   domains: string[];
+  /** Where people open it, for links on the extension's block page. */
+  url?: string;
 }
 
 export const AI_TOOLS: AiTool[] = [
-  { id: 'chatgpt', name: 'ChatGPT', domains: ['chatgpt.com', 'chat.openai.com'] },
-  { id: 'claude', name: 'Claude', domains: ['claude.ai'] },
-  { id: 'gemini', name: 'Gemini', domains: ['gemini.google.com', 'bard.google.com', 'aistudio.google.com'] },
-  { id: 'copilot', name: 'Microsoft Copilot', domains: ['copilot.microsoft.com'] },
-  { id: 'perplexity', name: 'Perplexity', domains: ['perplexity.ai'] },
-  { id: 'deepseek', name: 'DeepSeek', domains: ['chat.deepseek.com', 'deepseek.com'] },
-  { id: 'mistral', name: 'Le Chat (Mistral)', domains: ['chat.mistral.ai'] },
-  { id: 'huggingface', name: 'Hugging Face', domains: ['huggingface.co'] },
+  { id: 'chatgpt', name: 'ChatGPT', domains: ['chatgpt.com', 'chat.openai.com'], url: 'https://chatgpt.com' },
+  { id: 'claude', name: 'Claude', domains: ['claude.ai'], url: 'https://claude.ai' },
+  { id: 'gemini', name: 'Gemini', domains: ['gemini.google.com', 'bard.google.com', 'aistudio.google.com'], url: 'https://gemini.google.com' },
+  { id: 'copilot', name: 'Microsoft Copilot', domains: ['copilot.microsoft.com'], url: 'https://copilot.microsoft.com' },
+  { id: 'perplexity', name: 'Perplexity', domains: ['perplexity.ai'], url: 'https://www.perplexity.ai' },
+  { id: 'deepseek', name: 'DeepSeek', domains: ['chat.deepseek.com', 'deepseek.com'], url: 'https://chat.deepseek.com' },
+  { id: 'mistral', name: 'Le Chat (Mistral)', domains: ['chat.mistral.ai'], url: 'https://chat.mistral.ai' },
+  { id: 'huggingface', name: 'Hugging Face', domains: ['huggingface.co'], url: 'https://huggingface.co' },
   { id: 'openai-api', name: 'OpenAI API, called directly', domains: ['api.openai.com'] },
   { id: 'anthropic-api', name: 'Anthropic API, called directly', domains: ['api.anthropic.com'] },
 ];

@@ -107,20 +107,21 @@ client = OpenAI(
     summary: 'See and control AI tools used outside the gateway.',
     body: (
       <>
-        <P>The Aegis extension for Chrome records visits to AI tools such as ChatGPT, Claude, Gemini and Perplexity, and blocks the ones you decide to block.</P>
+        <P>The Aegis extension for Chrome records which AI tools, such as ChatGPT, Claude, Gemini and Perplexity, are opened in your company’s browsers. It blocks only the tools you decide to block, and points people to the ones you approve.</P>
+        <P>It records the tool’s domain, the time and whether it was blocked. It never records the page address, what people type or what the tool answers. Repeat visits to the same tool within ten minutes count once.</P>
         <H2>1. Create an extension key</H2>
         <P>In <strong>More → API keys</strong>, create a key with only the <C>shadow_ai:ingest</C> permission. It can report visits and read the extension’s settings, nothing else.</P>
         <H2>2. Push it with Chrome policy</H2>
-        <P>Deploy the extension with Google Admin, Intune or Jamf and set these managed values. Values set by policy can’t be changed by employees.</P>
+        <P>Force-install the extension with Google Admin, Intune or Jamf and set these managed values. Employees can’t change them, and the extension finds your company from the key.</P>
         <Table head={['Key', 'Value']} rows={[
-          [<C>tenantId</C>, 'Your company’s tenant ID'],
-          [<C>apiKey</C>, 'The extension key from step 1'],
           [<C>gatewayUrl</C>, 'Your gateway address'],
-          [<C>platformUrl</C>, 'Your dashboard address (blocked tools redirect to its “not approved” page)'],
-          [<C>mode</C>, <><C>monitor</C> or <C>block</C>: what to do with tools you haven’t decided on</>],
+          [<C>apiKey</C>, 'The extension key from step 1'],
+          [<C>identifyUsers</C>, <><C>true</C> to report the work email each Chrome profile is signed in with. Leave it off and each browser reports as a random ID.</>],
         ]} />
         <H2>3. Decide tool by tool</H2>
-        <P>The Shadow AI page lists each tool with visits, people and the trend. <strong>Block</strong> stops it in every browser; <strong>Allow</strong> stops recording it. The extension picks up changes within five minutes.</P>
+        <P>The Shadow AI page lists each tool with visits, people and the trend. It starts in <strong>Watch only</strong>: nothing is blocked until you decide. <strong>Block</strong> stops a tool in every browser; <strong>Allow</strong> stops recording it and adds it to the approved list. The extension picks up changes within five minutes.</P>
+        <H2>4. Say what people should use instead</H2>
+        <P>When the extension blocks a tool, it shows a page with your message and links to approved tools: your own (an internal assistant or your enterprise ChatGPT workspace, for example) followed by the tools you allowed. Set them under <strong>When the extension blocks a tool</strong> on the Shadow AI page.</P>
         <P>Only browsers with the extension are counted. Visits are kept for 30 days.</P>
       </>
     ),

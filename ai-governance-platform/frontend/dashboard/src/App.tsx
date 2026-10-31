@@ -1,11 +1,10 @@
-import { Routes, Route, Navigate, useLocation } from 'react-router-dom';
+import { Routes, Route, Navigate } from 'react-router-dom';
 import { useAuth } from './lib/auth';
 import { Shell } from './components/layout/Shell';
 import { LoginPage } from './pages/LoginPage';
 import { GatewayPage } from './pages/GatewayPage';
 import { StoppedPage } from './pages/StoppedPage';
 import { ShadowAiPage } from './pages/TenantShadowPage';
-import { BlockedPage } from './pages/BlockedPage';
 import { RulesPage } from './pages/RulesPage';
 import { ApiKeysPage } from './pages/ApiKeysPage';
 import { PlatformDashboardPage } from './pages/PlatformDashboardPage';
@@ -53,10 +52,6 @@ function RequireAuditAccess({ children }: { children: React.ReactNode }) {
 
 export default function App() {
   const { user, restoring, hasDashboardAccess, isPlatformAdmin } = useAuth();
-  const location = useLocation();
-
-  // Where the browser extension sends people when it blocks an AI tool. Public, no sign-in.
-  if (location.pathname === '/blocked') return <BlockedPage />;
 
   // Don't redirect to sign-in while an existing session is still being restored.
   if (restoring) return null;
