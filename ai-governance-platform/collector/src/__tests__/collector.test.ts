@@ -49,6 +49,8 @@ describe('aggregation and privacy', () => {
     expect(p.names.get(person.who)).toBe('jane.doe@acme.com');
     expect(new Pseudonymizer(KEY).code('jane.doe@acme.com')).toBe(person.who);
     expect(new Pseudonymizer('b'.repeat(64)).code('jane.doe@acme.com')).not.toBe(person.who);
+    // The same account written three ways is one person.
+    expect(new Set([p.code('ACME\\Jane.Doe'), p.code('jane.doe'), p.code('jane.doe@acme.com')]).size).toBe(1);
   });
 
   it('leaves out callers the customer lists, such as the Aegis gateway itself', () => {
@@ -142,9 +144,11 @@ describe('findings and recommendations', () => {
     expect(f.recommendations[2].items[0]).toMatch(/^DeepSeek API/);
   });
 
-  it('suggests adding CloudTrail when it was not read', () => {
+  it('suggests adding CloudTrail only when other AWS logs were read without it', () => {
     const noTrail = buildFindings(rows.filter((r) => r.source !== 'aws_cloudtrail'), '2026-10-01', '2026-10-30');
     expect(noTrail.recommendations.at(-1)!.title).toBe('Add CloudTrail to see direct use of Amazon Bedrock');
+    const onprem = buildFindings(rows.map((r) => ({ ...r, source: 'squid' })), '2026-10-01', '2026-10-30');
+    expect(onprem.recommendations.some((r) => r.title.includes('CloudTrail'))).toBe(false);
   });
 
   it('renders a report that escapes everything from the logs', () => {

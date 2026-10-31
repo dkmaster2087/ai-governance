@@ -4,9 +4,10 @@ Finds AI usage in logs a company already has and builds an AI usage assessment r
 own environment. It is separate from the Aegis gateway and needs nothing else installed. Plan and roadmap:
 [docs/ASSESSMENT.md](../docs/ASSESSMENT.md).
 
-**Built:** the shared core and the AWS collector (Route 53 Resolver DNS query logs, Network Firewall logs,
-CloudTrail for Amazon Bedrock and SageMaker). **Not built yet:** on-premises syslog, Zscaler/Netskope, Azure,
-Google Cloud, work apps, and sending results to an Aegis instance (`aegis` output).
+**Built:** the shared core; the AWS collector (Route 53 Resolver DNS query logs, Network Firewall logs,
+CloudTrail for Amazon Bedrock and SageMaker); the on-premises collector (syslog from Palo Alto, Fortinet and any
+CEF source such as Check Point; Squid, BIND and Windows DNS log files). **Not built yet:** Zscaler/Netskope,
+Azure, Google Cloud, work apps, and sending results to an Aegis instance (`aegis` output).
 
 ## What it keeps
 
@@ -14,9 +15,10 @@ Only log lines that match a known AI service, as daily counts per service, sourc
 is dropped as it is read. No raw log line, page address or content is stored.
 
 - **Servers and workloads** keep the name the log gives them (instance ID, IP address, IAM role).
-- **People** (IAM users, IAM Identity Center sign-ins) become codes such as `user-3f9a…`, made with a key
-  generated on first run and kept in `private/`. The `private/` folder also holds the code-to-name lookup; it
-  never leaves the customer's storage.
+- **People** (IAM users, IAM Identity Center sign-ins, firewall and proxy user names) become codes such as
+  `user-3f9a…`, made with a key generated on first run and kept in `private/`. `ACME\jdoe`, `jdoe` and
+  `jdoe@acme.example` count as one person. The `private/` folder also holds the code-to-name lookup; it never
+  leaves the customer's storage.
 
 ## Results layout
 
@@ -51,6 +53,38 @@ Notes:
   for the trail.
 - The template assumes the standard `aws` partition (not GovCloud or China).
 
+## On-premises
+
+One container receives syslog and follows log files. Build it and run it on any Linux host with Docker:
+
+```bash
+docker build -f collector/deploy/onprem/Dockerfile -t aegis-collector collector
+docker compose -f collector/deploy/onprem/docker-compose.yml up -d
+```
+
+- **Syslog:** point firewalls and proxies at the host on port 514 (UDP or TCP; the container listens on 5514).
+  One port takes every supported product at once; each line is recognized by its shape. Prefer TCP: UDP
+  syslog drops messages when a device sends bursts faster than the host reads them.
+- **Files:** mount DNS server and proxy log folders read-only under `/logs`. Files are followed as they grow,
+  rotated files are read from the start, `.gz` files are read once, and positions survive restarts.
+- **Results** are in the `/data` volume, same layout as above; `status.json` shows what is being received.
+  The report is rebuilt daily (`REPORT_AT`, UTC), or on demand:
+  `docker exec <container> node dist/cli.js report --out /data`.
+
+| Product | How it arrives | What is read |
+|---|---|---|
+| Palo Alto Networks | syslog | URL filtering logs (THREAT, subtype url): source, user, URL |
+| Fortinet FortiGate | syslog | web filter `hostname`, DNS `qname`, `srcip`, `user`, `sentbyte` |
+| Check Point and others | syslog, CEF | `dhost` or `request`, `src`, `suser`, `rt`, `out` |
+| Squid | file | native access log, including CONNECT |
+| BIND | file or syslog | query log |
+| Windows DNS | file | debug log (packet logging, US date order) |
+
+Settings (environment): `SYSLOG_UDP_PORT`, `SYSLOG_TCP_PORT` (`off` to disable), `WATCH_DIR`, `FLUSH_SECONDS`
+(default 300), `REPORT_AT` (default 05:30), `REPORT_DAYS`, `IGNORE`, `COMPANY`.
+
+Syslog has no sender authentication; run the collector on a network the firewalls reach and nothing else does.
+
 ## Command line
 
 The same collector runs on files, for logs exported from anywhere or for a quick look:
@@ -66,11 +100,14 @@ node collector/dist/cli.js report --out ./assessment --days 30 --company "Acme"
 
 ```bash
 node collector/scripts/sample-aws-logs.mjs ./sample-logs 21
+node collector/scripts/sample-onprem-logs.mjs files ./sample-onprem 14
+node collector/scripts/sample-onprem-logs.mjs send localhost 5514
 ```
 
-writes three weeks of made-up DNS, firewall and CloudTrail logs in the layout AWS uses.
+Made-up AWS logs in the layout AWS uses; on-premises log files; or on-premises syslog sent over UDP.
 
 ## Tests
 
-`npm test -w collector`: the catalog, parsers, privacy (pseudonyms, no raw lines, ignored callers), findings,
-recommendations, report escaping, and repeat-safe processing.
+`npm test -w collector`: the catalog, AWS and on-premises parsers, privacy (pseudonyms, no raw lines, ignored
+callers), findings, recommendations, report escaping, repeat-safe processing, and the on-premises server over
+real UDP and TCP sockets and growing, rotated and compressed files.

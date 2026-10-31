@@ -1,7 +1,7 @@
 # AI usage assessment and collectors: plan
 
-Status: phases 0 and 1 built (the shared core and the AWS collector, in [collector/](../collector/README.md));
-the rest is planned. Written 2026-10-31.
+Status: phases 0–2 built (the shared core, the AWS collector and the on-premises collector, in
+[collector/](../collector/README.md)); the rest is planned. Written 2026-10-31.
 
 ## The idea
 
@@ -107,7 +107,7 @@ The catalog is versioned and shipped with the collector, so it works offline. Th
 |---|---|---|---|
 | 0 | Core (**built**) | Common format, catalog, pseudonymizing, local report | Shared library |
 | 1 | AWS (**built**) | Route 53 Resolver DNS logs (which servers look up AI services), Network Firewall logs, CloudTrail for Bedrock and SageMaker called directly | Lambda in their account, reading their S3 or CloudWatch logs |
-| 2 | On-premises | Syslog from firewalls and proxies (Palo Alto, Fortinet, Check Point, Squid), DNS server logs (BIND, Windows DNS) | One container on any Linux host or Kubernetes cluster |
+| 2 | On-premises (**built**) | Syslog from firewalls and proxies (Palo Alto, Fortinet, Check Point, Squid), DNS server logs (BIND, Windows DNS) | One container on any Linux host or Kubernetes cluster |
 | 3 | Security gateway | Zscaler or Netskope logs: covers laptops wherever they are | Same container, or a Lambda reading their log export |
 | 4 | Azure and Google Cloud | Azure: DNS and Azure Firewall logs, Azure OpenAI / AI Foundry usage from Azure Monitor. Google Cloud: Cloud DNS logs, Cloud NGFW / Secure Web Proxy, Cloud Audit Logs for Vertex AI and the Gemini API | Azure Function; Cloud Run job |
 | 5 | Work apps | Microsoft 365 audit logs (Copilot), Google Workspace reports (Gemini), Okta and Entra sign-ins to AI tools | Any of the above, using read-only API access |

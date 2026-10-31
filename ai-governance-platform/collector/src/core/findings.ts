@@ -5,6 +5,12 @@ export const SOURCE_LABELS: Record<string, string> = {
   aws_dns: 'AWS Route 53 Resolver DNS query logs',
   aws_firewall: 'AWS Network Firewall logs',
   aws_cloudtrail: 'AWS CloudTrail',
+  syslog_paloalto: 'Palo Alto Networks URL filtering logs',
+  syslog_fortinet: 'Fortinet FortiGate logs',
+  syslog_cef: 'Security device logs (CEF)',
+  squid: 'Squid proxy access logs',
+  bind_dns: 'BIND DNS query logs',
+  windows_dns: 'Windows DNS server debug logs',
 };
 
 /** What each source can't see, said plainly in the report. */
@@ -12,6 +18,12 @@ const SOURCE_LIMITS: Record<string, string> = {
   aws_dns: 'Shows which servers looked up an AI service, not how much they sent. Lookups are cached, so counts understate real traffic.',
   aws_firewall: 'Shows outgoing connections by name; traffic that doesn’t pass the firewall isn’t seen.',
   aws_cloudtrail: 'Shows calls to Amazon Bedrock and SageMaker that CloudTrail records; model calls may need data events turned on for the trail.',
+  syslog_paloalto: 'Shows sites the firewall’s URL filtering logged; sites in categories set not to log aren’t seen.',
+  syslog_fortinet: 'Shows web filter and DNS events the FortiGate logged; traffic the policy doesn’t log isn’t seen.',
+  syslog_cef: 'Shows what the sending device logged with a destination name.',
+  squid: 'Shows web traffic through this proxy only.',
+  bind_dns: 'Shows lookups through this DNS server; devices using other resolvers or encrypted DNS aren’t seen.',
+  windows_dns: 'Shows lookups through this DNS server; devices using other resolvers or encrypted DNS aren’t seen.',
 };
 
 export const isPerson = (who: string) => who.startsWith('user-');
@@ -209,7 +221,7 @@ export function recommend(f: Findings): Recommendation[] {
     });
   }
 
-  if (!f.sources.some((s) => s.source === 'aws_cloudtrail')) {
+  if (f.sources.some((s) => s.source.startsWith('aws_')) && !f.sources.some((s) => s.source === 'aws_cloudtrail')) {
     out.push({
       priority: 'low',
       title: 'Add CloudTrail to see direct use of Amazon Bedrock',

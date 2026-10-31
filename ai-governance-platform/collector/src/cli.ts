@@ -4,10 +4,13 @@ import path from 'path';
 import { buildReport, decode, isoDay, processInput } from './core/run';
 import { FileStore } from './core/store';
 import { AwsSource, detectSource, parse } from './aws/parsers';
+import { parseOnpremText } from './onprem/parsers';
 
 const USAGE = `Aegis collector: finds AI usage in your logs. Everything stays in --out.
 
-  aegis-collector collect --out <dir> [--source auto|aws_dns|aws_firewall|aws_cloudtrail] [--ignore role:aegis-gateway,…] <files or folders…>
+  aegis-collector collect --out <dir> [--source auto|aws_dns|aws_firewall|aws_cloudtrail|onprem] [--ignore role:aegis-gateway,…] <files or folders…>
+      AWS logs are recognized by name or content; anything else is read line by line as on-premises logs
+      (Palo Alto, Fortinet, CEF, Squid, BIND, Windows DNS).
   aegis-collector report  --out <dir> [--days 30 | --from YYYY-MM-DD --to YYYY-MM-DD] [--company "Acme"] [--reveal-names]
 `;
 
@@ -44,17 +47,18 @@ async function main() {
   const store = new FileStore(out);
 
   if (cmd === 'collect') {
-    const forced = typeof flags.source === 'string' && flags.source !== 'auto' ? (flags.source as AwsSource) : null;
+    const wanted = typeof flags.source === 'string' && flags.source !== 'auto' ? flags.source : null;
     const ignore = typeof flags.ignore === 'string' ? flags.ignore.split(',') : [];
-    let lines = 0; let matched = 0; let skipped = 0;
+    let lines = 0; let matched = 0;
     for (const f of await files(rest)) {
       const text = decode(await fs.readFile(f));
-      const source = forced ?? detectSource(f, text);
-      if (!source) { skipped++; continue; }
-      const r = await processInput(store, path.resolve(f), parse(source, text), ignore);
-      lines += r.lines; matched += r.matched;
+      const aws = wanted === 'onprem' ? null : ((wanted as AwsSource | null) ?? detectSource(f, text));
+      const observations = aws ? parse(aws, text) : parseOnpremText(text);
+      const r = await processInput(store, path.resolve(f), observations, ignore);
+      lines += aws ? r.lines : text.split('\n').filter(Boolean).length;
+      matched += r.matched;
     }
-    console.log(`Read ${lines} log lines; ${matched} matched an AI service.${skipped ? ` Skipped ${skipped} files of an unknown kind.` : ''}`);
+    console.log(`Read ${lines} log lines; ${matched} matched an AI service.`);
     return;
   }
 

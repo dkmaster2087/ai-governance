@@ -38,6 +38,14 @@ export interface Observation {
   bytesOut?: number;
 }
 
+/**
+ * One person, however a log writes them: `ACME\\jdoe`, `jdoe` and `jdoe@acme.example` are the same account.
+ * Assumes one company's directory, where the short name is unique.
+ */
+export function canonicalUser(name: string): string {
+  return name.trim().toLowerCase().replace(/^[^\\]*\\/, '').replace(/@.*$/, '');
+}
+
 /** Replaces people with stable codes. The key is generated in the customer's environment and stays there. */
 export class Pseudonymizer {
   /** code → real name, kept only where the customer keeps the key. */
@@ -48,9 +56,8 @@ export class Pseudonymizer {
   }
 
   code(name: string): string {
-    const normalized = name.trim().toLowerCase();
-    const code = `user-${createHmac('sha256', Buffer.from(this.key, 'hex')).update(normalized).digest('hex').slice(0, 12)}`;
-    this.names.set(code, normalized);
+    const code = `user-${createHmac('sha256', Buffer.from(this.key, 'hex')).update(canonicalUser(name)).digest('hex').slice(0, 12)}`;
+    if (!this.names.has(code)) this.names.set(code, name.trim().toLowerCase());
     return code;
   }
 }
@@ -79,6 +86,10 @@ export class Aggregator {
 
   constructor(private readonly opts: AggregatorOptions) {
     this.ignore = new Set((opts.ignore ?? []).map((s) => s.trim().toLowerCase()).filter(Boolean));
+  }
+
+  get pseudonyms(): Pseudonymizer {
+    return this.opts.pseudonyms;
   }
 
   add(o: Observation): void {
