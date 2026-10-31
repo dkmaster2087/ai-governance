@@ -5,9 +5,13 @@ import { DataProtectionClient } from '../clients/data-protection.client';
 import { ProviderRouter } from './provider.router';
 import { AuditService } from './audit.service';
 import { ResponseScanner } from './response-scanner';
+import { StreamMasker } from './stream-masker';
 import { tenantSettings } from './tenant-settings.service';
 
 const logger = createLogger('gateway');
+
+/** What a streamed answer yields to the route: text to send, then one final part. */
+export type StreamPart = { text: string; done?: undefined } | { done: true; finishReason: string; inputTokens: number; outputTokens: number; text?: undefined };
 
 interface ProcessRequestInput {
   tenantId: string;
@@ -27,13 +31,16 @@ export class GatewayService {
   private responseScanner = new ResponseScanner();
   private tenantSettings = tenantSettings();
 
-  async processRequest(input: ProcessRequestInput): Promise<NormalizedAIResponse> {
+  /**
+   * Everything before the provider is called: policy evaluation on the original prompt, then personal-data
+   * masking. Shared by normal and streamed requests, so a blocked request never starts a stream.
+   */
+  private async prepare(input: ProcessRequestInput) {
     const requestId = generateRequestId();
     const timestamp = new Date().toISOString();
 
     logger.info('Processing AI request', { requestId, tenantId: input.tenantId, model: input.model });
 
-    // 1. Build normalized request
     const normalizedRequest: NormalizedAIRequest = {
       requestId,
       tenantId: input.tenantId,
@@ -60,8 +67,8 @@ export class GatewayService {
       throw err;
     };
 
-    // 2. Policy evaluation runs on the original prompt, so rules that look for PII or
-    //    sensitive data see the real content rather than masked placeholders.
+    // Policy evaluation runs on the original prompt, so rules that look for PII or
+    // sensitive data see the real content rather than masked placeholders.
     let policyResult: PolicyEvaluationResult;
     try {
       policyResult = await this.policyClient.evaluate(normalizedRequest);
@@ -80,43 +87,106 @@ export class GatewayService {
       });
     }
 
-    // 3. Mask PII before the prompt leaves for the AI provider
+    // Mask PII before the prompt leaves for the AI provider
     let protectedRequest: NormalizedAIRequest;
     try {
       protectedRequest = await this.dataProtectionClient.protectRequest(normalizedRequest);
     } catch (err) {
       protectedRequest = whenUnavailable(err, 'pii_masking', normalizedRequest);
     }
+    return { requestId, normalizedRequest, protectedRequest, policyResult, degraded };
+  }
 
-    // 4. Route to AI provider
+  /** Audit record for a completed (or abandoned) request. */
+  private async record(prep: Awaited<ReturnType<GatewayService['prepare']>>, response: NormalizedAIResponse, latencyMs: number, extra: Record<string, string> = {}) {
+    const { normalizedRequest, policyResult, degraded } = prep;
+    let protectedRequest = prep.protectedRequest;
+    const metadata = { ...protectedRequest.metadata, ...extra, ...(degraded.length > 0 ? { governanceDegraded: degraded.join(',') } : {}) };
+    protectedRequest = { ...protectedRequest, metadata };
+    // PII was masked if the data protection service changed any message.
+    const piiDetected = protectedRequest.messages.some((m, i) => m.content !== normalizedRequest.messages[i]?.content);
+    await this.auditService.log(protectedRequest, response, policyResult, latencyMs, { piiDetected });
+  }
+
+  async processRequest(input: ProcessRequestInput): Promise<NormalizedAIResponse> {
+    const prep = await this.prepare(input);
+
     const startTime = Date.now();
-    const response = await this.providerRouter.route(protectedRequest);
+    const response = await this.providerRouter.route(prep.protectedRequest);
     const latencyMs = Date.now() - startTime;
 
-    // 5. Scan response for PII leakage (in-process)
+    // Scan the response for PII leakage (in-process)
     const scannedResponse = this.responseScanner.scanResponse(response, true);
 
-    // 6. Deeper response filtering via the data protection service. If it's down, the in-process
-    //    scan above has already masked the response, so continue and record it.
+    // Deeper response filtering via the data protection service. If it's down, the in-process
+    // scan above has already masked the response, so continue and record it.
     let filteredResponse: NormalizedAIResponse;
     try {
       filteredResponse = await this.dataProtectionClient.filterResponse(scannedResponse);
     } catch (err) {
       if (!(err instanceof GovernanceUnavailableError)) throw err;
-      logger.warn('Response filtering unavailable, using in-process scan only', { requestId });
-      degraded.push('response_filtering');
+      logger.warn('Response filtering unavailable, using in-process scan only', { requestId: prep.requestId });
+      prep.degraded.push('response_filtering');
       filteredResponse = scannedResponse;
     }
 
-    // 7. Audit log
-    if (degraded.length > 0) {
-      protectedRequest = { ...protectedRequest, metadata: { ...protectedRequest.metadata, governanceDegraded: degraded.join(',') } };
-    }
-    // PII was masked if the data protection service changed any message.
-    const piiDetected = protectedRequest.messages.some((m, i) => m.content !== normalizedRequest.messages[i]?.content);
-    await this.auditService.log(protectedRequest, filteredResponse, policyResult, latencyMs, { piiDetected });
-
+    await this.record(prep, filteredResponse, latencyMs);
     return filteredResponse;
+  }
+
+  /**
+   * A streamed answer. Checks run first (a blocked request throws before anything is sent); the provider's
+   * first chunk is awaited too, so provider errors also arrive as a normal error response. Personal data is
+   * masked as text streams out, and the audit record is written when the stream ends or the client leaves.
+   */
+  async processStream(input: ProcessRequestInput, signal?: AbortSignal): Promise<{ requestId: string; parts: AsyncGenerator<StreamPart> }> {
+    const prep = await this.prepare(input);
+    const startTime = Date.now();
+    const upstream = await this.providerRouter.stream(prep.protectedRequest, signal);
+    const first = await upstream.next();
+    const self = this;
+
+    async function* parts(): AsyncGenerator<StreamPart> {
+      const masker = new StreamMasker();
+      let full = '';
+      let inputTokens = 0;
+      let outputTokens = 0;
+      let finishReason = 'stop';
+      let completed = false;
+      try {
+        for (let r = first; !r.done; r = await upstream.next()) {
+          const d = r.value;
+          if (d.text) {
+            full += d.text;
+            const out = masker.push(d.text);
+            if (out) yield { text: out };
+          }
+          if (d.inputTokens) inputTokens = d.inputTokens;
+          if (d.outputTokens) outputTokens = d.outputTokens;
+          if (d.finishReason) finishReason = d.finishReason;
+        }
+        const tail = masker.end();
+        if (tail) yield { text: tail };
+        completed = true;
+        yield { done: true, finishReason, inputTokens, outputTokens };
+      } finally {
+        if (!completed) await upstream.return(undefined).catch(() => undefined);
+        const response: NormalizedAIResponse = {
+          requestId: prep.requestId,
+          provider: prep.protectedRequest.provider,
+          modelId: prep.protectedRequest.modelId,
+          content: self.responseScanner.scan(full).maskedContent,
+          inputTokens,
+          outputTokens,
+          latencyMs: Date.now() - startTime,
+          finishReason: completed ? finishReason : 'client_disconnected',
+          timestamp: new Date().toISOString(),
+        };
+        await self.record(prep, response, response.latencyMs, { streamed: 'true', ...(completed ? {} : { streamAbandoned: 'true' }) })
+          .catch((err) => logger.error('Audit failed for streamed request', { requestId: prep.requestId, error: (err as Error).message }));
+      }
+    }
+    return { requestId: prep.requestId, parts: parts() };
   }
 
   async getAvailableModels(tenantId: string) {

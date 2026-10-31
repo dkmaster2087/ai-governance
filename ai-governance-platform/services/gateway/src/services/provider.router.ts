@@ -1,7 +1,7 @@
 import { AIProvider, NormalizedAIRequest, NormalizedAIResponse } from '@ai-governance/types';
 import { ProviderError } from '@ai-governance/utils';
 import { BedrockProvider } from '../providers/bedrock.provider';
-import { OpenAIProvider } from '../providers/openai.provider';
+import { OpenAIProvider, StreamDelta } from '../providers/openai.provider';
 import { ModelConfigRepository } from '../repositories/model-config.repository';
 import { ModelConfigService } from './model-config.service';
 
@@ -26,13 +26,24 @@ export class ProviderRouter {
     return 'bedrock';
   }
 
-  async route(request: NormalizedAIRequest): Promise<NormalizedAIResponse> {
-    // Look up model config to get the tenant's provider key (held in Secrets Manager)
+  /** Which provider serves this model for this tenant, and its key (held in Secrets Manager). */
+  private async resolve(request: NormalizedAIRequest): Promise<{ provider: AIProvider; storedKey?: string }> {
     const configs = await this.modelConfigRepo.getForTenant(request.tenantId);
     const modelConfig = configs.find((c) => c.modelId === request.modelId);
     const storedKey = await this.modelConfigService.resolveProviderKey(modelConfig);
     // The admin's configuration wins; the name-based guess is only for models nobody configured.
-    const provider = (modelConfig?.provider as AIProvider | undefined) ?? request.provider;
+    return { provider: (modelConfig?.provider as AIProvider | undefined) ?? request.provider, storedKey };
+  }
+
+  async stream(request: NormalizedAIRequest, signal?: AbortSignal): Promise<AsyncGenerator<StreamDelta>> {
+    const { provider, storedKey } = await this.resolve(request);
+    if (provider === 'openai') return this.openaiProvider.stream({ ...request, provider }, storedKey, signal);
+    if (provider === 'bedrock') return this.bedrockProvider.stream({ ...request, provider }, signal);
+    throw new ProviderError(provider, 'Provider not configured');
+  }
+
+  async route(request: NormalizedAIRequest): Promise<NormalizedAIResponse> {
+    const { provider, storedKey } = await this.resolve(request);
 
     if (provider === 'openai') {
       return this.openaiProvider.complete({ ...request, provider }, storedKey);

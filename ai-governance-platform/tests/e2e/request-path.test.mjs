@@ -46,6 +46,35 @@ const chat = (key, content, { model = MODEL, base, headers = {} } = {}) =>
     body: { model, messages: [{ role: 'user', content }] },
   });
 
+/** A streamed chat request; returns the raw events and the text they add up to. */
+async function streamChat(key, content, { abortAfterChunks, url = '/v1/chat/completions', body } = {}) {
+  const ac = new AbortController();
+  const res = await fetch(GATEWAY + url, {
+    method: 'POST',
+    signal: ac.signal,
+    headers: { 'content-type': 'application/json', ...(url.includes('/proxy/') ? { 'x-aegis-key': key, authorization: 'Bearer sk-dev-own' } : { authorization: `Bearer ${key}` }), 'x-app-id': 'e2e-suite' },
+    body: JSON.stringify(body ?? { model: MODEL, stream: true, stream_options: { include_usage: true }, messages: [{ role: 'user', content }] }),
+  });
+  if (!(res.headers.get('content-type') ?? '').includes('text/event-stream')) return { status: res.status, headers: res.headers, json: await res.json(), events: [], text: '' };
+  const events = [];
+  let buf = '';
+  const decoder = new TextDecoder();
+  try {
+    for await (const chunk of res.body) {
+      buf += decoder.decode(chunk, { stream: true });
+      let i;
+      while ((i = buf.indexOf('\n\n')) >= 0) {
+        const ev = buf.slice(0, i); buf = buf.slice(i + 2);
+        if (ev.startsWith('data: ')) events.push(ev.slice(6));
+      }
+      if (abortAfterChunks && events.length >= abortAfterChunks) { ac.abort(); break; }
+    }
+  } catch (e) { if (e.name !== 'AbortError') throw e; }
+  const parsed = events.filter((e) => e !== '[DONE]').map((e) => JSON.parse(e));
+  const text = parsed.map((p) => p.choices?.[0]?.delta?.content ?? '').join('');
+  return { status: res.status, headers: res.headers, events, parsed, text };
+}
+
 /** What the mock model received for prompts containing this marker. */
 const atModel = async (m) => (await fetch(`${MOCK}/_received?contains=${m}`)).json();
 
@@ -319,6 +348,59 @@ describe('IDE traffic (proxy mode)', () => {
     const res = await proxy(keyA, `explain this function ${m}`);
     assert.equal(res.status, 200, JSON.stringify(res.body));
     assert.ok(res.headers.get('x-aegis-request-id'), 'response carries the Aegis request ID');
+    assert.equal((await atModel(m)).length, 1);
+  });
+});
+
+describe('streaming', () => {
+  test('answers as OpenAI server-sent events, and the case file is written when it ends', async () => {
+    const m = marker();
+    const r = await streamChat(keyA, `Stream please ${m}`);
+    assert.equal(r.status, 200);
+    assert.equal(r.events.at(-1), '[DONE]');
+    assert.ok(r.parsed.every((p) => p.object === 'chat.completion.chunk'));
+    assert.equal(r.text, 'Mock reply to a 3-word prompt.');
+    assert.equal(r.parsed.find((p) => p.usage)?.usage.total_tokens > 0, true, 'usage sent when asked for');
+    const id = r.headers.get('x-aegis-request-id');
+    assert.equal(r.parsed[0].id, id);
+    await new Promise((res) => setTimeout(res, 200));
+    const record = await caseFile(A, id);
+    assert.equal(record.status, 200, JSON.stringify(record.body));
+    assert.equal(record.body.outcome, 'delivered');
+  });
+
+  test('removes personal data from the answer even when it is split across chunks', async () => {
+    const r = await streamChat(keyA, `MOCK_REPLY_WITH_PII ${marker()}`);
+    assert.equal(r.status, 200);
+    assert.ok(r.text.length > 10, r.text);
+    assert.ok(!r.text.includes('jane.doe@example.com'), r.text);
+    assert.ok(!r.text.includes('415-555-0134'), r.text);
+  });
+
+  test('a blocked prompt never starts a stream', async () => {
+    const word = marker();
+    await addRule(A, { type: 'keyword_block', description: `E2E stream word ${word}`, values: [word] });
+    const m = marker();
+    const r = await streamChat(keyA, `about ${word} ${m}`);
+    assert.equal(r.status, 403);
+    assert.equal(r.json.code, 'POLICY_VIOLATION');
+    assert.deepEqual(await atModel(m), []);
+  });
+
+  test('an app that leaves mid-answer still gets a case file', async () => {
+    const r = await streamChat(keyA, `MOCK_SLOW_STREAM ${marker()}`, { abortAfterChunks: 3 });
+    const id = r.headers.get('x-aegis-request-id');
+    await new Promise((res) => setTimeout(res, 500));
+    const record = await caseFile(A, id);
+    assert.equal(record.status, 200, JSON.stringify(record.body));
+  });
+
+  test('proxy mode streams the provider’s answer straight through', async () => {
+    const m = marker();
+    const r = await streamChat(keyA, '', { url: '/v1/proxy/openai/v1/chat/completions', body: { model: MODEL, stream: true, messages: [{ role: 'user', content: `explain ${m}` }] } });
+    assert.equal(r.status, 200);
+    assert.equal(r.events.at(-1), '[DONE]');
+    assert.equal(r.text, 'Mock reply to a 2-word prompt.');
     assert.equal((await atModel(m)).length, 1);
   });
 });

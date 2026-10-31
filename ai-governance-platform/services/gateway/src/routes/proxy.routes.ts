@@ -158,6 +158,66 @@ export async function proxyRoutes(app: FastifyInstance) {
     }
 
     const startTime = Date.now();
+
+    // Streaming (IDEs ask for it): the request was checked above; pass the provider's stream straight through
+    // and read token counts from it on the way past for the audit record.
+    if (body?.stream === true) {
+      let upstream;
+      try {
+        upstream = await axios({
+          method: request.method as any, url: targetUrl, data: body, headers: forwardHeaders,
+          timeout: 120000, responseType: 'stream', validateStatus: () => true,
+        });
+      } catch (err: any) {
+        logger.error('Proxy forward failed', { requestId, tenantId, error: err.message });
+        return reply.status(502).send({ error: 'Failed to reach AI provider', code: 'PROXY_ERROR', requestId, detail: err.message });
+      }
+      reply.hijack();
+      const res = reply.raw;
+      res.writeHead(upstream.status, {
+        ...(reply.getHeaders() as Record<string, string>),
+        'content-type': String(upstream.headers['content-type'] ?? 'text/event-stream'),
+        'cache-control': 'no-cache',
+        'x-accel-buffering': 'no',
+        'x-aegis-request-id': requestId,
+      });
+      const usage = { input: 0, output: 0 };
+      let pending = '';
+      upstream.data.on('data', (chunk: Buffer) => {
+        pending += chunk.toString('utf8');
+        const lines = pending.split('\n');
+        pending = lines.pop() ?? '';
+        for (const line of lines) {
+          if (!line.startsWith('data:') || !line.includes('usage')) continue;
+          try {
+            const e = JSON.parse(line.slice(5));
+            const u = e.usage ?? e.message?.usage;
+            if (u) {
+              usage.input = u.prompt_tokens ?? u.input_tokens ?? usage.input;
+              usage.output = u.completion_tokens ?? u.output_tokens ?? usage.output;
+            }
+          } catch { /* not JSON */ }
+        }
+      });
+      res.on('close', () => upstream.data.destroy());
+      upstream.data.pipe(res);
+      upstream.data.on('close', () => {
+        const latencyMs = Date.now() - startTime;
+        if (messages.length === 0) return;
+        const auditReq: NormalizedAIRequest = {
+          requestId, tenantId, userId, appId: request.appId || 'proxy', provider: provider as any, modelId, messages,
+          metadata: { ...auditMetadata, streamed: 'true' }, timestamp: new Date().toISOString(),
+        };
+        auditService.log(
+          auditReq,
+          { requestId, content: '[proxy passthrough]', inputTokens: usage.input, outputTokens: usage.output, latencyMs, provider: provider as any, modelId, finishReason: 'stop', timestamp: new Date().toISOString() },
+          { allowed: true, action: 'allow', triggeredRules: [], riskScore: 0 },
+          latencyMs,
+        ).catch((err) => logger.error('Proxy audit failed', { requestId, error: (err as Error).message }));
+      });
+      return;
+    }
+
     try {
       const providerResponse = await axios({
         method: request.method as any,

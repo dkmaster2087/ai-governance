@@ -17,7 +17,8 @@ to let requests through instead; those are flagged in their evidence record.
 ## How traffic arrives
 
 - **Apps:** OpenAI-compatible `POST /v1/chat/completions` with an Aegis API key. Providers: Amazon Bedrock and
-  OpenAI-compatible APIs. Streaming responses are not supported yet.
+  OpenAI-compatible APIs. `stream: true` returns OpenAI-format server-sent events; personal data in the answer is
+  masked as it streams, and the case file is written when the stream ends (also if the app disconnects).
 - **IDEs (beta):** the corporate proxy sends provider calls to `/v1/proxy/{openai|anthropic|cohere|mistral}/…`
   with an `X-Aegis-Key` header; the developer's own provider key passes through untouched.
 - **Browsers (beta):** the Shadow AI Guard extension, deployed through Chrome policy (`gatewayUrl`, `apiKey`,
