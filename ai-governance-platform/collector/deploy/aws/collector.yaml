@@ -1,0 +1,187 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: >-
+  Aegis collector (AWS). Reads the log buckets you name, keeps only lines that match known AI services as daily
+  counts, and builds an AI usage report in a results bucket in this account. Read-only on your logs; sends
+  nothing out of this account.
+
+Parameters:
+  LogBuckets:
+    Type: CommaDelimitedList
+    Description: >-
+      Buckets holding Route 53 Resolver query logs, Network Firewall logs and/or CloudTrail logs (names, comma
+      separated). Turn on "Send notifications to Amazon EventBridge" on each so new files are read as they land.
+  LogKmsKeyArns:
+    Type: CommaDelimitedList
+    Default: ''
+    Description: KMS keys the log buckets are encrypted with, if any (ARNs, comma separated). Leave empty for SSE-S3.
+  Ignore:
+    Type: String
+    Default: ''
+    Description: >-
+      Callers to leave out of the report, comma separated, e.g. role:aegis-gateway-task for the Aegis gateway itself.
+  Company:
+    Type: String
+    Default: ''
+    Description: Shown on the report.
+  ReportDays:
+    Type: Number
+    Default: 30
+    MinValue: 1
+    MaxValue: 90
+  CodeBucket:
+    Type: String
+    Description: Bucket holding the collector code (aegis-collector-aws.zip).
+  CodeKey:
+    Type: String
+    Default: aegis-collector-aws.zip
+
+Conditions:
+  HasKms: !Not [!Equals [!Join ['', !Ref LogKmsKeyArns], '']]
+
+Resources:
+  ResultsBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: { SSEAlgorithm: AES256 }
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+      OwnershipControls:
+        Rules: [{ ObjectOwnership: BucketOwnerEnforced }]
+      LifecycleConfiguration:
+        Rules:
+          - Id: expire-daily-counts
+            Status: Enabled
+            Prefix: sightings/
+            ExpirationInDays: 400
+
+  ResultsBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref ResultsBucket
+      PolicyDocument:
+        Statement:
+          - Sid: TlsOnly
+            Effect: Deny
+            Principal: '*'
+            Action: 's3:*'
+            Resource: [!GetAtt ResultsBucket.Arn, !Sub '${ResultsBucket.Arn}/*']
+            Condition: { Bool: { 'aws:SecureTransport': 'false' } }
+
+  CollectorLogs:
+    Type: AWS::Logs::LogGroup
+    Properties:
+      LogGroupName: !Sub '/aws/lambda/${AWS::StackName}-collector'
+      RetentionInDays: 30
+
+  CollectorRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Statement:
+          - Effect: Allow
+            Principal: { Service: lambda.amazonaws.com }
+            Action: sts:AssumeRole
+      Policies:
+        - PolicyName: collector
+          PolicyDocument:
+            Statement:
+              - Sid: OwnLogs
+                Effect: Allow
+                Action: [logs:CreateLogStream, logs:PutLogEvents]
+                Resource: !GetAtt CollectorLogs.Arn
+              - Sid: ReadLogBuckets
+                Effect: Allow
+                Action: [s3:ListBucket]
+                # Fn::Join needs a literal separator, so this assumes the standard aws partition.
+                Resource: !Split [',', !Sub ['arn:aws:s3:::${Names}', { Names: !Join [',arn:aws:s3:::', !Ref LogBuckets] }]]
+              - Sid: ReadLogObjects
+                Effect: Allow
+                Action: [s3:GetObject]
+                Resource: !Split [',', !Sub ['arn:aws:s3:::${Names}/*', { Names: !Join ['/*,arn:aws:s3:::', !Ref LogBuckets] }]]
+              - Sid: Results
+                Effect: Allow
+                Action: [s3:GetObject, s3:PutObject, s3:ListBucket]
+                Resource: [!GetAtt ResultsBucket.Arn, !Sub '${ResultsBucket.Arn}/*']
+              - !If
+                - HasKms
+                - Sid: DecryptLogs
+                  Effect: Allow
+                  Action: [kms:Decrypt]
+                  Resource: !Ref LogKmsKeyArns
+                - !Ref AWS::NoValue
+
+  Collector:
+    Type: AWS::Lambda::Function
+    DependsOn: CollectorLogs
+    Properties:
+      FunctionName: !Sub '${AWS::StackName}-collector'
+      Description: Aegis collector. Reads log files, keeps AI matches as daily counts, builds the report.
+      Runtime: nodejs20.x
+      Handler: index.handler
+      Architectures: [arm64]
+      MemorySize: 1024
+      Timeout: 900
+      Role: !GetAtt CollectorRole.Arn
+      Code: { S3Bucket: !Ref CodeBucket, S3Key: !Ref CodeKey }
+      Environment:
+        Variables:
+          RESULTS_BUCKET: !Ref ResultsBucket
+          LOG_BUCKETS: !Join [',', !Ref LogBuckets]
+          IGNORE: !Ref Ignore
+          COMPANY: !Ref Company
+          REPORT_DAYS: !Ref ReportDays
+
+  NewLogFile:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: A new log file landed in one of the log buckets.
+      EventPattern:
+        source: [aws.s3]
+        detail-type: [Object Created]
+        detail:
+          bucket: { name: !Ref LogBuckets }
+          object: { key: [{ prefix: AWSLogs/ }] }
+      Targets: [{ Id: collector, Arn: !GetAtt Collector.Arn }]
+
+  DailyReport:
+    Type: AWS::Events::Rule
+    Properties:
+      Description: Rebuild the AI usage report every day.
+      ScheduleExpression: cron(30 5 * * ? *)
+      Targets: [{ Id: collector, Arn: !GetAtt Collector.Arn }]
+
+  AllowNewLogFile:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Collector
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt NewLogFile.Arn
+
+  AllowDailyReport:
+    Type: AWS::Lambda::Permission
+    Properties:
+      FunctionName: !Ref Collector
+      Action: lambda:InvokeFunction
+      Principal: events.amazonaws.com
+      SourceArn: !GetAtt DailyReport.Arn
+
+Outputs:
+  ResultsBucket:
+    Value: !Ref ResultsBucket
+    Description: Report at reports/latest.html; private/ holds the pseudonym key and name lookup.
+  Backfill:
+    Description: Read the last 30 days of logs already in the buckets, then build the report.
+    Value: !Sub >-
+      aws lambda invoke --function-name ${Collector} --cli-binary-format raw-in-base64-out
+      --payload '{"action":"backfill","days":30}' /dev/stdout
+  Remove:
+    Description: Delete the collector. The results bucket is kept until you empty and delete it.
+    Value: !Sub 'aws cloudformation delete-stack --stack-name ${AWS::StackName}'

@@ -1,6 +1,7 @@
 # AI usage assessment and collectors: plan
 
-Status: plan, not built. Written 2026-10-31.
+Status: phases 0 and 1 built (the shared core and the AWS collector, in [collector/](../collector/README.md));
+the rest is planned. Written 2026-10-31.
 
 ## The idea
 
@@ -104,8 +105,8 @@ The catalog is versioned and shipped with the collector, so it works offline. Th
 
 | # | Source | What it shows | Where the collector runs |
 |---|---|---|---|
-| 0 | Core | Common format, catalog, pseudonymizing, local report | Shared library |
-| 1 | AWS | Route 53 Resolver DNS logs (which servers look up AI services), Network Firewall logs, CloudTrail for Bedrock and SageMaker called directly | Lambda in their account, reading their S3 or CloudWatch logs |
+| 0 | Core (**built**) | Common format, catalog, pseudonymizing, local report | Shared library |
+| 1 | AWS (**built**) | Route 53 Resolver DNS logs (which servers look up AI services), Network Firewall logs, CloudTrail for Bedrock and SageMaker called directly | Lambda in their account, reading their S3 or CloudWatch logs |
 | 2 | On-premises | Syslog from firewalls and proxies (Palo Alto, Fortinet, Check Point, Squid), DNS server logs (BIND, Windows DNS) | One container on any Linux host or Kubernetes cluster |
 | 3 | Security gateway | Zscaler or Netskope logs: covers laptops wherever they are | Same container, or a Lambda reading their log export |
 | 4 | Azure and Google Cloud | Azure: DNS and Azure Firewall logs, Azure OpenAI / AI Foundry usage from Azure Monitor. Google Cloud: Cloud DNS logs, Cloud NGFW / Secure Web Proxy, Cloud Audit Logs for Vertex AI and the Gemini API | Azure Function; Cloud Run job |
@@ -124,7 +125,8 @@ template.
 | Google Cloud | Terraform module: one Cloud Run job | Logs Viewer on the chosen projects |
 | On-premises | One container image (Docker or Kubernetes), signed | A syslog port and/or read access to log files |
 
-All collectors share one TypeScript core, the same language as the rest of Aegis. Each template takes the same
+All collectors share one TypeScript core, the same language as the rest of Aegis. The core stores results
+through a small interface (a folder, or S3 today), so Azure Blob and Google Cloud Storage are small additions. Each template takes the same
 settings: sources, output (`local` or `aegis`), and for `aegis` the address and a key with a new
 `discovery:ingest` permission.
 

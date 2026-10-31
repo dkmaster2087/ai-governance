@@ -6,7 +6,8 @@
     "services/*",
     "frontend/*",
     "infra",
-    "shared/*"
+    "shared/*",
+    "collector"
   ],
   "scripts": {
     "build": "turbo run build",

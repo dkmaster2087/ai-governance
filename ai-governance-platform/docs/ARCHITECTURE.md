@@ -61,8 +61,10 @@ tenants via `X-Tenant-Id`; everyone else is limited to their own.
 
 ## Testing
 
-- **Unit tests** in each workspace: `npm test` from the root, plus the browser extension's
-  `node --test extensions/shadow-ai-guard/tests/lib.test.mjs`.
+- **Unit tests** in each workspace (including `collector`): `npm test` from the root, plus the browser
+  extension's `node --test extensions/shadow-ai-guard/tests/lib.test.mjs`.
+- **Collector on sample data:** `node collector/scripts/sample-aws-logs.mjs <dir>` writes three weeks of
+  made-up AWS logs; `collector/dist/cli.js collect` and `report` turn them into an assessment report.
 - **End-to-end request path** ([tests/e2e/request-path.test.mjs](../tests/e2e/request-path.test.mjs)): real
   requests through the gateway, policy engine, data protection and a mock model, checking what the app got
   back, what the model received and what the case file says. Covers clean prompts, personal-data removal in
@@ -83,7 +85,8 @@ The tenant field `deploymentMode` holds `saas` (Cloud) or `onprem` (Self-hosted 
 
 **Collectors** for AI usage assessments and continuous shadow-AI discovery are a separate component, not part
 of any of these installs. The same collector runs alongside all three, or on its own for an assessment with
-nothing else installed. Planned: [ASSESSMENT.md](ASSESSMENT.md).
+nothing else installed. Plan: [ASSESSMENT.md](ASSESSMENT.md); the core and the AWS collector are built in
+[collector/](../collector/README.md).
 
 ## Known gaps before production
 

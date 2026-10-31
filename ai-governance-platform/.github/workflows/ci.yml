@@ -72,6 +72,11 @@ jobs:
         working-directory: ai-governance-platform/frontend/website
         run: npx vitest --run
 
+      # Collector (AI usage assessment)
+      - name: Test Collector
+        working-directory: ai-governance-platform/collector
+        run: npx jest --runInBand --ci
+
       # Browser extension logic
       - name: Test Browser Extension
         working-directory: ai-governance-platform
