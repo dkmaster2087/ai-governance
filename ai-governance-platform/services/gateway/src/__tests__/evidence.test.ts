@@ -35,6 +35,27 @@ describe('evidence record', () => {
     expect(r.steps[1]).toMatchObject({ label: 'Policy rules skipped', kind: 'skipped' });
   });
 
+  it('tells the story of a request stopped for a secret, without the secret', () => {
+    const r = buildEvidenceRecord(log({
+      eventType: 'request_blocked', triggeredRules: ['Secrets detection'],
+      metadata: { check: 'secrets', secretsChecked: 'true', secretTypes: 'aws_access_key', policyReason: 'Contains an AWS access key', evidenceBefore: 'why does ', evidenceHit: '[AWS access key]', evidenceAfter: ' fail' },
+    }), 365);
+    expect(r.steps.map((s) => s.label)).toEqual(['Received', 'Policy rules passed', 'Stopped: secret in the prompt', 'Not sent']);
+    expect(r.steps[2].detail).toBe('found aws access key. The secret itself was not recorded.');
+    expect(r.excerpt?.hit).toBe('[AWS access key]');
+  });
+
+  it('records secrets removed before sending as cleaned', () => {
+    const r = buildEvidenceRecord(log({ metadata: { secretsChecked: 'true', secretsRedacted: '2', secretTypes: 'github_token,password' } }), 90);
+    expect(r.outcome).toBe('cleaned');
+    expect(r.headline).toBe('A billing-api prompt was cleaned of secrets, then sent to OpenAI.');
+    expect(r.steps[2]).toMatchObject({ label: 'Secrets removed', kind: 'cleaned', detail: '2 found (github token, password) and replaced before the prompt left the company.' });
+  });
+
+  it('says a clean prompt was checked for secrets', () => {
+    expect(buildEvidenceRecord(log({ metadata: { secretsChecked: 'true' } }), 90).steps[2].label).toBe('No secrets found');
+  });
+
   it('mentions rules that flagged without stopping', () => {
     const r = buildEvidenceRecord(log({ triggeredRules: ['r_flag'] }), 90);
     expect(r.steps[1].detail).toBe('1 rule flagged it without stopping it.');

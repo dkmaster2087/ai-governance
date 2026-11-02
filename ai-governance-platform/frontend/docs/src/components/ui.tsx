@@ -54,13 +54,13 @@ function Lane({ count }: { count: string }) {
  * Example numbers only; labelled as such wherever it's used.
  */
 export function PipelineIllustration() {
-  const checks = [
-    { n: 1, name: 'Policy rules', what: 'your words, patterns and approved models', drop: '225', verb: 'stopped', kind: 'stop' as const },
-    { n: 2, name: 'Secrets', what: 'API keys, tokens, private keys', drop: 'soon', verb: 'coming next', kind: 'soon' as const },
-    { n: 3, name: 'Personal data', what: 'emails, phone, SSN, card numbers', drop: '1,184', verb: 'cleaned, then sent', kind: 'clean' as const },
+  const checks: Array<{ n: number; name: string; what: string; drop: string; verb: string; kind: 'stop' | 'clean' | 'soon' }> = [
+    { n: 1, name: 'Policy rules', what: 'your words, patterns and approved models', drop: '225', verb: 'stopped', kind: 'stop' },
+    { n: 2, name: 'Secrets', what: 'API keys, tokens, private keys, passwords', drop: '38', verb: 'stopped', kind: 'stop' },
+    { n: 3, name: 'Personal data', what: 'emails, phone, SSN, card numbers', drop: '1,184', verb: 'cleaned, then sent', kind: 'clean' },
   ];
   return (
-    <figure className="m-0" aria-label="Example: 43,012 requests come in from apps, 225 are stopped by policy rules, 1,184 have personal data removed, and 42,787 reach AI providers.">
+    <figure className="m-0" aria-label="Example: 43,012 requests come in from apps, 225 are stopped by policy rules, 38 are stopped for containing a secret, 1,184 have personal data removed, and 42,749 reach AI providers.">
       <div className="overflow-x-auto">
         <div className="grid items-center min-w-[900px]" style={{ gridTemplateColumns: '150px minmax(40px,1fr) 150px minmax(40px,1fr) 150px minmax(40px,1fr) 150px minmax(40px,1fr) 150px', gridTemplateRows: 'auto 150px' }}>
           <div style={{ gridColumn: 1, gridRow: 1 }} className="flex flex-col gap-1 text-[13px]">
@@ -69,7 +69,7 @@ export function PipelineIllustration() {
               <span key={a} className="font-semibold border-b border-line-subtle py-1">{a}</span>
             ))}
           </div>
-          {['43,012', '42,787', '42,787', '42,787'].map((c, i) => (
+          {['43,012', '42,787', '42,749', '42,749'].map((c, i) => (
             <div key={i} style={{ gridColumn: 2 + i * 2, gridRow: 1 }}><Lane count={c} /></div>
           ))}
           {checks.map((c, i) => (
@@ -99,7 +99,7 @@ export function PipelineIllustration() {
           </div>
         </div>
       </div>
-      <figcaption className="mt-2 text-xs text-ink-muted">Example week. Red: stopped at the gateway. Dashed: personal data removed, then sent on.</figcaption>
+      <figcaption className="mt-2 text-xs text-ink-muted">Example week. Red: stopped at the gateway, by a rule or for a secret. Dashed: personal data removed, then sent on.</figcaption>
     </figure>
   );
 }

@@ -8,8 +8,14 @@ order, and every decision is recorded. This document describes what exists today
 | # | Check | What it does | Status |
 |---|---|---|---|
 | 1 | Policy rules | Stops prompts matching the company's rules: words or phrases, patterns, approved models, personal-data types | Available |
-| 2 | Secrets | Stops API keys, tokens and private keys in prompts | Planned (shown as "not active yet") |
+| 2 | Secrets | Stops (default) or removes API keys, tokens, private keys, connection strings and passwords in prompts; the company can also turn it off | Available |
 | 3 | Personal data | Removes emails, phone numbers, SSNs and card numbers in place, then sends the prompt | Available |
+
+The secrets check runs inside the gateway, so it can't be unavailable. It covers about 20 credential formats
+(AWS, Azure, Google, OpenAI, Anthropic, GitHub, GitLab, Slack, Stripe and others), private key blocks, JWTs,
+connection strings with a password and `password = …` lines, and ignores obvious placeholders. A stopped
+request returns `403 SECRET_DETECTED`; the secret's value is never stored anywhere, and excerpts kept by
+other rules are scrubbed of secrets too.
 
 If the policy or personal-data check can't run, the request is **blocked** by default. A company can choose
 to let requests through instead; those are flagged in their evidence record.

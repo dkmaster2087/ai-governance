@@ -22,10 +22,13 @@ export interface RuleView {
   flagged: number;
 }
 
+export type SecretsAction = 'block' | 'redact' | 'off';
+
 export interface RulesResponse {
   from: string;
   to: string;
   failMode: 'open' | 'closed';
+  secrets: { action: SecretsAction; stopped: number; redacted: number };
   cleaned: number;
   piiTypes: string[];
   rules: RuleView[];
@@ -54,6 +57,8 @@ export const deleteRule = async (rule: RuleView) =>
   (await gateway.delete(`/v1/rules/${encodeURIComponent(rule.policyId)}/${encodeURIComponent(rule.ruleId)}`)).data;
 export const setFailMode = async (governanceFailMode: 'open' | 'closed') =>
   (await gateway.put('/v1/gateway/settings', { governanceFailMode })).data;
+export const setSecretsAction = async (secretsAction: SecretsAction) =>
+  (await gateway.put('/v1/gateway/settings', { secretsAction })).data;
 
 /** The error message the gateway sent, if any. */
 export function errorMessage(err: unknown): string {

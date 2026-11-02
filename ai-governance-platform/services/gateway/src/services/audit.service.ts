@@ -4,17 +4,20 @@ import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
 import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
 import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
 import { ModelConfigRepository } from '../repositories/model-config.repository';
+import { redactSecrets } from './secret-detector';
 
 const logger = createLogger('gateway:audit');
 
 function stopMetadata(base: Record<string, string>, result: PolicyEvaluationResult): Record<string, string> {
   const out: Record<string, string> = { ...base };
-  if (result.reason) out.policyReason = result.reason;
+  if (result.reason) out.policyReason = redactSecrets(result.reason);
   if (result.evidence) {
+    // A company rule's excerpt is cut from the original prompt, so a credential could sit inside it.
+    // Evidence is kept for a year; never let one in.
     out.ruleType = result.evidence.ruleType;
-    out.evidenceBefore = result.evidence.before;
-    out.evidenceHit = result.evidence.hit;
-    out.evidenceAfter = result.evidence.after;
+    out.evidenceBefore = redactSecrets(result.evidence.before);
+    out.evidenceHit = redactSecrets(result.evidence.hit);
+    out.evidenceAfter = redactSecrets(result.evidence.after);
   }
   return out;
 }

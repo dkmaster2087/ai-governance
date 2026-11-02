@@ -7,6 +7,7 @@ import { requireAccess, TENANT_READ } from '../auth/guards';
 import { queryAuditLogs } from '../services/audit-query';
 import { summarizeGatewayTraffic } from '../services/gateway-summary';
 import { summarizeStopped } from '../services/stopped-summary';
+import { tenantSettings } from '../services/tenant-settings.service';
 
 const logger = createLogger('gateway:summary');
 const MAX_RANGE_MS = 31 * 86_400_000;
@@ -57,7 +58,8 @@ export async function gatewayRoutes(app: FastifyInstance) {
       logger.warn('Shadow AI events unavailable for summary', { tenantId: request.tenantId, error: (err as Error).message });
     }
 
-    return summarizeGatewayTraffic(logs, { from: fromIso, to: toIso, truncated }, shadowEvents);
+    const secretsActive = (await tenantSettings().getSecretsAction(request.tenantId)) !== 'off';
+    return summarizeGatewayTraffic(logs, { from: fromIso, to: toIso, truncated }, shadowEvents, secretsActive);
   });
 
   /** Stopped requests in a range, grouped by the rule that stopped them. */
@@ -65,6 +67,7 @@ export async function gatewayRoutes(app: FastifyInstance) {
     const range = parseRange(request.query);
     if (!range) return reply.status(400).send(INVALID_RANGE);
     const { logs, truncated } = await queryAuditLogs(request.tenantId, range.fromIso, range.toIso);
-    return summarizeStopped(logs, { from: range.fromIso, to: range.toIso, truncated, tzOffsetMinutes: range.tz });
+    const secretsActive = (await tenantSettings().getSecretsAction(request.tenantId)) !== 'off';
+    return summarizeStopped(logs, { from: range.fromIso, to: range.toIso, truncated, tzOffsetMinutes: range.tz, secretsActive });
   });
 }

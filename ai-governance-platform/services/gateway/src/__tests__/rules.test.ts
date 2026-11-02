@@ -59,7 +59,7 @@ describe('rules', () => {
 const engine = { list: jest.fn(), create: jest.fn(), update: jest.fn() };
 jest.mock('../clients/policy-admin.client', () => ({ PolicyAdminClient: jest.fn(() => engine) }));
 jest.mock('../services/audit-query', () => ({ queryAuditLogs: jest.fn(async () => ({ logs: [], truncated: false })) }));
-jest.mock('../services/tenant-settings.service', () => ({ tenantSettings: () => ({ getFailMode: async () => 'closed', invalidate: () => {} }) }));
+jest.mock('../services/tenant-settings.service', () => ({ tenantSettings: () => ({ getFailMode: async () => 'closed', getSecretsAction: async () => 'block', invalidate: () => {} }) }));
 
 async function appAs(role: 'tenant_admin' | 'tenant_auditor') {
   const { rulesRoutes } = await import('../routes/rules.routes');

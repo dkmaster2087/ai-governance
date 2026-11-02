@@ -43,7 +43,7 @@ function top(counts: Map<string, number>, n: number): Array<{ name: string; coun
 
 export function summarizeStopped(
   logs: AuditLog[],
-  range: { from: string; to: string; truncated?: boolean; tzOffsetMinutes?: number }
+  range: { from: string; to: string; truncated?: boolean; tzOffsetMinutes?: number; secretsActive?: boolean }
 ): StoppedSummary {
   const tz = range.tzOffsetMinutes ?? 0;
   const stopped = logs
@@ -67,7 +67,10 @@ export function summarizeStopped(
   const groups = new Map<string, AuditLog[]>();
   for (const l of stopped) {
     // The stopping rule is the last one matched; earlier ones only flagged the request.
-    const key = l.triggeredRules?.[l.triggeredRules.length - 1] || l.metadata?.policyReason || 'unknown';
+    // Secret stops share one rule name, so group them by what was found instead.
+    const key = l.metadata?.check === 'secrets'
+      ? `secrets:${l.metadata.secretTypes || 'unknown'}`
+      : l.triggeredRules?.[l.triggeredRules.length - 1] || l.metadata?.policyReason || 'unknown';
     groups.set(key, [...(groups.get(key) ?? []), l]);
   }
 
@@ -111,7 +114,7 @@ export function summarizeStopped(
     to: range.to,
     truncated: range.truncated ?? false,
     total: stopped.length,
-    byCheck: { policy: stopped.length - secrets, secrets: { active: false, stopped: secrets } },
+    byCheck: { policy: stopped.length - secrets, secrets: { active: range.secretsActive ?? true, stopped: secrets } },
     byDay: [...byDayMap.entries()].map(([date, count]) => ({ date, count })),
     causes,
   };

@@ -18,7 +18,7 @@ export const PHASES = [
     n: 2,
     name: 'Protect',
     title: 'Route AI traffic through a gateway you control.',
-    body: 'Apps, developers’ IDEs and browsers reach AI through Aegis. Every request is checked before it leaves: confidential material is stopped, personal data is removed, and each decision is kept as evidence.',
+    body: 'Apps, developers’ IDEs and browsers reach AI through Aegis. Every request is checked before it leaves: confidential material and secrets are stopped, personal data is removed, and each decision is kept as evidence.',
     points: ['One address change per app', 'Stops, masks and records in real time', 'Streaming answers supported'],
     to: '/gateway',
     link: 'What the gateway does',

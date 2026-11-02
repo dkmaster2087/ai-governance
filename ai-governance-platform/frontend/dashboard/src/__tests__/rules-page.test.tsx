@@ -5,7 +5,7 @@ import { vi } from 'vitest';
 import type { RulesResponse } from '../lib/rules-api';
 
 const data: RulesResponse = {
-  from: '', to: '', failMode: 'closed', cleaned: 31, piiTypes: ['EMAIL', 'SSN'],
+  from: '', to: '', failMode: 'closed', secrets: { action: 'block', stopped: 4, redacted: 0 }, cleaned: 31, piiTypes: ['EMAIL', 'SSN'],
   rules: [
     { ruleId: 'r_kw', policyId: 'p1', policyName: 'Default', type: 'keyword_block', action: 'block', description: 'Block confidential keywords',
       config: { keywords: ['confidential', 'top secret'] }, enabled: true, policyEnabled: true, effect: 'stops', stopped: 25, flagged: 0 },
@@ -17,6 +17,7 @@ const data: RulesResponse = {
 };
 const changeRule = vi.fn(async (..._args: unknown[]) => ({}));
 const addRule = vi.fn(async (..._args: unknown[]) => ({}));
+const setSecretsAction = vi.fn(async (..._args: unknown[]) => ({}));
 vi.mock('../lib/rules-api', async (orig) => ({
   ...(await orig<typeof import('../lib/rules-api')>()),
   fetchRules: vi.fn(async () => data),
@@ -24,6 +25,7 @@ vi.mock('../lib/rules-api', async (orig) => ({
   addRule: (...a: unknown[]) => addRule(...a),
   deleteRule: vi.fn(async () => ({})),
   setFailMode: vi.fn(async () => ({})),
+  setSecretsAction: (...a: unknown[]) => setSecretsAction(...a),
 }));
 vi.mock('../lib/auth', () => ({ useAuth: () => ({ user: { tenantId: 't' }, isAdmin: true }) }));
 
@@ -53,6 +55,22 @@ describe('Rules page', () => {
   it('separates compliance controls the gateway doesn’t check', async () => {
     renderPage();
     expect(await screen.findByText('1 compliance control isn’t checked by the gateway')).toBeInTheDocument();
+  });
+
+  it('shows the secrets check as live, with what it stopped', async () => {
+    renderPage();
+    const check = await screen.findByRole('region', { name: 'Check 2, secrets' });
+    expect(within(check).getByText('Stop prompts containing', { exact: false })).toBeInTheDocument();
+    expect(within(check).getByText('4 stopped this week')).toBeInTheDocument();
+    expect(within(check).getByRole('button', { name: 'Stop the request' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
+  it('lets an admin switch secrets to remove-then-send', async () => {
+    renderPage();
+    const check = await screen.findByRole('region', { name: 'Check 2, secrets' });
+    fireEvent.click(within(check).getByRole('button', { name: 'Remove, then send' }));
+    await waitFor(() => expect(setSecretsAction).toHaveBeenCalled());
+    expect(setSecretsAction.mock.calls[0][0]).toBe('redact');
   });
 
   it('turns a rule off', async () => {

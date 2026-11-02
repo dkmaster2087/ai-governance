@@ -25,7 +25,15 @@ describe('summarizeStopped', () => {
   it('counts only stopped requests', () => {
     expect(s.total).toBe(4);
     expect(s.byCheck.policy).toBe(4);
-    expect(s.byCheck.secrets.active).toBe(false);
+    expect(s.byCheck.secrets).toEqual({ active: true, stopped: 0 });
+  });
+
+  it('groups secret stops by what was found, under the secrets check', () => {
+    const secret = (types: string, reason: string) => log({ triggeredRules: ['Secrets detection'], metadata: { check: 'secrets', secretTypes: types, policyReason: reason } });
+    const r = summarizeStopped([secret('aws_access_key', 'Contains an AWS access key'), secret('aws_access_key', 'Contains an AWS access key'), secret('github_token', 'Contains a GitHub token')],
+      { from: '2026-10-24T06:00:00.000Z', to: '2026-10-28T06:00:00.000Z', secretsActive: true });
+    expect(r.byCheck).toEqual({ policy: 0, secrets: { active: true, stopped: 3 } });
+    expect(r.causes.map((c) => [c.reason, c.check, c.count])).toEqual([['Contains an AWS access key', 'secrets', 2], ['Contains a GitHub token', 'secrets', 1]]);
   });
 
   it('groups by the stopping rule, largest first', () => {

@@ -3,6 +3,7 @@ import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
 import { TenantSettings } from '@ai-governance/types';
 import { createLogger } from '@ai-governance/utils';
 import { getSecurityConfig } from '../config/security';
+import type { SecretsAction } from './secret-detector';
 
 const logger = createLogger('gateway:tenant-settings');
 
@@ -53,6 +54,12 @@ export class TenantSettingsService {
     const settings = await this.getSettings(tenantId);
     const mode = settings?.governanceFailMode;
     return mode === 'open' || mode === 'closed' ? mode : this.defaultFailMode;
+  }
+
+  /** What to do with credentials found in prompts; blocking unless the tenant chose otherwise. */
+  async getSecretsAction(tenantId: string): Promise<SecretsAction> {
+    const action = (await this.getSettings(tenantId))?.secretsAction;
+    return action === 'redact' || action === 'off' ? action : 'block';
   }
 }
 

@@ -132,6 +132,10 @@ async function addRule(tenantId, rule) {
 
 const setRule = (ref, change) => call('PATCH', `/v1/rules/${ref.policyId}/${ref.ruleId}`, { headers: adminOf(ref.tenantId), body: change });
 const setFailMode = (tenantId, mode) => call('PUT', '/v1/gateway/settings', { headers: adminOf(tenantId), body: { governanceFailMode: mode } });
+const setSecrets = (tenantId, action) => call('PUT', '/v1/gateway/settings', { headers: adminOf(tenantId), body: { secretsAction: action } });
+// Built at runtime so this file doesn't itself trip secret scanners.
+const AWS_KEY = ['AKIA', 'Q3EGRV7XKZ2PLM4N'].join('');
+const GH_TOKEN = ['ghp_', 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7bC0eF3hJ6'].join('');
 
 /** A gateway whose policy engine and data protection addresses point at nothing. */
 async function startDegradedGateway() {
@@ -172,13 +176,15 @@ before(async () => {
   keyB = (await newKey(B)).key;
   await setFailMode(A, 'closed');
   await setFailMode(B, 'closed');
+  await setSecrets(A, 'block');
+  await setSecrets(B, 'block');
 });
 
 after(async () => {
   degraded?.kill();
   for (const r of created.rules) await call('DELETE', `/v1/rules/${r.policyId}/${r.ruleId}`, { headers: adminOf(r.tenantId) });
   for (const k of created.keys) await call('DELETE', `/v1/api-keys/${k.keyId}`, { headers: adminOf(k.tenantId) });
-  if (A) await setFailMode(A, 'closed');
+  if (A) { await setFailMode(A, 'closed'); await setSecrets(A, 'block'); }
   if (B) {
     await setFailMode(B, 'closed');
     await call('POST', `/v1/tenants/${B}/activate`, { headers: platform });
@@ -283,6 +289,88 @@ describe('rules', () => {
     assert.equal(res.status, 403, JSON.stringify(res.body));
     assert.deepEqual(await atModel(m), []);
     await setRule(rule, { enabled: false });
+  });
+});
+
+describe('secrets', () => {
+  test('a prompt with a cloud key is stopped before the model, and nothing keeps the key', async () => {
+    const m = marker();
+    const res = await chat(keyA, `Why is ${AWS_KEY} getting AccessDenied? ${m}`);
+    assert.equal(res.status, 403, JSON.stringify(res.body));
+    assert.equal(res.body.code, 'SECRET_DETECTED');
+    assert.match(res.body.message, /AWS access key/);
+    assert.ok(!JSON.stringify(res.body).includes(AWS_KEY), 'the error does not echo the key');
+    assert.deepEqual(await atModel(m), [], 'model never received the key');
+
+    const record = await caseFile(A, idOf(res));
+    assert.equal(record.status, 200, JSON.stringify(record.body));
+    assert.equal(record.body.outcome, 'stopped');
+    assert.ok(record.body.steps.some((st) => st.label === 'Stopped: secret in the prompt'), JSON.stringify(record.body.steps));
+    assert.ok(!JSON.stringify(record.body).includes(AWS_KEY), 'the case file does not contain the key');
+
+    const stopped = await call('GET', '/v1/gateway/stopped', { headers: adminOf(A) });
+    assert.ok(stopped.body.byCheck.secrets.active, 'the check reports as active');
+    assert.ok(stopped.body.byCheck.secrets.stopped >= 1, 'the stop is counted on the secrets check');
+  });
+
+  test('a company that chose remove-then-send gets the prompt delivered without the secret', async () => {
+    assert.equal((await setSecrets(A, 'redact')).status, 200);
+    try {
+      const m = marker();
+      const res = await chat(keyA, `Clone with ${GH_TOKEN} and email ops@acme-corp.com ${m}`);
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      const [seen] = await atModel(m);
+      assert.ok(seen, 'model received the request');
+      assert.ok(!seen.prompt.includes(GH_TOKEN), `model must not see the token; it saw: ${seen.prompt}`);
+      assert.ok(seen.prompt.includes('[REDACTED github_token]'), `the token is replaced by a marker: ${seen.prompt}`);
+      assert.ok(!seen.prompt.includes('ops@acme-corp.com'), 'personal data is still removed after secrets');
+
+      const record = await caseFile(A, idOf(res));
+      assert.equal(record.body.outcome, 'cleaned');
+      assert.ok(record.body.steps.some((st) => st.label === 'Secrets removed'), JSON.stringify(record.body.steps));
+    } finally {
+      await setSecrets(A, 'block');
+    }
+  });
+
+  test('IDE traffic is checked too, and redacted before it is forwarded', async () => {
+    const proxy = (content) => call('POST', '/v1/proxy/openai/v1/chat/completions', {
+      headers: { 'x-aegis-key': keyA, authorization: 'Bearer sk-developer-own-key' },
+      body: { model: MODEL, messages: [{ role: 'user', content: [{ type: 'text', text: content }] }] },
+    });
+    const m1 = marker();
+    const blocked = await proxy(`deploy using ${AWS_KEY} ${m1}`);
+    assert.equal(blocked.status, 403, JSON.stringify(blocked.body));
+    assert.equal(blocked.body.code, 'SECRET_DETECTED');
+    assert.deepEqual(await atModel(m1), []);
+
+    assert.equal((await setSecrets(A, 'redact')).status, 200);
+    try {
+      const m2 = marker();
+      const sent = await proxy(`deploy using ${AWS_KEY} ${m2}`);
+      assert.equal(sent.status, 200, JSON.stringify(sent.body));
+      const [seen] = await atModel(m2);
+      assert.ok(seen && !seen.prompt.includes(AWS_KEY), `forwarded body still had the key: ${seen?.prompt}`);
+    } finally {
+      await setSecrets(A, 'block');
+    }
+  });
+
+  test('a blocked prompt never starts a stream', async () => {
+    const m = marker();
+    const res = await call('POST', '/v1/chat/completions', {
+      headers: { authorization: `Bearer ${keyA}` },
+      body: { model: MODEL, stream: true, messages: [{ role: 'user', content: `here is my key ${AWS_KEY} ${m}` }] },
+    });
+    assert.equal(res.status, 403);
+    assert.equal(res.body.code, 'SECRET_DETECTED');
+    assert.deepEqual(await atModel(m), []);
+  });
+
+  test('ordinary prompts about keys and passwords are not stopped', async () => {
+    const prompt = 'What should our password policy say? Use AKIAIOSFODNN7EXAMPLE in docs, and password=${DB_PASSWORD} in config. ' + marker();
+    const res = await chat(keyA, prompt);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
   });
 });
 

@@ -23,12 +23,12 @@ const WAYS_IN: Array<{ title: string; status: 'Available' | 'Beta'; points: stri
   {
     title: 'Your apps',
     status: 'Available',
-    points: ['Amazon Bedrock and OpenAI models behind one endpoint', 'Streaming answers, with personal data removed as they stream', 'Every check: rules, personal data, evidence'],
+    points: ['Amazon Bedrock and OpenAI models behind one endpoint', 'Streaming answers, with personal data removed as they stream', 'Every check: rules, secrets, personal data, evidence'],
   },
   {
     title: 'Developers’ IDEs',
     status: 'Beta',
-    points: ['OpenAI, Anthropic, Cohere and Mistral formats', 'Rules and evidence apply; answers stream straight through', 'Personal-data removal isn’t applied in this mode'],
+    points: ['OpenAI, Anthropic, Cohere and Mistral formats', 'Rules, secrets and evidence apply; answers stream straight through', 'Personal-data removal isn’t applied in this mode'],
   },
   {
     title: 'Employees’ browsers',
@@ -85,6 +85,22 @@ export function GatewayPage() {
         }
       >
         <p className="m-0">Each rule that fired gets one card: how often, which apps and people, and a short excerpt of exactly what triggered it.</p>
+      </Feature>
+
+      <Feature
+        eyebrow="Secrets"
+        title={<>A pasted key is <span className="text-stop">stopped</span>, not leaked.</>}
+        sample={
+          <Panel className="p-6 flex flex-col gap-3">
+            <div className="bg-canvas border border-line-subtle rounded-[10px] px-4 py-3 font-mono text-[13px] leading-relaxed">
+              Why does <mark className="bg-stop-soft text-stop-text font-bold px-1 rounded">[AWS access key]</mark> get AccessDenied on the orders bucket?
+            </div>
+            <p className="m-0 font-bold text-stop">Stopped · never reached OpenAI</p>
+            <p className="m-0 text-sm text-ink-muted">Or, if you prefer: the key is removed and the rest is sent.</p>
+          </Panel>
+        }
+      >
+        <p className="m-0">Cloud and SaaS keys, tokens, private keys, connection strings and passwords. The secret itself is never stored.</p>
       </Feature>
 
       <Feature

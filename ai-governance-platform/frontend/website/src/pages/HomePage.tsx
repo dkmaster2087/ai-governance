@@ -39,6 +39,7 @@ export function HomePage() {
         <div className="mt-12">
           <IconFacts items={[
             ['lock', 'Confidential work stopped', 'Your words, patterns, approved models'],
+            ['key', 'Secrets never leave', 'API keys, tokens, private keys, passwords'],
             ['identity', 'Personal data removed', 'In prompts and in answers'],
             ['browser', 'Shadow AI visible', 'Block, approve or keep watching'],
             ['report', 'Evidence for every decision', 'A case file per request'],

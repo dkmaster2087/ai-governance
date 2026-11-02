@@ -46,8 +46,8 @@ describe('StoppedPage', () => {
     expect(await screen.findByText(/No excerpt kept for these requests/)).toBeInTheDocument();
   });
 
-  it('shows secrets as not active rather than zero', async () => {
+  it('shows secrets as turned off rather than zero when the check is off', async () => {
     renderPage();
-    expect(await screen.findByRole('button', { name: 'Secrets · not active yet' })).toBeDisabled();
+    expect(await screen.findByRole('button', { name: 'Secrets · turned off' })).toBeDisabled();
   });
 });

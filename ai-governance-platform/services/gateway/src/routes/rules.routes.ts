@@ -35,15 +35,21 @@ export async function rulesRoutes(app: FastifyInstance) {
   app.get('/rules', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
     const to = new Date();
     const from = new Date(to.getTime() - 7 * 86_400_000);
-    const [policies, audit, failMode] = await Promise.all([
+    const [policies, audit, failMode, secretsAction] = await Promise.all([
       engine.list(request.tenantId),
       queryAuditLogs(request.tenantId, from.toISOString(), to.toISOString()),
       tenantSettings().getFailMode(request.tenantId),
+      tenantSettings().getSecretsAction(request.tenantId),
     ]);
     return {
       from: from.toISOString(),
       to: to.toISOString(),
       failMode,
+      secrets: {
+        action: secretsAction,
+        stopped: audit.logs.filter((l) => l.eventType === 'request_blocked' && l.metadata?.check === 'secrets').length,
+        redacted: audit.logs.filter((l) => l.eventType !== 'request_blocked' && l.metadata?.secretsRedacted).length,
+      },
       cleaned: audit.logs.filter((l) => l.eventType !== 'request_blocked' && l.piiDetected).length,
       piiTypes: PII_TYPES,
       rules: buildRuleViews(policies, audit.logs),
@@ -96,25 +102,33 @@ export async function rulesRoutes(app: FastifyInstance) {
   /** Gateway settings a tenant admin controls. */
   app.get('/gateway/settings', { preHandler: requireAccess(TENANT_READ) }, async (request) => ({
     governanceFailMode: await tenantSettings().getFailMode(request.tenantId),
+    secretsAction: await tenantSettings().getSecretsAction(request.tenantId),
     defaultFailMode: getSecurityConfig().governanceFailMode,
   }));
 
   app.put('/gateway/settings', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
-    const parsed = z.object({ governanceFailMode: z.enum(['open', 'closed']) }).safeParse(request.body);
-    if (!parsed.success) return reply.status(400).send({ error: 'governanceFailMode must be open or closed', code: 'INVALID_SETTINGS' });
+    const parsed = z.object({
+      governanceFailMode: z.enum(['open', 'closed']).optional(),
+      secretsAction: z.enum(['block', 'redact', 'off']).optional(),
+    }).strict().refine((b) => b.governanceFailMode !== undefined || b.secretsAction !== undefined).safeParse(request.body);
+    if (!parsed.success) {
+      return reply.status(400).send({ error: 'Send governanceFailMode (open or closed) and/or secretsAction (block, redact or off)', code: 'INVALID_SETTINGS' });
+    }
     const key = { tenantId: request.tenantId };
     // Make sure the settings map exists before setting a field inside it.
     await tenants.send(new UpdateCommand({
       TableName: tenantsTable, Key: key, ConditionExpression: 'attribute_exists(tenantId)',
       UpdateExpression: 'SET settings = if_not_exists(settings, :empty)', ExpressionAttributeValues: { ':empty': {} },
     }));
+    const sets = ['updatedAt = :t'];
+    const values: Record<string, unknown> = { ':t': new Date().toISOString() };
+    if (parsed.data.governanceFailMode) { sets.push('settings.governanceFailMode = :m'); values[':m'] = parsed.data.governanceFailMode; }
+    if (parsed.data.secretsAction) { sets.push('settings.secretsAction = :s'); values[':s'] = parsed.data.secretsAction; }
     await tenants.send(new UpdateCommand({
-      TableName: tenantsTable, Key: key,
-      UpdateExpression: 'SET settings.governanceFailMode = :m, updatedAt = :t',
-      ExpressionAttributeValues: { ':m': parsed.data.governanceFailMode, ':t': new Date().toISOString() },
+      TableName: tenantsTable, Key: key, UpdateExpression: `SET ${sets.join(', ')}`, ExpressionAttributeValues: values,
     }));
     tenantSettings().invalidate(request.tenantId);
-    logger.info('Fail mode changed', { tenantId: request.tenantId, mode: parsed.data.governanceFailMode, by: request.userId });
-    return { governanceFailMode: parsed.data.governanceFailMode };
+    logger.info('Gateway settings changed', { tenantId: request.tenantId, ...parsed.data, by: request.userId });
+    return parsed.data;
   });
 }

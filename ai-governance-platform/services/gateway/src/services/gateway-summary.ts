@@ -1,4 +1,5 @@
 import { AuditLog } from '@ai-governance/types';
+import { outcomeOf, secretsRedacted } from './evidence';
 
 /** What happened to AI traffic in a time range, shaped for the dashboard's pipeline view. */
 export interface GatewaySummary {
@@ -13,8 +14,8 @@ export interface GatewaySummary {
   sources: Array<{ name: string; count: number }>;
   checks: {
     policy: { stopped: number };
-    /** Secrets detection isn't built yet; the dashboard shows this check as not active. */
-    secrets: { active: boolean; stopped: number };
+    /** active is false when the tenant turned the check off. redacted: secrets removed, request still sent. */
+    secrets: { active: boolean; stopped: number; redacted: number };
     personalData: { cleaned: number };
   };
   providers: Array<{ name: string; count: number }>;
@@ -61,12 +62,14 @@ function stopReason(log: AuditLog): string {
 export function summarizeGatewayTraffic(
   logs: AuditLog[],
   range: { from: string; to: string; truncated?: boolean },
-  shadowEvents: Array<{ userId?: string }> = []
+  shadowEvents: Array<{ userId?: string }> = [],
+  secretsActive = true
 ): GatewaySummary {
   const stoppedLogs = logs.filter(isStopped);
   const deliveredLogs = logs.filter((l) => !isStopped(l));
-  const cleaned = deliveredLogs.filter((l) => l.piiDetected).length;
-  // Every stop today comes from the policy engine; secrets detection will add its own check later.
+  const cleaned = deliveredLogs.filter((l) => outcomeOf(l) === 'cleaned').length;
+  const personalDataCleaned = deliveredLogs.filter((l) => l.piiDetected).length;
+  const secretsRedactedCount = deliveredLogs.filter(secretsRedacted).length;
   const secretsStopped = stoppedLogs.filter((l) => l.metadata?.check === 'secrets').length;
   const policyStopped = stoppedLogs.length - secretsStopped;
 
@@ -81,7 +84,7 @@ export function summarizeGatewayTraffic(
     .slice(0, 8)
     .map((l) => ({
       time: l.timestamp,
-      outcome: isStopped(l) ? ('stopped' as const) : l.piiDetected ? ('cleaned' as const) : ('delivered' as const),
+      outcome: outcomeOf(l),
       app: l.appId || 'unknown',
       user: l.userId || 'anonymous',
       model: l.modelId,
@@ -99,8 +102,8 @@ export function summarizeGatewayTraffic(
     sources,
     checks: {
       policy: { stopped: policyStopped },
-      secrets: { active: false, stopped: secretsStopped },
-      personalData: { cleaned },
+      secrets: { active: secretsActive, stopped: secretsStopped, redacted: secretsRedactedCount },
+      personalData: { cleaned: personalDataCleaned },
     },
     providers: countBy(deliveredLogs, (l) => PROVIDER_NAMES[l.provider] ?? l.provider ?? 'unknown'),
     topStopReasons: countBy(stoppedLogs, stopReason).slice(0, 3).map(({ name, count }) => ({ reason: name, count })),

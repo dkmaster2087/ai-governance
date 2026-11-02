@@ -7,6 +7,7 @@ import { AuditService } from './audit.service';
 import { ResponseScanner } from './response-scanner';
 import { StreamMasker } from './stream-masker';
 import { tenantSettings } from './tenant-settings.service';
+import { checkSecrets } from './secrets-check';
 
 const logger = createLogger('gateway');
 
@@ -87,14 +88,27 @@ export class GatewayService {
       });
     }
 
-    // Mask PII before the prompt leaves for the AI provider
+    // Check 2: credentials. Runs in-process, so it never depends on another service being up.
+    const secrets = checkSecrets(input.messages, await this.tenantSettings.getSecretsAction(input.tenantId));
+    if (secrets.outcome === 'blocked') {
+      await this.auditService.log({ ...normalizedRequest, metadata: secrets.metadata }, null, secrets.result, 0);
+      throw Object.assign(new Error(secrets.message), { code: 'SECRET_DETECTED', statusCode: 403, requestId });
+    }
+    const afterSecrets: NormalizedAIRequest = {
+      ...normalizedRequest,
+      ...(secrets.outcome === 'redacted' ? { messages: secrets.messages } : {}),
+      metadata: { ...normalizedRequest.metadata, ...secrets.metadata },
+    };
+
+    // Check 3: mask personal data before the prompt leaves for the AI provider
     let protectedRequest: NormalizedAIRequest;
     try {
-      protectedRequest = await this.dataProtectionClient.protectRequest(normalizedRequest);
+      const masked = await this.dataProtectionClient.protectRequest(afterSecrets);
+      protectedRequest = { ...masked, metadata: { ...afterSecrets.metadata, ...masked.metadata } };
     } catch (err) {
-      protectedRequest = whenUnavailable(err, 'pii_masking', normalizedRequest);
+      protectedRequest = whenUnavailable(err, 'pii_masking', afterSecrets);
     }
-    return { requestId, normalizedRequest, protectedRequest, policyResult, degraded };
+    return { requestId, normalizedRequest: afterSecrets, protectedRequest, policyResult, degraded };
   }
 
   /** Audit record for a completed (or abandoned) request. */
@@ -103,7 +117,7 @@ export class GatewayService {
     let protectedRequest = prep.protectedRequest;
     const metadata = { ...protectedRequest.metadata, ...extra, ...(degraded.length > 0 ? { governanceDegraded: degraded.join(',') } : {}) };
     protectedRequest = { ...protectedRequest, metadata };
-    // PII was masked if the data protection service changed any message.
+    // PII was masked if the data protection service changed any message (secrets were already removed before it ran).
     const piiDetected = protectedRequest.messages.some((m, i) => m.content !== normalizedRequest.messages[i]?.content);
     await this.auditService.log(protectedRequest, response, policyResult, latencyMs, { piiDetected });
   }

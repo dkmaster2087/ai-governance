@@ -8,7 +8,7 @@ import { ArrowLink, ButtonLink, Note, Panel, Segmented, formatCount } from '../c
 const RANGE_OPTIONS = (Object.keys(RANGE_LABELS) as RangeKey[]).map((value) => ({ value, label: RANGE_LABELS[value].button }));
 
 type Cause = StoppedSummary['causes'][number];
-type Filter = 'all' | 'policy';
+type Filter = 'all' | 'policy' | 'secrets';
 
 const RULE_KIND: Record<string, string> = {
   keyword_block: 'Keyword rule',
@@ -119,6 +119,9 @@ export function StoppedPage() {
           {([
             { value: 'all', label: `All stopped · ${formatCount(data.total)}` },
             { value: 'policy', label: `Policy rules · ${formatCount(data.byCheck.policy)}` },
+            ...(data.byCheck.secrets.active || data.byCheck.secrets.stopped > 0
+              ? [{ value: 'secrets', label: `Secrets · ${formatCount(data.byCheck.secrets.stopped)}` }]
+              : []),
           ] as Array<{ value: Filter; label: string }>).map((f) => (
             <button
               key={f.value}
@@ -133,9 +136,11 @@ export function StoppedPage() {
               {f.label}
             </button>
           ))}
-          <button type="button" disabled className="min-h-[40px] px-3.5 rounded-full border border-dashed border-line-strong text-ink-muted bg-white cursor-not-allowed">
-            Secrets · not active yet
-          </button>
+          {!data.byCheck.secrets.active && data.byCheck.secrets.stopped === 0 && (
+            <button type="button" disabled className="min-h-[40px] px-3.5 rounded-full border border-dashed border-line-strong text-ink-muted bg-white cursor-not-allowed">
+              Secrets · turned off
+            </button>
+          )}
         </div>
       )}
 

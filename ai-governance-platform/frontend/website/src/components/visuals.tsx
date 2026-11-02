@@ -6,9 +6,10 @@ import { ReactNode } from 'react';
 import clsx from 'clsx';
 import { Status } from './ui';
 
-type IconName = 'cloud' | 'firewall' | 'web' | 'dns' | 'identity' | 'apps' | 'browser' | 'lock' | 'eye' | 'code' | 'trash' | 'offline' | 'server' | 'report' | 'plug' | 'clock';
+type IconName = 'key' | 'cloud' | 'firewall' | 'web' | 'dns' | 'identity' | 'apps' | 'browser' | 'lock' | 'eye' | 'code' | 'trash' | 'offline' | 'server' | 'report' | 'plug' | 'clock';
 
 const PATHS: Record<IconName, ReactNode> = {
+  key: <><circle cx="8" cy="15" r="4.5" /><path d="M11.2 11.8L20 3M16.5 6.5l2.5 2.5M14 9l2 2" /></>,
   cloud: <path d="M7 18h10a4 4 0 0 0 .6-7.96A6 6 0 0 0 6.1 9.5 4.25 4.25 0 0 0 7 18z" />,
   firewall: <><rect x="3" y="5" width="18" height="14" rx="1.5" /><path d="M3 9.7h18M3 14.3h18M9 5v4.7M15 9.7v4.6M9 14.3V19" /></>,
   web: <><circle cx="12" cy="12" r="8.5" /><path d="M3.5 12h17M12 3.5c2.6 2.6 2.6 14.4 0 17M12 3.5c-2.6 2.6-2.6 14.4 0 17" /></>,

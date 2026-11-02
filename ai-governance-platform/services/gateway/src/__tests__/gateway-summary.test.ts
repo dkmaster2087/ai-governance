@@ -21,6 +21,11 @@ describe('summarizeGatewayTraffic', () => {
     log({ appId: 'billing-api', eventType: 'request_blocked', policyDecision: 'block', triggeredRules: ['rule_kw'], metadata: { policyReason: 'Block confidential keywords' } }),
   ];
   const s = summarizeGatewayTraffic(logs, { from: 'a', to: 'b' }, [{ userId: 'alice' }, { userId: 'bob' }, { userId: 'alice' }]);
+  const withSecrets = summarizeGatewayTraffic([
+    ...logs,
+    log({ appId: 'ide', eventType: 'request_blocked', policyDecision: 'block', triggeredRules: ['Secrets detection'], metadata: { check: 'secrets', policyReason: 'Contains a GitHub token' } }),
+    log({ appId: 'ide', metadata: { secretsChecked: 'true', secretsRedacted: '1' } }),
+  ], { from: 'a', to: 'b' }, [], true);
 
   it('adds up: received = stopped + delivered', () => {
     expect(s.received).toBe(5);
@@ -29,10 +34,22 @@ describe('summarizeGatewayTraffic', () => {
     expect(s.cleaned).toBe(1);
   });
 
-  it('attributes stops to the policy check while secrets detection is not active', () => {
+  it('attributes stops to the policy check when no secrets were found', () => {
     expect(s.checks.policy.stopped).toBe(2);
-    expect(s.checks.secrets).toEqual({ active: false, stopped: 0 });
+    expect(s.checks.secrets).toEqual({ active: true, stopped: 0, redacted: 0 });
     expect(s.checks.personalData.cleaned).toBe(1);
+  });
+
+  it('counts secret stops on their own check, and redacted prompts as cleaned', () => {
+    expect(withSecrets.checks.policy.stopped).toBe(2);
+    expect(withSecrets.checks.secrets).toEqual({ active: true, stopped: 1, redacted: 1 });
+    expect(withSecrets.checks.personalData.cleaned).toBe(1);
+    expect(withSecrets.cleaned).toBe(2);
+    expect(withSecrets.received).toBe(withSecrets.stopped + withSecrets.delivered);
+  });
+
+  it('reports the check as not active when the tenant turned it off', () => {
+    expect(summarizeGatewayTraffic(logs, { from: 'a', to: 'b' }, [], false).checks.secrets.active).toBe(false);
   });
 
   it('groups sources and delivered providers', () => {

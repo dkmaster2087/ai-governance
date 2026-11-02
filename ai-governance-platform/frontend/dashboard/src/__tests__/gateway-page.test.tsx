@@ -22,9 +22,15 @@ describe('Pipeline', () => {
     expect(screen.getByText('31')).toBeInTheDocument();
   });
 
-  it('shows secrets detection honestly as not active', () => {
+  it('shows the secrets check as turned off when the company switched it off', () => {
     render(<MemoryRouter><Pipeline summary={summary} /></MemoryRouter>);
-    expect(screen.getByText('Not active yet')).toBeInTheDocument();
+    expect(screen.getByText('Turned off')).toBeInTheDocument();
+  });
+
+  it('shows secrets stopped and removed when the check is on', () => {
+    render(<MemoryRouter><Pipeline summary={{ ...summary, checks: { ...summary.checks, secrets: { active: true, stopped: 6, redacted: 2 } } }} /></MemoryRouter>);
+    expect(screen.queryByText('Turned off')).toBeNull();
+    expect(screen.getByText('credentials in prompts · 2 more removed, then sent')).toBeInTheDocument();
   });
 
   it('lists sources and providers', () => {

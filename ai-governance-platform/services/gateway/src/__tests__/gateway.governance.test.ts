@@ -11,8 +11,12 @@ jest.mock('../clients/data-protection.client');
 jest.mock('../services/provider.router');
 jest.mock('../services/audit.service');
 const mockGetFailMode = jest.fn();
+const mockGetSecretsAction = jest.fn();
 jest.mock('../services/tenant-settings.service', () => ({
-  tenantSettings: () => ({ getFailMode: (...args: unknown[]) => mockGetFailMode(...args) }),
+  tenantSettings: () => ({
+    getFailMode: (...args: unknown[]) => mockGetFailMode(...args),
+    getSecretsAction: (...args: unknown[]) => mockGetSecretsAction(...args),
+  }),
 }));
 
 const Policy = PolicyEngineClient as jest.MockedClass<typeof PolicyEngineClient>;
@@ -43,6 +47,57 @@ describe('GatewayService governance', () => {
     Policy.prototype.evaluate.mockResolvedValue(allow);
     Audit.prototype.log.mockResolvedValue(undefined);
     mockGetFailMode.mockResolvedValue('closed');
+    mockGetSecretsAction.mockResolvedValue('block');
+  });
+
+  describe('secrets (check 2)', () => {
+    const KEY = 'AKIAQ3EGRV7XKZ2PLM4N';
+    const withKey = { ...input, messages: [{ role: 'user' as const, content: `Why does ${KEY} fail? My SSN is 123-45-6789` }] };
+
+    it('stops a prompt with a credential, never calls the provider, and keeps no copy of the key', async () => {
+      await expect(new GatewayService().processRequest(withKey)).rejects.toMatchObject({ statusCode: 403, code: 'SECRET_DETECTED' });
+      expect(Router.prototype.route).not.toHaveBeenCalled();
+      expect(DataProtection.prototype.protectRequest).not.toHaveBeenCalled();
+      const [req, res, result] = Audit.prototype.log.mock.calls[0];
+      expect(res).toBeNull();
+      expect(req.metadata).toMatchObject({ check: 'secrets', secretTypes: 'aws_access_key' });
+      expect(result).toMatchObject({ allowed: false, reason: 'Contains an AWS access key' });
+      expect(JSON.stringify(result)).not.toContain(KEY);
+      expect(JSON.stringify(req.metadata)).not.toContain(KEY);
+    });
+
+    it('does not echo the key in the error', async () => {
+      const err = await new GatewayService().processRequest(withKey).catch((e) => e);
+      expect(err.message).toContain('AWS access key');
+      expect(err.message).not.toContain(KEY);
+    });
+
+    it('in redact mode removes the key, then masks personal data, then sends', async () => {
+      mockGetSecretsAction.mockResolvedValue('redact');
+      await new GatewayService().processRequest(withKey);
+      expect(Router.prototype.route.mock.calls[0][0].messages[0].content).toBe('Why does [REDACTED aws_access_key] fail? My SSN is [REDACTED]');
+      const [req, , , , findings] = Audit.prototype.log.mock.calls[0];
+      expect(req.metadata).toMatchObject({ secretsChecked: 'true', secretsRedacted: '1', secretTypes: 'aws_access_key' });
+      // Personal data is judged against the prompt after secrets were removed.
+      expect(findings).toEqual({ piiDetected: true });
+    });
+
+    it('lets the prompt through untouched when the tenant turned the check off', async () => {
+      mockGetSecretsAction.mockResolvedValue('off');
+      await new GatewayService().processRequest(withKey);
+      expect(Router.prototype.route.mock.calls[0][0].messages[0].content).toContain(KEY);
+      expect(Audit.prototype.log.mock.calls[0][0].metadata.secretsChecked).toBeUndefined();
+    });
+
+    it('records that a clean prompt was checked', async () => {
+      await new GatewayService().processRequest(input);
+      expect(Audit.prototype.log.mock.calls[0][0].metadata).toMatchObject({ secretsChecked: 'true' });
+    });
+
+    it('checks streamed requests before the stream starts', async () => {
+      await expect(new GatewayService().processStream(withKey)).rejects.toMatchObject({ code: 'SECRET_DETECTED' });
+      expect(Router.prototype.stream).not.toHaveBeenCalled();
+    });
   });
 
   it('evaluates policy on the original prompt and sends only the masked prompt to the provider', async () => {

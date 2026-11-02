@@ -9,15 +9,21 @@ App ──POST /v1/chat/completions──▶ Gateway (:3000)
                                        │       scope check, tenant not suspended
                                        ├─ 2. Policy engine (:3001) evaluates rules on the ORIGINAL prompt
                                        │       └─ match with action "block" → 403 POLICY_VIOLATION + audit
-                                       ├─ 3. Data protection (:3002) removes personal data
-                                       ├─ 4. Provider: Bedrock (IAM role) or OpenAI-compatible
+                                       ├─ 3. Secrets (in process): tenant setting secretsAction
+                                       │       block (default) → 403 SECRET_DETECTED + audit
+                                       │       redact → each secret replaced by [REDACTED <type>]; off → skipped
+                                       ├─ 4. Data protection (:3002) removes personal data
+                                       ├─ 5. Provider: Bedrock (IAM role) or OpenAI-compatible
                                        │       (provider key read from Secrets Manager)
-                                       ├─ 5. Response scanned for personal data (in process + service)
-                                       └─ 6. Audit record (DynamoDB, queryable) + archive copy (S3, KMS)
+                                       ├─ 6. Response scanned for personal data (in process + service)
+                                       └─ 7. Audit record (DynamoDB, queryable) + archive copy (S3, KMS)
 ```
 
 - Policy runs **before** masking so rules about personal data can see it; only the masked prompt leaves.
-- If step 2 or 3 can't run, the tenant's fail mode decides: `closed` (default) returns
+- The secrets check never sends the prompt anywhere and has no fail mode. A secret's value is never written to
+  the audit record; evidence excerpts from any rule are passed through the same detector before they're saved.
+  The policy engine (step 2) does receive the original prompt, inside the VPC, as it did before.
+- If step 2 or 4 can't run, the tenant's fail mode decides: `closed` (default) returns
   `503 GOVERNANCE_UNAVAILABLE`; `open` continues and marks the audit record `governanceDegraded`.
 - Stopped requests keep a short masked excerpt of the trigger in the audit record; delivered prompts are kept
   only as SHA-256 fingerprints.
@@ -26,7 +32,9 @@ App ──POST /v1/chat/completions──▶ Gateway (:3000)
 
 ```
 IDE ──▶ corporate proxy ──▶ Gateway /v1/proxy/:provider/*  ──▶ provider
-         adds X-Aegis-Key      checks policy on extracted text   (developer's own key, untouched)
+         adds X-Aegis-Key      checks policy and secrets on       (developer's own key, untouched)
+                               extracted text; in redact mode the
+                               body's strings are redacted first
 ```
 
 The gateway extracts text from OpenAI and Anthropic formats, including content-block arrays and the Anthropic
@@ -103,7 +111,8 @@ nothing else installed. Plan: [ASSESSMENT.md](ASSESSMENT.md); the core, the AWS 
 
 - Production deploys need `-c certificateArn=…` for HTTPS; the service Dockerfiles haven't been built on a
   developer machine yet (CI builds them).
-- Secrets detection is not built yet.
+- Secrets detection covers prompts only. A model that writes a credential into its answer isn't checked by it
+  (the existing response scanner catches a few key formats).
 - Streamed answers are masked by the gateway's built-in patterns as they stream; the deeper data-protection
   check runs only on non-streamed answers. A pattern longer than 96 characters (a whole private key) can slip
   through when split across chunks.

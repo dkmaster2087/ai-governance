@@ -2,9 +2,23 @@ import { AuditLog } from '@ai-governance/types';
 
 export type Outcome = 'stopped' | 'cleaned' | 'delivered';
 
+/** Credentials removed from a delivered prompt (secrets check set to redact). */
+export const secretsRedacted = (log: AuditLog): boolean => !!log.metadata?.secretsRedacted;
+
 export function outcomeOf(log: AuditLog): Outcome {
   if (log.eventType === 'request_blocked') return 'stopped';
-  return log.piiDetected ? 'cleaned' : 'delivered';
+  return log.piiDetected || secretsRedacted(log) ? 'cleaned' : 'delivered';
+}
+
+/** The secrets step of a case file, from what the audit record says the check did. */
+function secretsStep(log: AuditLog, stoppedBySecrets: boolean): EvidenceStep {
+  const m = log.metadata ?? {};
+  const kinds = (m.secretTypes ?? '').split(',').filter(Boolean).map((t) => t.replace(/_/g, ' ')).join(', ');
+  if (stoppedBySecrets) return { label: 'Stopped: secret in the prompt', detail: `found ${kinds || 'a credential'}. The secret itself was not recorded.`, kind: 'stopped' };
+  if (m.secretsRedacted) return { label: 'Secrets removed', detail: `${m.secretsRedacted} found (${kinds}) and replaced before the prompt left the company.`, kind: 'cleaned' };
+  if (m.secretsChecked) return { label: 'No secrets found', detail: 'no API keys, tokens, private keys or passwords.', kind: 'neutral' };
+  if (log.eventType === 'request_blocked') return { label: 'Secrets', detail: 'not reached; the request was already stopped.', kind: 'skipped' };
+  return { label: 'Secrets', detail: 'not checked for this request (the check was off, or the request predates it).', kind: 'skipped' };
 }
 
 export interface EvidenceListItem {
@@ -95,9 +109,10 @@ export function buildEvidenceRecord(log: AuditLog, retentionDays: number): Evide
     { label: 'Received', detail: `from ${log.appId || 'an unknown app'} for ${log.userId || 'an anonymous user'}, going to ${provider} · ${log.modelId}.`, kind: 'neutral' },
   ];
 
+  const bySecrets = outcome === 'stopped' && log.metadata?.check === 'secrets';
   if (degraded.includes('policy_evaluation')) {
     steps.push({ label: 'Policy rules skipped', detail: 'the policy engine was unavailable and this company lets requests through when a check can’t run.', kind: 'skipped' });
-  } else if (outcome === 'stopped') {
+  } else if (outcome === 'stopped' && !bySecrets) {
     steps.push({ label: 'Stopped by a policy rule', detail: `“${reason}”.`, kind: 'stopped' });
   } else if (rules.length > 0) {
     steps.push({ label: 'Policy rules passed', detail: `${rules.length} ${rules.length === 1 ? 'rule' : 'rules'} flagged it without stopping it.`, kind: 'neutral' });
@@ -105,7 +120,7 @@ export function buildEvidenceRecord(log: AuditLog, retentionDays: number): Evide
     steps.push({ label: 'Policy rules passed', detail: 'no rule matched.', kind: 'neutral' });
   }
 
-  steps.push({ label: 'Secrets', detail: 'not checked; secrets detection isn’t active yet.', kind: 'skipped' });
+  steps.push(secretsStep(log, bySecrets));
 
   if (outcome === 'stopped') {
     steps.push({ label: 'Not sent', detail: `the app was told the request was blocked by company policy. Nothing reached ${provider}.`, kind: 'stopped' });
@@ -126,7 +141,7 @@ export function buildEvidenceRecord(log: AuditLog, retentionDays: number): Evide
 
   const headline =
     outcome === 'stopped' ? `A ${log.appId || 'request'} prompt was stopped and never reached ${provider}.`
-    : outcome === 'cleaned' ? `A ${log.appId || 'request'} prompt was cleaned of personal data, then sent to ${provider}.`
+    : outcome === 'cleaned' ? `A ${log.appId || 'request'} prompt was cleaned of ${log.piiDetected && secretsRedacted(log) ? 'secrets and personal data' : secretsRedacted(log) ? 'secrets' : 'personal data'}, then sent to ${provider}.`
     : `A ${log.appId || 'request'} prompt passed every check and was sent to ${provider}.`;
 
   return {

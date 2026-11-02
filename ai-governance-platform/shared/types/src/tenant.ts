@@ -36,4 +36,9 @@ export interface TenantSettings {
    * 'closed' (default) blocks the request; 'open' lets it through and flags it in the audit log.
    */
   governanceFailMode?: 'open' | 'closed';
+  /**
+   * What the gateway does when a prompt contains a credential (API key, token, private key, password).
+   * 'block' (default) stops the request; 'redact' replaces the secret and sends the rest; 'off' skips the check.
+   */
+  secretsAction?: 'block' | 'redact' | 'off';
 }

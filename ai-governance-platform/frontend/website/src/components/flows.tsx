@@ -143,15 +143,15 @@ const LANE_Y = 160;
 /** Requests pass the gateway's checks: most are delivered, some stopped, some cleaned of personal data. */
 export function GatewayFlow() {
   const checks = [
-    { x: 400, name: 'Policy rules', sub: 'stop' },
-    { x: 540, name: 'Secrets', sub: 'coming', soon: true },
-    { x: 680, name: 'Personal data', sub: 'clean' },
+    { x: 400, name: 'Policy rules', sub: 'stop', soon: false },
+    { x: 540, name: 'Secrets', sub: 'stop', soon: false },
+    { x: 680, name: 'Personal data', sub: 'clean', soon: false },
   ];
   return (
     <figure className="m-0">
       <div className="overflow-x-auto">
         <svg viewBox="0 0 1040 400" className="w-full min-w-[760px] h-auto" role="img"
-          aria-label="Requests from apps and IDEs enter the Aegis gateway and pass three checks in order. Requests that break a policy rule are stopped and never reach a provider. Requests with personal data have it removed and are then delivered. Everything else is delivered to AI providers such as Amazon Bedrock, OpenAI and Anthropic.">
+          aria-label="Requests from apps and IDEs enter the Aegis gateway and pass three checks in order. Requests that break a policy rule, or contain a secret such as an API key or private key, are stopped and never reach a provider. Requests with personal data have it removed and are then delivered. Everything else is delivered to AI providers such as Amazon Bedrock, OpenAI and Anthropic.">
           <defs>
             {APPS.map((a, i) => {
               const ay = a.y + 26;
@@ -161,6 +161,7 @@ export function GatewayFlow() {
                   <path id={`g-in-${i}`} d={enter} />
                   <path id={`g-ok-${i}`} d={`${enter} L 830 ${LANE_Y} C 870 ${LANE_Y}, 870 ${100 + i * 40}, 900 ${100 + i * 40}`} />
                   <path id={`g-stop-${i}`} d={`${enter} L 455 ${LANE_Y} L 455 330`} />
+                  <path id={`g-secret-${i}`} d={`${enter} L 595 ${LANE_Y} L 595 330`} />
                 </g>
               );
             })}
@@ -191,8 +192,10 @@ export function GatewayFlow() {
 
           {/* Stopped */}
           <line x1="455" y1={LANE_Y + 46} x2="455" y2="330" stroke={RED} strokeWidth="2.5" />
-          <Label x={455} y={356} anchor="middle" fill={RED} size={15} weight={700}>Stopped</Label>
-          <Label x={455} y={374} anchor="middle" fill={MUTED} size={12} weight={400}>never reaches a provider</Label>
+          <line x1="595" y1={LANE_Y + 46} x2="595" y2="330" stroke={RED} strokeWidth="2.5" />
+          <line x1="455" y1="330" x2="595" y2="330" stroke={RED} strokeWidth="2.5" />
+          <Label x={525} y={356} anchor="middle" fill={RED} size={15} weight={700}>Stopped</Label>
+          <Label x={525} y={374} anchor="middle" fill={MUTED} size={12} weight={400}>never reaches a provider</Label>
 
           {/* Providers */}
           <Label x={900} y={78} size={11} weight={700} fill={MUTED}>DELIVERED TO</Label>
@@ -209,13 +212,14 @@ export function GatewayFlow() {
               <Dot path={`g-ok-${i}`} dur={4} begin={i * 0.9} fill={INK} r={5.5} />
               {i % 2 === 0 && <Dot path={`g-stop-${i}`} dur={3} begin={i * 0.9 + 1.6} fill={RED} r={5.5} fade />}
               {i % 2 === 1 && <Dot path={`g-ok-${i}`} dur={4} begin={i * 0.9 + 2} fill={INK} r={6} hollow becomesFilledAt={0.8} />}
+              {i % 2 === 1 && <Dot path={`g-secret-${i}`} dur={3.4} begin={i * 0.9 + 0.4} fill={RED} r={5.5} fade />}
             </g>
           ))}
         </svg>
       </div>
       <figcaption className="mt-3 flex flex-wrap gap-x-6 gap-y-1 text-sm text-ink-muted">
         <span className="inline-flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-ink inline-block" />Delivered</span>
-        <span className="inline-flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-stop inline-block" />Stopped by a rule</span>
+        <span className="inline-flex items-center gap-2"><span className="w-3 h-3 rounded-full bg-stop inline-block" />Stopped by a rule, or for a secret such as an API key</span>
         <span className="inline-flex items-center gap-2"><span className="w-3 h-3 rounded-full border-2 border-ink inline-block" />Carries personal data; cleaned, then delivered</span>
       </figcaption>
     </figure>

@@ -3,7 +3,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import {
-  addRule, changeRule, deleteRule, EditableType, errorMessage, fetchRules, isEditableType, RuleView, ruleValues, setFailMode,
+  addRule, changeRule, deleteRule, EditableType, errorMessage, fetchRules, isEditableType, RuleView, ruleValues, SecretsAction, setFailMode,
+  setSecretsAction,
 } from '../lib/rules-api';
 import { Button, Note, Panel, SectionLabel, Segmented, Switch, formatCount } from '../components/aegis/primitives';
 
@@ -20,6 +21,48 @@ const TYPE_OPTIONS: Array<{ type: EditableType; label: string; lead: string; hin
   { type: 'model_restriction', label: 'Approved models', lead: 'Only allow these models:', hint: 'Model IDs, comma-separated, e.g. gpt-4o, anthropic.claude-3-haiku-20240307-v1:0' },
   { type: 'pii_detection', label: 'Personal data', lead: 'Stop prompts containing', hint: '' },
 ];
+
+const SECRETS_SENTENCE: Record<SecretsAction, { lead: string; tail: string }> = {
+  block: { lead: 'Stop prompts containing', tail: '.' },
+  redact: { lead: 'Remove', tail: ', then send.' },
+  off: { lead: 'Off. Prompts are not checked for', tail: '.' },
+};
+
+const SECRETS_FOUND = 'API keys, tokens, private keys and passwords';
+
+/** Check 2: what the gateway does with credentials found in prompts. */
+function SecretsCard({ secrets, canEdit, onChange, saving }: {
+  secrets: { action: SecretsAction; stopped: number; redacted: number };
+  canEdit: boolean;
+  onChange: (action: SecretsAction) => void;
+  saving: boolean;
+}) {
+  const s = SECRETS_SENTENCE[secrets.action];
+  return (
+    <Panel as="article" className={clsx('px-[18px] py-4 flex flex-col gap-3', secrets.action === 'off' && 'border-dashed')}>
+      <p className="m-0 text-base leading-[1.4] font-semibold">
+        {s.lead} <span className="font-mono text-[13px] font-medium bg-ink-tint rounded px-1.5 py-px">{SECRETS_FOUND}</span>{s.tail}
+      </p>
+      <p className="m-0 text-sm text-ink-muted">
+        Cloud and SaaS keys (AWS, Azure, Google, OpenAI, Anthropic, GitHub, GitLab, Slack, Stripe and more), private keys, access tokens,
+        database connection strings and “password = …” lines. The secret itself is never stored.
+      </p>
+      {canEdit ? (
+        <Segmented
+          label="When a prompt contains a secret"
+          value={secrets.action}
+          onChange={(a) => { if (!saving && a !== secrets.action) onChange(a); }}
+          options={[{ value: 'block', label: 'Stop the request' }, { value: 'redact', label: 'Remove, then send' }, { value: 'off', label: 'Off' }]}
+        />
+      ) : null}
+      <div className="flex justify-between items-center gap-3">
+        <span className="font-bold">
+          {formatCount(secrets.stopped)} stopped{secrets.redacted > 0 ? ` · ${formatCount(secrets.redacted)} removed` : ''} this week
+        </span>
+      </div>
+    </Panel>
+  );
+}
 
 function list(values: string[]): string {
   if (values.length <= 1) return values.join('');
@@ -197,6 +240,7 @@ export function RulesPage() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['rules'] });
   const add = useMutation({ mutationFn: addRule, onSuccess: () => { setAdding(false); refresh(); } });
   const failMode = useMutation({ mutationFn: setFailMode, onSuccess: refresh });
+  const secretsAction = useMutation({ mutationFn: setSecretsAction, onSuccess: refresh });
 
   const checked = data?.rules.filter((r) => r.effect !== 'not_enforced') ?? [];
   const notEnforced = data?.rules.filter((r) => r.effect === 'not_enforced') ?? [];
@@ -233,6 +277,7 @@ export function RulesPage() {
       </div>
 
       {failMode.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(failMode.error)}</p>}
+      {secretsAction.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(secretsAction.error)}</p>}
       {isError && <Panel className="px-6"><Note title="Couldn’t load rules."><button type="button" className="underline font-semibold" onClick={() => refetch()}>Try again</button></Note></Panel>}
       {isLoading && <Panel className="px-6 py-5"><p className="m-0 text-ink-muted">Loading…</p></Panel>}
 
@@ -254,10 +299,11 @@ export function RulesPage() {
           </section>
 
           <section aria-label="Check 2, secrets" className="flex flex-col gap-3">
-            <CheckHeader n={2} name="Secrets" summary="not active yet" active={false} />
-            <Panel className="px-5">
-              <Note title="Secrets detection is coming soon.">It will stop API keys, tokens and private keys pasted into prompts.</Note>
-            </Panel>
+            <CheckHeader
+              n={2} name="Secrets" active={data.secrets.action !== 'off'}
+              summary={data.secrets.action === 'off' ? 'off' : data.secrets.action === 'redact' ? `${formatCount(data.secrets.redacted)} removed` : `${formatCount(data.secrets.stopped)} stopped`}
+            />
+            <SecretsCard secrets={data.secrets} canEdit={isAdmin} saving={secretsAction.isPending} onChange={(a) => secretsAction.mutate(a)} />
           </section>
 
           <section aria-label="Check 3, personal data" className="flex flex-col gap-3">

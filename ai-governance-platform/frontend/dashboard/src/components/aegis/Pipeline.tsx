@@ -58,8 +58,11 @@ export function Pipeline({ summary }: { summary: GatewaySummary }) {
     {
       n: 2, name: 'Secrets', what: 'API keys, tokens, private keys', active: checks.secrets.active,
       drop: checks.secrets.active
-        ? { count: checks.secrets.stopped, verb: 'stopped', detail: 'credentials in prompts', kind: 'stopped' }
-        : { count: 0, verb: 'Not active yet', detail: 'secrets detection is coming soon', kind: 'inactive' },
+        ? {
+          count: checks.secrets.stopped, verb: 'stopped', kind: 'stopped',
+          detail: checks.secrets.redacted ? `credentials in prompts · ${formatCount(checks.secrets.redacted)} more removed, then sent` : 'credentials in prompts',
+        }
+        : { count: 0, verb: 'Turned off', detail: 'switch it on in Rules', kind: 'inactive' },
     },
     {
       n: 3, name: 'Personal data', what: 'email, phone, SSN, card numbers', active: true,

@@ -14,7 +14,8 @@ export interface GatewaySummary {
   sources: Array<{ name: string; count: number }>;
   checks: {
     policy: { stopped: number };
-    secrets: { active: boolean; stopped: number };
+    /** active is false when the company turned the check off. redacted: secrets removed, request still sent. */
+    secrets: { active: boolean; stopped: number; redacted?: number };
     personalData: { cleaned: number };
   };
   providers: Array<{ name: string; count: number }>;

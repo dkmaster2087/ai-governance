@@ -6,6 +6,8 @@ import { PolicyEngineClient } from '../clients/policy-engine.client';
 import { AuditService } from '../services/audit.service';
 import { requireAccess } from '../auth/guards';
 import { tenantSettings } from '../services/tenant-settings.service';
+import { checkSecrets } from '../services/secrets-check';
+import { redactDeep } from '../services/secret-detector';
 
 const logger = createLogger('gateway:proxy');
 const policyClient = new PolicyEngineClient();
@@ -99,13 +101,13 @@ export async function proxyRoutes(app: FastifyInstance) {
     const requestId = generateRequestId();
     const tenantId = request.tenantId;
     const userId = request.userId;
-    const body = request.body as any;
+    let body = request.body as any;
     const targetUrl = `${targetBase}/${path}`;
 
     logger.info('Proxy request', { requestId, tenantId, provider, path: '/' + path, model: extractModel(body) });
 
     // --- 1. Extract prompt for policy evaluation ---
-    const messages = extractMessages(body);
+    let messages = extractMessages(body);
     const modelId = extractModel(body);
     const auditMetadata: Record<string, string> = { proxyMode: 'true' };
 
@@ -145,6 +147,19 @@ export async function proxyRoutes(app: FastifyInstance) {
           requestId,
           triggeredRules: policyResult.triggeredRules,
         });
+      }
+
+      // --- 2b. Secrets: stop the request, or strip them from the body before it's forwarded ---
+      const secrets = checkSecrets(messages, await settings.getSecretsAction(tenantId));
+      Object.assign(auditMetadata, secrets.metadata);
+      if (secrets.outcome === 'blocked') {
+        logger.info('Proxy request blocked: secret in prompt', { requestId, tenantId, types: secrets.metadata.secretTypes });
+        await auditService.log({ ...normalizedRequest, metadata: { ...auditMetadata } }, null, secrets.result, 0);
+        return reply.status(403).send({ error: secrets.message, code: 'SECRET_DETECTED', requestId, triggeredRules: secrets.result.triggeredRules });
+      }
+      if (secrets.outcome === 'redacted') {
+        body = redactDeep(body).value;
+        messages = extractMessages(body);
       }
     }
 

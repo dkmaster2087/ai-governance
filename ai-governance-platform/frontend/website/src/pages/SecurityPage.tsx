@@ -4,7 +4,7 @@ const ITEMS = [
   { title: 'Fails closed', body: 'If the policy or personal-data check can’t run, the request is blocked. Companies can choose to let requests through instead; each one is then flagged in the evidence log.' },
   { title: 'Tenants are isolated by identity', body: 'Which company a request belongs to comes from its verified API key or sign-in, never from a header the caller sets. Every endpoint checks role and permission.' },
   { title: 'Provider keys stay in Secrets Manager', body: 'API keys you add for OpenAI or other providers are stored in AWS Secrets Manager. The gateway’s database only keeps a reference and the last four characters.' },
-  { title: 'We don’t keep what was sent', body: 'For delivered requests, only a SHA-256 fingerprint of the prompt is kept. For stopped requests, a short excerpt around the trigger is kept as evidence, with personal data masked.' },
+  { title: 'We don’t keep what was sent', body: 'For delivered requests, only a SHA-256 fingerprint of the prompt is kept. For stopped requests, a short excerpt around the trigger is kept as evidence, with personal data masked. API keys, tokens and passwords are never kept, in excerpts or anywhere else.' },
   { title: 'Sign-in', body: 'The dashboard signs in through Amazon Cognito, with authenticator-app MFA. Users can’t change their own role or company. Single sign-on with Okta and Microsoft Entra is planned.' },
   { title: 'Encrypted at rest', body: 'Audit records and configuration are encrypted with KMS keys; in your own AWS account, they’re your keys.' },
   { title: 'Least-privilege API keys', body: 'Keys carry scopes: one for sending chat requests, one for the browser extension to report visits, and on-premises license keys issued only by us.' },

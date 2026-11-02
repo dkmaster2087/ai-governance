@@ -34,6 +34,12 @@ describe('website', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('One gateway, three checks');
   });
 
+  it('shows secrets as a live gateway check', () => {
+    at('/gateway');
+    expect(screen.getByRole('img', { name: /contain a secret such as an API key/ })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /A pasted key is stopped/ })).toBeInTheDocument();
+  });
+
   it('marks enforcement as coming, not available', () => {
     render(<MemoryRouter><HowItWorksPage /></MemoryRouter>);
     const lock = screen.getByText('Lock the other paths, report-only first').closest('li')!;

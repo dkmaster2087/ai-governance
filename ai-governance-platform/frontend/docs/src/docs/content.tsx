@@ -37,7 +37,7 @@ export const DOCS: DocPage[] = [
         <P>Aegis is a gateway between your company and AI providers. Every request passes the same checks, in the same order, before anything leaves:</P>
         <ol className="my-3 pl-6 flex flex-col gap-2 text-[16px] leading-relaxed">
           <li><strong>Policy rules.</strong> Your words and phrases, patterns, approved models and personal-data types. A match <strong className="text-stop">stops</strong> the request.</li>
-          <li><strong>Secrets.</strong> API keys, tokens and private keys. <em>Coming next</em>; today the dashboard shows this check as not active.</li>
+          <li><strong>Secrets.</strong> API keys, tokens, private keys and passwords. By default a match <strong className="text-stop">stops</strong> the request; your company can choose to remove them and send the rest. See <Link to="/docs/secrets" className="font-semibold text-ink">Secrets</Link>.</li>
           <li><strong>Personal data.</strong> Emails, phone numbers, Social Security and card numbers are removed in place, then the request is sent.</li>
         </ol>
         <P>Every decision is recorded as evidence. A browser extension separately shows AI use that goes around the gateway.</P>
@@ -98,7 +98,7 @@ client = OpenAI(
         <P>The developer’s <C>Authorization</C> or <C>x-api-key</C> header is the provider key and is passed through untouched. Your proxy adds the Aegis key in a separate header:</P>
         <Code>{`X-Aegis-Key: <an Aegis API key with the chat permission>`}</Code>
         <P>Requests without <C>X-Aegis-Key</C> are rejected. Prompts sent as content blocks and Anthropic system prompts are checked like any other text.</P>
-        <Note>Proxy mode is in beta. Streamed answers pass straight through after the request is checked. Proxy mode applies your rules but doesn’t remove personal data.</Note>
+        <Note>Proxy mode is in beta. Streamed answers pass straight through after the request is checked. Proxy mode applies your rules and the secrets check (stopping the request, or removing the secret from the body before it’s forwarded) but doesn’t remove personal data.</Note>
       </>
     ),
   },
@@ -150,6 +150,36 @@ client = OpenAI(
     ),
   },
   {
+    slug: 'secrets',
+    title: 'Secrets',
+    summary: 'API keys, tokens, private keys and passwords in prompts.',
+    body: (
+      <>
+        <P>Check 2 looks for credentials pasted into prompts: someone debugging with a live cloud key, a config file with a database password, a private key. It runs inside the gateway, on every message of the conversation, in both the app endpoint and proxy mode.</P>
+        <H2>What it finds</H2>
+        <Table head={['Kind', 'Examples']} rows={[
+          ['Cloud keys', 'AWS access and secret keys, Azure storage and shared access keys, Google API keys and OAuth client secrets'],
+          ['AI provider keys', 'OpenAI, Anthropic, Hugging Face'],
+          ['Developer and SaaS tokens', 'GitHub, GitLab, npm, Slack tokens and webhooks, Stripe live keys, SendGrid, Twilio, Shopify'],
+          ['Private keys', 'RSA, EC, DSA, OpenSSH, PGP and encrypted private key blocks, even when cut off'],
+          ['Access tokens', 'JSON Web Tokens (JWTs)'],
+          ['Passwords', 'Database connection strings with a password, and lines like password = …, api_key: …, client_secret = …'],
+        ]} />
+        <P>Patterns are chosen so a match is almost always a real credential. Obvious stand-ins are ignored: the AWS documentation key ending in EXAMPLE, <C>xxxx</C>, <C>&lt;your-key&gt;</C>, <C>{'${DB_PASSWORD}'}</C>, <C>config.password</C> and <C>process.env.API_KEY</C>.</P>
+        <H2>What happens</H2>
+        <Table head={['Setting', 'The request', 'The app sees']} rows={[
+          ['Stop the request (default)', 'Never reaches the provider', <>403 <C>SECRET_DETECTED</C>, with a message naming the kind of secret, never the secret</>],
+          ['Remove, then send', <>Each secret is replaced with a marker such as <C>[REDACTED aws_access_key]</C>; personal data is then removed as usual</>, 'A normal answer'],
+          ['Off', 'Not checked', 'A normal answer'],
+        ]} />
+        <P>Admins change this on the <strong>Rules</strong> page, under check 2. The change applies within a minute.</P>
+        <H2>What is recorded</H2>
+        <P>The secret itself is never stored, not in evidence, logs or excerpts. A stopped request’s case file shows the kind of secret (for example <C>[AWS access key]</C>) with the words around it. Excerpts kept by your other rules are also scrubbed of any secret before they’re saved.</P>
+        <Note>A stopped secret was still typed into a tool. If it’s a live production key, treat it as exposed to the person’s machine and rotate it as your process requires.</Note>
+      </>
+    ),
+  },
+  {
     slug: 'personal-data',
     title: 'Personal data',
     summary: 'What gets removed before prompts leave.',
@@ -171,6 +201,7 @@ client = OpenAI(
         <Table head={['Recorded', 'Not recorded']} rows={[
           ['A SHA-256 fingerprint of the prompt and response', 'The text of prompts that were delivered'],
           ['For stopped requests, about 60 characters either side of the trigger, with personal data masked', 'Personal data that triggered a rule (only its type, such as [SSN])'],
+          ['Which kinds of secret were found, and whether they were stopped or removed', 'Any API key, token, private key or password, anywhere'],
           ['Token counts, timing and estimated cost', ''],
         ]} />
         <P>Records are kept for your plan’s retention period. <strong>Download evidence</strong> on any record produces a JSON file with the full case file, who exported it and when.</P>
@@ -246,6 +277,7 @@ client = OpenAI(
           ['401', <C>MISSING_AUTH</C>, 'No key sent'],
           ['401', <C>INVALID_KEY</C>, 'Unknown, revoked or expired key'],
           ['403', <C>POLICY_VIOLATION</C>, 'A rule stopped the request; the message is the rule’s name'],
+          ['403', <C>SECRET_DETECTED</C>, 'The prompt contains a credential; the message names its kind, never its value'],
           ['403', <C>TENANT_MISMATCH</C>, 'The key belongs to another company'],
           ['403', <C>FORBIDDEN</C>, 'The key lacks the needed permission'],
           ['429', '—', 'Rate limit reached; retry after the stated time'],
