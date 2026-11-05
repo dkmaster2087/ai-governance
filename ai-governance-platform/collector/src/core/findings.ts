@@ -20,6 +20,15 @@ export const SOURCE_LABELS: Record<string, string> = {
   gcp_dns: 'Google Cloud DNS query logs',
   gcp_web_proxy: 'Google Cloud Secure Web Proxy logs',
   gcp_audit: 'Google Cloud audit logs (Vertex AI, Gemini API)',
+  m365_audit: 'Microsoft 365 audit log (Copilot and AI apps)',
+  gws_gemini: 'Google Workspace: Gemini activity',
+  gws_oauth: 'Google Workspace: apps given access to Google data',
+  gws_sso: 'Google Workspace: single sign-on',
+  okta_sso: 'Okta: single sign-on',
+  okta_consent: 'Okta: OAuth consent',
+  entra_signin: 'Microsoft Entra ID sign-ins',
+  entra_consent: 'Microsoft Entra ID: consent to applications',
+  idp_signin: 'Identity provider sign-ins',
 };
 
 /** What each source can't see, said plainly in the report. */
@@ -42,6 +51,15 @@ const SOURCE_LIMITS: Record<string, string> = {
   gcp_dns: 'Shows lookups from VMs in networks with Cloud DNS logging turned on.',
   gcp_web_proxy: 'Shows web traffic sent through Secure Web Proxy only.',
   gcp_audit: 'Shows model calls only where Data Access audit logs are turned on for Vertex AI and the Gemini API.',
+  m365_audit: 'Shows Copilot use, and other AI apps only where Purview watches them; needs auditing turned on.',
+  gws_gemini: 'Shows Gemini use inside Workspace apps that the Reports API records.',
+  gws_oauth: 'Shows when someone let an AI app reach their Google data; not how much it read afterwards.',
+  gws_sso: 'Shows sign-ins to AI apps that use Google Workspace as their identity provider.',
+  okta_sso: 'Shows sign-ins to AI apps set up in Okta; personal accounts on the same services aren’t seen.',
+  okta_consent: 'Shows when someone granted an AI app access through Okta.',
+  entra_signin: 'Shows sign-ins to AI apps that use Entra ID; personal accounts on the same services aren’t seen.',
+  entra_consent: 'Shows when someone let an AI app reach company data in Microsoft 365.',
+  idp_signin: 'Shows sign-ins to AI apps the identity provider handles; app names are matched to the catalog.',
 };
 
 export const isPerson = (who: string) => who.startsWith('user-');

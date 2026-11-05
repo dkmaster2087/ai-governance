@@ -1,13 +1,14 @@
 import { Actor, Observation } from '../core/sightings';
 import { HeaderTable, parseSseMessage, SseSource } from '../sse/parsers';
 import { CloudSource, parseAzureDocument, parseCloudLine } from '../cloud';
+import { parseIdpRecord, parseWorkAppDocument, parseWorkAppRecord, WorkAppSource } from '../workapps';
 
 /**
  * On-premises log lines: syslog from firewalls and proxies, and DNS / proxy log files. Each line is
  * recognized by its shape, so one syslog port can take several products at once.
  */
 
-export type OnpremSource = 'syslog_paloalto' | 'syslog_fortinet' | 'syslog_cef' | 'squid' | 'bind_dns' | 'windows_dns' | SseSource | CloudSource;
+export type OnpremSource = 'syslog_paloalto' | 'syslog_fortinet' | 'syslog_cef' | 'squid' | 'bind_dns' | 'windows_dns' | SseSource | CloudSource | WorkAppSource;
 
 const MONTHS: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
 
@@ -171,21 +172,45 @@ function windowsDns(msg: string, fallback: Date): Observation | null {
 }
 
 /** One log line from any supported on-premises product, or null if it isn't one or names no host. */
-export function parseOnpremLine(line: string, receivedAt = new Date()): Observation | null {
-  if (!line || line.length > 65_536) return null;
+/** A JSON object on one line, or undefined. */
+function jsonObject(msg: string): Record<string, unknown> | undefined {
+  let l = msg.trim();
+  if (l.endsWith(',')) l = l.slice(0, -1);
+  if (!l.startsWith('{') || !l.endsWith('}')) return undefined;
+  try {
+    const v = JSON.parse(l);
+    return v && typeof v === 'object' && !Array.isArray(v) ? v : undefined;
+  } catch { return undefined; }
+}
+
+/** Everything one log line says about AI use (usually one finding; a Google Workspace record can hold several). */
+export function parseOnpremLines(line: string, receivedAt = new Date()): Observation[] {
+  if (!line || line.length > 65_536) return [];
   const frame = unwrapSyslog(line, receivedAt);
   const fallback = frame.time ?? receivedAt;
   const msg = frame.msg;
   // Azure and Google Cloud records (from exported files or an event hub / Pub/Sub relay).
   const cloud = parseCloudLine(msg);
-  if (cloud !== undefined) return cloud;
-  return parseSseMessage(msg, fallback)
+  if (cloud !== undefined) return cloud ? [cloud] : [];
+  // Microsoft 365, Google Workspace, Okta and Entra records.
+  const json = jsonObject(msg);
+  const work = json ? parseWorkAppRecord(json) : undefined;
+  if (work !== undefined) return work;
+  const one = parseSseMessage(msg, fallback)
     ?? cef(msg, fallback)
     ?? fortinet(msg, fallback)
     ?? paloAlto(msg.replace(/^\S+:\s/, ''), fallback) ?? paloAlto(msg, fallback)
     ?? squid(msg)
     ?? bind(msg, fallback)
-    ?? windowsDns(msg, fallback);
+    ?? windowsDns(msg, fallback)
+    // Last: sign-ins from any other identity provider, recognized by their user and app fields.
+    ?? (json ? parseIdpRecord(json, fallback) : null);
+  return one ? [one] : [];
+}
+
+/** The first finding in a line, or null. */
+export function parseOnpremLine(line: string, receivedAt = new Date()): Observation | null {
+  return parseOnpremLines(line, receivedAt)[0] ?? null;
 }
 
 /**
@@ -198,10 +223,15 @@ export class LineReader {
   constructor(header?: HeaderTable['header']) { this.table = new HeaderTable(header); }
   get header() { return this.table.header; }
 
-  read(line: string, receivedAt = new Date()): Observation | null {
-    if (!line || line.length > 65_536) return null;
+  readAll(line: string, receivedAt = new Date()): Observation[] {
+    if (!line || line.length > 65_536) return [];
     const row = this.table.line(line.replace(/^\uFEFF/, '').trimEnd(), receivedAt);
-    return row === undefined ? parseOnpremLine(line, receivedAt) : row;
+    if (row === undefined) return parseOnpremLines(line, receivedAt);
+    return row ? [row] : [];
+  }
+
+  read(line: string, receivedAt = new Date()): Observation | null {
+    return this.readAll(line, receivedAt)[0] ?? null;
   }
 }
 
@@ -209,9 +239,19 @@ export function* parseOnpremText(text: string, receivedAt = new Date()): Generat
   // Azure's older files are one JSON document, possibly spread over many lines.
   const azureDoc = parseAzureDocument(text);
   if (azureDoc) { yield* azureDoc; return; }
-  const reader = new LineReader();
-  for (const line of text.split(/\r?\n/)) {
-    const o = reader.read(line, receivedAt);
-    if (o) yield o;
+  // API responses and exports that are one JSON document: Okta, Graph, the Google Reports API, M365.
+  const workDoc = parseWorkAppDocument(text);
+  if (workDoc) { yield* workDoc; return; }
+  // A JSON array of sign-ins from any other identity provider.
+  if (text.trimStart().startsWith('[')) {
+    try {
+      const arr = JSON.parse(text);
+      if (Array.isArray(arr)) {
+        for (const r of arr) if (r && typeof r === 'object') { const o = parseIdpRecord(r, receivedAt); if (o) yield o; }
+        return;
+      }
+    } catch { /* not one JSON document: read line by line */ }
   }
+  const reader = new LineReader();
+  for (const line of text.split(/\r?\n/)) yield* reader.readAll(line, receivedAt);
 }

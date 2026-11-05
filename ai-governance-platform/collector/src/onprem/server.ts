@@ -6,7 +6,7 @@ import { gunzipSync } from 'zlib';
 import { Aggregator } from '../core/sightings';
 import { buildReport, isoDay } from '../core/run';
 import { FileStore, loadPseudonymizer, saveNames, saveSightings } from '../core/store';
-import { LineReader, parseOnpremLine } from './parsers';
+import { LineReader, parseOnpremLines } from './parsers';
 
 /**
  * The on-premises collector: one process that receives syslog (UDP and TCP) from firewalls and proxies,
@@ -59,14 +59,15 @@ export class OnpremCollector {
   /** One log line, from syslog or a file. Files pass their own reader, which remembers a header row. */
   ingest(line: string, receivedAt = new Date(), reader?: LineReader) {
     this.stats.received++;
-    const o = reader ? reader.read(line, receivedAt) : parseOnpremLine(line, receivedAt);
-    if (!o) return;
-    const before = this.agg.matched;
-    this.agg.add(o);
-    if (this.agg.matched > before) {
-      this.stats.matched++;
-      this.stats.bySource[o.source] = (this.stats.bySource[o.source] ?? 0) + 1;
-      this.stats.lastMessageAt = receivedAt.toISOString();
+    const found = reader ? reader.readAll(line, receivedAt) : parseOnpremLines(line, receivedAt);
+    for (const o of found) {
+      const before = this.agg.matched;
+      this.agg.add(o);
+      if (this.agg.matched > before) {
+        this.stats.matched++;
+        this.stats.bySource[o.source] = (this.stats.bySource[o.source] ?? 0) + 1;
+        this.stats.lastMessageAt = receivedAt.toISOString();
+      }
     }
   }
 

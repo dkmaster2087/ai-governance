@@ -1,7 +1,9 @@
 # AI usage assessment and collectors: plan
 
-Status: phases 0–4 built (the shared core, the AWS collector, the on-premises collector, and as beta Zscaler,
-Netskope, Azure and Google Cloud, in [collector/](../collector/README.md)); phases 5 and 6 are planned. Written 2026-10-31.
+Status: phases 0–5 built (the shared core, the AWS collector, the on-premises collector, and as beta Zscaler,
+Netskope, Azure, Google Cloud, Microsoft 365, Google Workspace, Okta, Entra and any other identity provider's
+sign-in export, in [collector/](../collector/README.md)). Reading work-app logs straight from their APIs, and
+phase 6, are planned. Written 2026-10-31.
 
 ## The idea
 
@@ -110,7 +112,7 @@ The catalog is versioned and shipped with the collector, so it works offline. Th
 | 2 | On-premises (**built**) | Syslog from firewalls and proxies (Palo Alto, Fortinet, Check Point, Squid), DNS server logs (BIND, Windows DNS) | One container on any Linux host or Kubernetes cluster |
 | 3 | Security gateway (**beta**) | Zscaler or Netskope logs: covers laptops wherever they are. Zscaler NSS feeds (JSON, LEEF, key=value, CEF); Netskope events (JSON, CEF) and transaction log streaming (CSV, W3C) | Same container, or the AWS collector reading their log export in S3 |
 | 4 | Azure and Google Cloud (**beta**) | Azure: Azure Firewall application rule and DNS proxy logs, DNS security policy logs, Azure OpenAI / AI Foundry request logs. Google Cloud: Cloud DNS logs, Secure Web Proxy, Data Access audit logs for Vertex AI and the Gemini API. (Cloud NGFW logs carry no destination names, so they aren't read.) | Scheduled container job: Azure Container Apps job (Bicep) or Cloud Run job (gcloud script) |
-| 5 | Work apps | Microsoft 365 audit logs (Copilot), Google Workspace reports (Gemini), Okta and Entra sign-ins to AI tools | Any of the above, using read-only API access |
+| 5 | Work apps (**beta**) | Microsoft 365 audit logs (Copilot, AI apps), Google Workspace reports (Gemini, OAuth grants to AI apps, SSO), Okta and Entra sign-ins and consent to AI apps, and sign-in exports from any other identity provider (matched by app name) | Exports, SIEM or diagnostic settings, read by any of the above. Direct read-only API access: planned |
 | 6 | On request | Oracle Cloud, Alibaba Cloud, Snowflake Cortex and Databricks usage, Cloudflare One, Cisco Umbrella | Per source |
 
 Phase 0 and the on-premises container are written once; every later source is a parser plus a deployment

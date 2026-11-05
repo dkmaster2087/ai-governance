@@ -49,10 +49,11 @@ export const SOURCES: Source[] = [
   { name: 'Netskope', icon: 'web', kind: 'Web gateway', sees: 'Every laptop, anywhere', status: 'Beta' },
   { name: 'Squid', icon: 'web', kind: 'Proxy', sees: 'Web traffic', status: 'Available' },
   { name: 'BIND · Windows DNS', icon: 'dns', kind: 'DNS servers', sees: 'Lookups', status: 'Available' },
-  { name: 'Microsoft 365', icon: 'apps', kind: 'Work apps', sees: 'Copilot use', status: 'Coming' },
-  { name: 'Google Workspace', icon: 'apps', kind: 'Work apps', sees: 'Gemini use', status: 'Coming' },
-  { name: 'Okta', icon: 'identity', kind: 'Identity', sees: 'Sign-ins to AI tools', status: 'Coming' },
-  { name: 'Microsoft Entra', icon: 'identity', kind: 'Identity', sees: 'Sign-ins to AI tools', status: 'Coming' },
+  { name: 'Microsoft 365', icon: 'apps', kind: 'Work apps', sees: 'Copilot use', status: 'Beta' },
+  { name: 'Google Workspace', icon: 'apps', kind: 'Work apps', sees: 'Gemini, AI apps given Drive access', status: 'Beta' },
+  { name: 'Okta', icon: 'identity', kind: 'Identity', sees: 'Sign-ins to AI tools', status: 'Beta' },
+  { name: 'Microsoft Entra', icon: 'identity', kind: 'Identity', sees: 'Sign-ins, consent to AI apps', status: 'Beta' },
+  { name: 'Any identity provider', icon: 'identity', kind: 'Identity', sees: 'Sign-in exports, matched by app', status: 'Beta' },
   { name: 'Chrome', icon: 'browser', kind: 'Browser', sees: 'AI sites people open', status: 'Beta' },
 ];
 

@@ -265,14 +265,24 @@ client = OpenAI(
           ['Google Cloud', 'Cloud DNS query logs (by VM); Secure Web Proxy logs; Data Access audit logs for Vertex AI and the Gemini API (model calls by service account or person). Sink them to a Cloud Storage bucket.', <><C>collector/deploy/gcp/deploy.sh</C>: a Cloud Run job, hourly, with optional sinks</>],
         ]} />
         <P>Exported files can also be read by the command-line tool or the on-premises container, with no cloud job at all.</P>
+        <H2>Work apps and identity providers (beta)</H2>
+        <P>Sign-in and audit logs show AI use that never passes a firewall: sign-ins to AI apps, Copilot and Gemini inside apps the company already pays for, and people letting AI apps reach company data. They name apps rather than web addresses, so app names (“ChatGPT Enterprise”, “Claude for Work”) are matched against the catalog.</P>
+        <Table head={['Source', 'Give the collector', 'Shows']} rows={[
+          ['Microsoft 365', 'Unified audit log records (Management Activity API, Sentinel) or a Purview audit search CSV export', 'Copilot use per person and app'],
+          ['Google Workspace', 'Reports API activity (token, saml, Gemini)', 'Gemini use; AI apps given access to Drive or Gmail; SSO to AI apps'],
+          ['Okta', 'System Log events', 'Sign-ins and OAuth consent to AI apps'],
+          ['Microsoft Entra ID', 'Sign-in and audit logs from Graph, or a diagnostic setting to a storage account', 'Sign-ins to AI apps; consent to AI apps'],
+          ['Any other identity provider', 'A CSV or JSON sign-in export with user and app columns', 'Sign-ins to AI apps (OneLogin, Ping, JumpCloud, Duo, Auth0, …)'],
+        ]} />
+        <P>These come from exports today; pulling them straight from each product’s API is planned.</P>
         <H2>Try it with sample data</H2>
         <Code>{`node collector/scripts/sample-sse-logs.mjs files ./sample-sse 14
 node collector/dist/cli.js collect --out ./results ./sample-sse
 node collector/dist/cli.js report --out ./results --company "Acme"
 # open results/reports/latest.html`}</Code>
-        <P>The same works with <C>sample-aws-logs.mjs</C>, <C>sample-onprem-logs.mjs</C> and <C>sample-cloud-logs.mjs</C> (Azure and Google Cloud). All sample data is made up.</P>
+        <P>The same works with <C>sample-aws-logs.mjs</C>, <C>sample-onprem-logs.mjs</C> and <C>sample-cloud-logs.mjs</C> (Azure and Google Cloud) and <C>sample-workapp-logs.mjs</C> (Microsoft 365, Google Workspace, Okta, Entra, another identity provider). All sample data is made up.</P>
         <H2>Not built yet</H2>
-        <P>Microsoft 365, Google Workspace and Okta/Entra sources, and sending results to a Probaline install. See <C>docs/ASSESSMENT.md</C> in the repository.</P>
+        <P>Reading work-app logs straight from their APIs, and sending results to a Probaline install. See <C>docs/ASSESSMENT.md</C> in the repository.</P>
       </>
     ),
   },

@@ -8,7 +8,7 @@ own environment. It is separate from the Probaline gateway and needs nothing els
 CloudTrail for Amazon Bedrock and SageMaker); the on-premises collector (syslog from Palo Alto, Fortinet and any
 CEF or LEEF source such as Check Point; Squid, BIND and Windows DNS log files); Zscaler and Netskope (beta:
 tested on made-up logs in their documented formats, not yet on a customer's). **Not built yet:** Azure, Google
-Cloud (beta, below), work apps, and sending results to a Probaline instance (`probaline` output).
+Cloud and work apps (beta, below), and sending results to a Probaline instance (`probaline` output).
 
 ## What it keeps
 
@@ -156,6 +156,26 @@ docker run -d -p 4443:4443 fsouza/fake-gcs-server:1.52.2 -scheme http -port 4443
 AZURITE_CONNECTION_STRING="<Azurite's documented development connection string>" GCS_TEST_ENDPOINT=http://localhost:4443 npx jest cloud-job
 ```
 
+## Work apps and identity providers (beta)
+
+Sign-in and audit logs show AI use that never touches a firewall: people signing in to AI apps, using Copilot or
+Gemini inside the apps the company already pays for, and letting AI apps reach company data. These logs name
+*apps*, not web addresses, so the catalog also knows the names identity providers use ("ChatGPT Enterprise",
+"Claude for Work", "GitHub Copilot"). A name must start with a known app name word for word.
+
+| Source | Records | Shows |
+|---|---|---|
+| Microsoft 365 | Unified audit log (`CopilotInteraction`, `AIAppInteraction`): Management Activity API content, Sentinel, or a Purview audit search CSV export | Copilot use per person and app; other AI apps Purview watches |
+| Google Workspace | Reports API activity (`token`, `saml`, Gemini) | Gemini use; **AI apps given access to Drive or Gmail** with OAuth; SSO to AI apps |
+| Okta | System Log (`user.authentication.sso`, OAuth consent grants) | Sign-ins and consent to AI apps |
+| Microsoft Entra ID | Sign-in logs (Graph or a diagnostic setting) and audit logs (`Consent to application`) | Sign-ins to AI apps; people letting AI apps reach company data |
+| Any other identity provider | A CSV or JSON sign-in export with columns for user, app and (optionally) time and result | OneLogin, Ping, JumpCloud, Duo, Auth0, ADFS through a SIEM, … |
+
+Give the collector the exported files (`collect`, the container's watch folder, or an S3 / Blob / Cloud Storage
+bucket the in-cloud job reads). Failed sign-ins are skipped. **Not built yet:** pulling these logs directly
+from each product's API with read-only credentials; today they come from exports, a SIEM, or a diagnostic
+setting (Entra).
+
 ## Demo data
 
 ```bash
@@ -164,6 +184,7 @@ node collector/scripts/sample-onprem-logs.mjs files ./sample-onprem 14
 node collector/scripts/sample-onprem-logs.mjs send localhost 5514
 node collector/scripts/sample-sse-logs.mjs files ./sample-sse 14
 node collector/scripts/sample-cloud-logs.mjs ./sample-cloud 7
+node collector/scripts/sample-workapp-logs.mjs ./sample-workapps 14
 ```
 
 Made-up AWS logs in the layout AWS uses; on-premises log files; on-premises syslog sent over UDP; Zscaler

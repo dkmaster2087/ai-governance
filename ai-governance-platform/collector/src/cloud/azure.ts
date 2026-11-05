@@ -1,4 +1,5 @@
 import { Actor, Observation } from '../core/sightings';
+import { parseEntraDiagnostic } from '../workapps/entra';
 
 /**
  * Azure diagnostic logs, as Azure Monitor writes them to a storage account (one JSON record per line, or the
@@ -98,6 +99,9 @@ function openAi(r: any): Observation | null {
 /** One Azure diagnostic record, or null if it isn't one this collector reads. */
 export function parseAzureRecord(r: any): Observation | null {
   if (!isAzureRecord(r) || !(r.time ?? r.TimeGenerated)) return null;
+  // Entra ID sign-in and audit logs, sent through a diagnostic setting like any other Azure log.
+  const entra = parseEntraDiagnostic(r);
+  if (entra !== undefined) return entra;
   const category = str(r.category ?? r.Category);
   if (/^(AZFW|AzureFirewall)/.test(category)) return firewall(r, category);
   if (/MICROSOFT\.COGNITIVESERVICES/i.test(str(r.resourceId)) && /^RequestResponse$/i.test(category)) return openAi(r);

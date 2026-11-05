@@ -52,9 +52,8 @@ describe('website', () => {
     const tile = (name: string) => screen.getAllByText(name).map((e) => e.closest('li')).find(Boolean)!;
     expect(within(tile('AWS')).getByText('Available')).toBeInTheDocument();
     expect(within(tile('Palo Alto Networks')).getByText('Available')).toBeInTheDocument();
-    for (const beta of ['Zscaler', 'Netskope', 'Microsoft Azure', 'Google Cloud']) expect(within(tile(beta)).getByText('Beta')).toBeInTheDocument();
-    for (const coming of ['Microsoft 365']) {
-      expect(within(tile(coming)).getByText('Coming')).toBeInTheDocument();
+    for (const beta of ['Zscaler', 'Netskope', 'Microsoft Azure', 'Google Cloud', 'Microsoft 365', 'Google Workspace', 'Okta', 'Microsoft Entra']) {
+      expect(within(tile(beta)).getByText('Beta')).toBeInTheDocument();
     }
     expect(screen.getByRole('img', { name: /Nothing goes to Probaline unless you share it/ })).toBeInTheDocument();
   });

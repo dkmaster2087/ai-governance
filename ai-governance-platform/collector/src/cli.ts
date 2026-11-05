@@ -58,16 +58,17 @@ async function main() {
   if (cmd === 'collect') {
     const wanted = typeof flags.source === 'string' && flags.source !== 'auto' ? flags.source : null;
     const ignore = typeof flags.ignore === 'string' ? flags.ignore.split(',') : [];
-    let lines = 0; let matched = 0;
+    let matched = 0; let count = 0;
     for (const f of await files(rest)) {
+      count++;
       const text = decode(await fs.readFile(f));
       const aws = wanted === 'onprem' ? null : ((wanted as AwsSource | null) ?? detectSource(f, text));
       const observations = aws ? parse(aws, text) : parseOnpremText(text);
       const r = await processInput(store, path.resolve(f), observations, ignore);
-      lines += aws ? r.lines : text.split('\n').filter(Boolean).length;
       matched += r.matched;
     }
-    console.log(`Read ${lines} log lines; ${matched} matched an AI service.`);
+    // Files can be one record per line or one big JSON document, so lines aren't a useful count.
+    console.log(`Read ${count} ${count === 1 ? 'file' : 'files'}; ${matched} records matched an AI service.`);
     return;
   }
 

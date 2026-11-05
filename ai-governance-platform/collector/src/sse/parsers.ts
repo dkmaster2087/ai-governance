@@ -1,4 +1,5 @@
 import { Actor, Observation } from '../core/sightings';
+import { idpColumns, parseIdpRecord, parseM365Record } from '../workapps';
 
 /**
  * Security service edge logs: Zscaler Internet Access and Netskope. These see laptops wherever they are,
@@ -196,10 +197,13 @@ const NETSKOPE_COLUMNS = ['cs-host', 'cs-uri', 'cs-username', 'x-cs-site', 'x-cs
 
 /**
  * Remembers a file's header row (CSV, or a W3C `#Fields:` line) and reads the rows under it. One per
- * file being read; its state can be saved and restored so tailing a file survives a restart.
+ * file being read; its state can be saved and restored so tailing a file survives a restart. Reads:
+ *  - netskope: Netskope transaction log streaming (CSV or W3C)
+ *  - m365: a Microsoft Purview audit search export (the record is JSON in the AuditData column)
+ *  - idp: a sign-in export from any identity provider (columns for user, app and time)
  */
 export class HeaderTable {
-  constructor(public header?: { format: 'csv' | 'w3c'; columns: string[] }) {}
+  constructor(public header?: { format: 'csv' | 'w3c'; columns: string[]; kind?: 'netskope' | 'm365' | 'idp' }) {}
 
   /** Returns true if the line was a header (and so holds no event). */
   private takeHeader(line: string): boolean {
@@ -208,11 +212,25 @@ export class HeaderTable {
       return true;
     }
     if (line.startsWith('#')) return true; // other W3C directives (#Version, #Date)
-    if (!line.includes(',') || !NETSKOPE_COLUMNS.some((c) => line.includes(c))) return false;
-    const cols = csvFields(line).map((c) => c.trim());
-    if (cols.filter((c) => NETSKOPE_COLUMNS.includes(c)).length >= 2) {
-      this.header = { format: 'csv', columns: cols };
+    if (!line.includes(',')) return false;
+    if (NETSKOPE_COLUMNS.some((c) => line.includes(c))) {
+      const cols = csvFields(line).map((c) => c.trim());
+      if (cols.filter((c) => NETSKOPE_COLUMNS.includes(c)).length >= 2) {
+        this.header = { format: 'csv', columns: cols, kind: 'netskope' };
+        return true;
+      }
+    }
+    if (/(^|,)"?AuditData"?(,|$)/.test(line)) {
+      this.header = { format: 'csv', columns: csvFields(line).map((c) => c.trim()), kind: 'm365' };
       return true;
+    }
+    // A sign-in export is only recognized by its first line, so a data row can't be mistaken for a header.
+    if (!this.header && line.length < 2000 && !/[@{]/.test(line)) {
+      const cols = csvFields(line).map((c) => c.trim());
+      if (idpColumns(cols)) {
+        this.header = { format: 'csv', columns: cols, kind: 'idp' };
+        return true;
+      }
     }
     return false;
   }
@@ -225,6 +243,10 @@ export class HeaderTable {
     if (values.length !== this.header.columns.length) return undefined;
     const rec: Record<string, string> = {};
     this.header.columns.forEach((c, i) => { rec[c] = values[i]; });
+    if (this.header.kind === 'm365') {
+      try { return parseM365Record(JSON.parse(rec.AuditData ?? '')); } catch { return null; }
+    }
+    if (this.header.kind === 'idp') return parseIdpRecord(rec, fallback);
     return netskopeRecord(rec, fallback);
   }
 }
