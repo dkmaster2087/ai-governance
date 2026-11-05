@@ -1,7 +1,8 @@
 import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
-import { Shield, Eye, EyeOff, AlertCircle, Sun, Moon, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, AlertCircle, Sun, Moon, ArrowRight } from 'lucide-react';
+import { PlumbMark } from '../components/kit/PlumbMark';
 import { useAuth, getRegisteredAccounts, AUTH_MODE } from '../lib/auth';
 import { useTheme } from '../lib/theme';
 
@@ -48,8 +49,8 @@ export function LoginPage() {
   const inputClass = clsx(
     'w-full rounded-xl px-4 py-3 text-sm focus:outline-none transition-all duration-200 border',
     isDark
-      ? 'bg-white/[0.05] border-white/[0.08] text-white placeholder-slate-500 focus:border-brand-500 focus:ring-1 focus:ring-brand-500/30'
-      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-brand-500 focus:ring-1 focus:ring-brand-500/20'
+      ? 'bg-white/[0.05] border-white/[0.08] text-white placeholder-slate-500 focus:border-brass-on-dark focus:ring-1 focus:ring-brass-on-dark/30'
+      : 'bg-white border-gray-200 text-gray-900 placeholder-gray-400 focus:border-ink focus:ring-1 focus:ring-ink/20'
   );
 
   return (
@@ -70,16 +71,16 @@ export function LoginPage() {
       {isDark && (
         <>
           <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff04_1px,transparent_1px),linear-gradient(to_bottom,#ffffff04_1px,transparent_1px)] bg-[size:48px_48px]" />
-          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-brand-600/8 rounded-full blur-[120px]" />
-          <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-accent-500/5 rounded-full blur-[100px]" />
+          <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[600px] bg-ink-soft/10 rounded-full blur-[120px]" />
+          <div className="absolute bottom-1/4 right-1/4 w-[400px] h-[400px] bg-brass/5 rounded-full blur-[100px]" />
         </>
       )}
 
       <div className="relative w-full max-w-[420px] animate-fade-in">
         {/* Logo */}
         <div className="text-center mb-10">
-          <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center mx-auto mb-5 shadow-glow-brand">
-            <Shield className="w-7 h-7 text-white" />
+          <div className="w-14 h-14 rounded-2xl bg-ink flex items-center justify-center mx-auto mb-5">
+            <PlumbMark size={32} onDark className="text-white" />
           </div>
           <h1 className={clsx('text-2xl font-bold tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>Probaline</h1>
           <p className={clsx('text-sm mt-1.5', isDark ? 'text-slate-500' : 'text-gray-400')}>AI Governance Platform</p>
@@ -177,7 +178,7 @@ export function LoginPage() {
             <button
               type="submit"
               disabled={loading}
-              className="w-full py-3 rounded-xl bg-gradient-to-r from-brand-600 to-brand-500 hover:from-brand-500 hover:to-brand-400 disabled:opacity-60 text-white font-semibold transition-all duration-200 mt-2 shadow-glow-brand"
+              className="w-full py-3 rounded-xl bg-ink hover:bg-ink-soft disabled:opacity-60 text-white font-semibold transition-colors duration-200 mt-2"
             >
               {loading ? 'Signing in...' : challenge === 'new_password' ? 'Set Password' : challenge === 'mfa' ? 'Verify' : 'Sign In'}
             </button>
@@ -205,7 +206,7 @@ export function LoginPage() {
                   <p className={clsx('text-[11px]', isDark ? 'text-slate-600' : 'text-gray-400')}>{acc.role}</p>
                 </div>
                 <div className="flex items-center gap-2">
-                  <span className="text-[11px] font-medium text-brand-400 bg-brand-500/10 px-2 py-0.5 rounded-lg border border-brand-500/20">
+                  <span className={clsx('text-[11px] font-medium bg-brass/10 px-2 py-0.5 rounded-lg border border-brass/25', isDark ? 'text-brass-on-dark' : 'text-brass-text')}>
                     {acc.badge}
                   </span>
                   <ArrowRight className={clsx('w-3.5 h-3.5 transition-transform group-hover:translate-x-0.5', isDark ? 'text-slate-600' : 'text-gray-300')} />

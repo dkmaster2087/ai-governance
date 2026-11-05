@@ -9,6 +9,11 @@ export default {
         line: { DEFAULT: '#E3E6EC', subtle: '#EDEFF3', strong: '#D5DAE2' },
         canvas: '#F6F7F9',
         stop: { DEFAULT: '#C8322A', soft: '#FBEAE8', text: '#A3231C' },
+        // Brand accent: the plumb bob. Logo, focus rings and one highlight per screen; never a status.
+        brass: { DEFAULT: '#B07D2B', text: '#8A5F18', 'on-dark': '#D9AE5F' },
+        // Gateway outcomes. Red (stop) stays reserved for "stopped".
+        allowed: { DEFAULT: '#1F7A5A', 'on-dark': '#5CC49A' },
+        masked: { DEFAULT: '#2F5DA8', 'on-dark': '#8FB0F0' },
       },
       fontFamily: {
         sans: ['Archivo', 'system-ui', 'sans-serif'],

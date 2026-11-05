@@ -11,8 +11,8 @@ export default function App() {
       <a href="#main" className="sr-only focus:not-sr-only focus:absolute focus:top-2 focus:left-2 focus:z-50 focus:bg-white focus:px-3 focus:py-2 focus:rounded">Skip to content</a>
       <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-line">
         <div className="max-w-[1200px] mx-auto px-5 sm:px-10 min-h-[60px] flex items-center gap-3">
-          <Link to="/docs" aria-label="Probaline docs home" className="flex items-center gap-2.5 min-h-[44px] font-extrabold text-[16px] tracking-[0.06em] uppercase text-ink no-underline">
-            <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true"><path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z" /></svg>
+          <Link to="/docs" aria-label="Probaline docs home" className="flex items-center gap-2.5 min-h-[44px] font-bold text-[18px] tracking-[-0.015em] text-ink no-underline">
+            <svg width="20" height="20" viewBox="0 0 32 32" aria-hidden="true"><path d="M10.5 4.5h11M16 4.5v13.4" stroke="currentColor" strokeWidth="2.6" strokeLinecap="round" fill="none" /><path d="M16 17.6L20.2 22.6L16 29L11.8 22.6Z" className="fill-brass stroke-brass" strokeWidth="1" strokeLinejoin="round" /></svg>
             Probaline
           </Link>
           <span className="text-ink-muted">Docs</span>

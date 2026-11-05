@@ -16,6 +16,8 @@ ul { list-style: none; margin: 0; padding: 0; }
 .card .fine { margin: 24px 0 0; }
 
 .popup { width: 340px; padding: 16px; }
+.popup .brand { display: inline-flex; align-items: center; gap: 8px; }
+.popup .brand img { border-radius: 5px; }
 .popup header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
 .pill { font-size: 12px; border: 1px solid var(--line); border-radius: 999px; padding: 2px 10px; color: var(--muted); }
 .popup li { padding: 6px 0; border-top: 1px solid var(--line); }

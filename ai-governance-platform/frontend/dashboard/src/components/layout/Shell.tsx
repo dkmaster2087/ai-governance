@@ -1,6 +1,7 @@
 import { useRef } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
+import { PlumbMark } from '../kit/PlumbMark';
 import { useAuth, UserRole } from '../../lib/auth';
 
 interface NavItem {
@@ -59,10 +60,8 @@ const REDESIGNED = new Set(['/gateway', '/stopped', '/shadow-ai', '/rules', '/ev
 /** The logo is also the way home. */
 function Logo({ to }: { to: string }) {
   return (
-    <Link to={to} aria-label="Probaline home" className="flex items-center gap-2.5 min-h-[44px] font-extrabold text-[17px] tracking-[0.06em] uppercase text-ink no-underline">
-      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
-        <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z" />
-      </svg>
+    <Link to={to} aria-label="Probaline home" className="flex items-center gap-2.5 min-h-[44px] font-bold text-[19px] tracking-[-0.015em] text-ink no-underline">
+      <PlumbMark />
       Probaline
     </Link>
   );
