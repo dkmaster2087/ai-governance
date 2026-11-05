@@ -22,6 +22,7 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
       { label: 'Stopped', href: '/stopped' },
       { label: 'Shadow AI', href: '/shadow-ai' },
       { label: 'Rules', href: '/rules' },
+      { label: 'MCP servers', href: '/mcp' },
       { label: 'Evidence', href: '/evidence' },
     ],
     more: [
@@ -55,7 +56,7 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
 };
 
 /** These pages render their own headline instead of the plain page title. */
-const REDESIGNED = new Set(['/gateway', '/stopped', '/shadow-ai', '/rules', '/evidence', '/keys']);
+const REDESIGNED = new Set(['/gateway', '/stopped', '/shadow-ai', '/rules', '/evidence', '/keys', '/mcp']);
 
 /** The logo is also the way home. */
 function Logo({ to }: { to: string }) {
@@ -141,7 +142,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
       </header>
 
       <main className="px-5 sm:px-10 pt-8 pb-14">
-        {!REDESIGNED.has(location.pathname) && !location.pathname.startsWith("/tenants/") && current && (
+        {!REDESIGNED.has(location.pathname) && !location.pathname.startsWith("/tenants/") && !location.pathname.startsWith("/mcp/") && current && (
           <h1 className="m-0 mb-6 text-[28px] font-bold tracking-[-0.02em]">{current.label}</h1>
         )}
         {children}

@@ -114,8 +114,8 @@ async function ensureModel(tenantId) {
   assert.ok(res.status < 300, `model config: ${JSON.stringify(res.body)}`);
 }
 
-async function newKey(tenantId, name = 'e2e-app') {
-  const res = await call('POST', '/v1/api-keys', { headers: adminOf(tenantId), body: { name, scopes: ['chat'] } });
+async function newKey(tenantId, name = 'e2e-app', scopes = ['chat']) {
+  const res = await call('POST', '/v1/api-keys', { headers: adminOf(tenantId), body: { name, scopes } });
   assert.equal(res.status, 201, `api key: ${JSON.stringify(res.body)}`);
   created.keys.push({ tenantId, keyId: res.body.keyId });
   return res.body;
@@ -385,6 +385,87 @@ describe('secrets', () => {
     const prompt = 'What should our password policy say? Use AKIAIOSFODNN7EXAMPLE in docs, and password=${DB_PASSWORD} in config. ' + marker();
     const res = await chat(keyA, prompt);
     assert.equal(res.status, 200, JSON.stringify(res.body));
+  });
+});
+
+describe('MCP servers', () => {
+  const SPEC = JSON.stringify({
+    openapi: '3.0.3', info: { title: 'People API', version: '1' },
+    paths: {
+      '/employees/{id}': { get: { operationId: 'getEmployee', summary: 'One employee', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }] } },
+      '/employees': { get: { operationId: 'searchEmployees', parameters: [{ name: 'q', in: 'query', schema: { type: 'string' } }] }, post: { operationId: 'createEmployee' } },
+    },
+  });
+  let api; let apiUrl; let serverId; let agentKey;
+  const hits = [];
+
+  before(async () => {
+    const http = await import('node:http');
+    api = http.createServer((req, res) => {
+      hits.push({ url: req.url, auth: req.headers.authorization });
+      res.writeHead(200, { 'content-type': 'application/json' });
+      res.end(JSON.stringify({ id: req.url.split('/').pop(), name: 'Jane Doe', email: 'jane.doe@acme.example' }));
+    });
+    await new Promise((r) => api.listen(0, '127.0.0.1', r));
+    apiUrl = `http://127.0.0.1:${api.address().port}`;
+    agentKey = (await newKey(A, 'e2e-agent', ['mcp'])).key;
+  });
+  after(async () => {
+    if (serverId) await call('DELETE', `/v1/mcp/servers/${serverId}`, { headers: adminOf(A) });
+    await new Promise((r) => api?.close(r));
+  });
+
+  const rpc = (method, params) => call('POST', `/mcp/${A}/${serverId}`, {
+    headers: { authorization: `Bearer ${agentKey}` }, body: { jsonrpc: '2.0', id: 1, method, ...(params ? { params } : {}) },
+  });
+
+  test('an admin creates a server from an OpenAPI description and publishes it', async () => {
+    const created = await call('POST', '/v1/mcp/servers', { headers: adminOf(A), body: { name: `E2E people ${marker()}` } });
+    assert.equal(created.status, 201, JSON.stringify(created.body));
+    serverId = created.body.serverId;
+    const added = await call('POST', `/v1/mcp/servers/${serverId}/apis`, { headers: adminOf(A), body: { name: 'People API', baseUrl: apiUrl, openapi: SPEC, auth: { type: 'bearer', secret: 'people-api-token' } } });
+    assert.equal(added.status, 201, JSON.stringify(added.body));
+    assert.deepEqual([added.body.tools, added.body.reads], [3, 2]);
+    assert.equal((await rpc('tools/list')).status, 404, 'a draft is not reachable');
+    const published = await call('POST', `/v1/mcp/servers/${serverId}/publish`, { headers: adminOf(A) });
+    assert.equal(published.body.status, 'published', JSON.stringify(published.body));
+  });
+
+  test('an agent lists only the read tools and calls one; the API sees Probaline\'s credential, the agent sees no email', async () => {
+    const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'e2e', version: '1' } });
+    assert.equal(init.body.result.protocolVersion, '2025-06-18');
+    const tools = (await rpc('tools/list')).body.result.tools.map((t) => t.name).sort();
+    assert.deepEqual(tools, ['getEmployee', 'searchEmployees']);
+    const res = (await rpc('tools/call', { name: 'getEmployee', arguments: { id: 'e42' } })).body.result;
+    assert.equal(res.isError, false, JSON.stringify(res));
+    assert.ok(!res.content[0].text.includes('jane.doe@acme.example'), `email reached the agent: ${res.content[0].text}`);
+    assert.deepEqual(hits.at(-1), { url: '/employees/e42', auth: 'Bearer people-api-token' });
+
+    const record = await caseFile(A, res._meta['probaline/requestId']);
+    assert.equal(record.status, 200, JSON.stringify(record.body));
+    assert.match(record.body.headline, /An agent called getEmployee/);
+
+    // Tool calls aren't model traffic: they stay out of the Gateway picture.
+    const summary = await call('GET', '/v1/gateway/summary', { headers: adminOf(A) });
+    assert.ok(!summary.body.providers.some((p) => /mcp/i.test(p.name)), JSON.stringify(summary.body.providers));
+  });
+
+  test('a company rule stops a tool call before the API is called', async () => {
+    const word = marker();
+    await addRule(A, { type: 'keyword_block', description: `E2E MCP word ${word}`, values: [word] });
+    const before = hits.length;
+    const res = (await rpc('tools/call', { name: 'searchEmployees', arguments: { q: `the ${word} team` } })).body.result;
+    assert.equal(res.isError, true);
+    assert.match(res.content[0].text, /^Stopped by Probaline/);
+    assert.equal(hits.length, before, 'the API was not called');
+  });
+
+  test('keys without the MCP permission, and paused servers, are refused', async () => {
+    const chatOnly = await call('POST', `/mcp/${A}/${serverId}`, { headers: { authorization: `Bearer ${keyA}` }, body: { jsonrpc: '2.0', id: 1, method: 'tools/list' } });
+    assert.equal(chatOnly.status, 403);
+    await call('POST', `/v1/mcp/servers/${serverId}/pause`, { headers: adminOf(A) });
+    assert.equal((await rpc('tools/list')).status, 503);
+    await call('POST', `/v1/mcp/servers/${serverId}/publish`, { headers: adminOf(A) });
   });
 });
 

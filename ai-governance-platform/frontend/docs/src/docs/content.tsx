@@ -223,6 +223,7 @@ client = OpenAI(
           [<C>chat</C>, 'Sending requests, including proxy mode'],
           [<C>models</C>, 'Listing available models'],
           [<C>shadow_ai:ingest</C>, 'The browser extension reporting visits and reading its settings'],
+          [<C>mcp</C>, 'An AI agent using the tools on your MCP servers'],
         ]} />
         <P>A key belongs to one company; using it with another company’s ID is refused. Keys can be set to expire and revoked at any time.</P>
       </>
@@ -287,6 +288,39 @@ node collector/dist/cli.js report --out ./results --company "Acme"
     ),
   },
   {
+    slug: 'mcp',
+    title: 'MCP servers',
+    summary: 'Give AI agents your APIs as tools, with every call checked and recorded.',
+    body: (
+      <>
+        <P>An MCP server in Probaline is configuration, not code: create one in a minute, put one or more of your APIs behind it, and agents connect to its address. Agents only ever reach Probaline; your APIs are called by Probaline with its own credential. This is a beta: read tools only, and agents connect with API keys.</P>
+        <H2>Create one</H2>
+        <ol className="my-3 pl-6 flex flex-col gap-2 text-[16px] leading-relaxed">
+          <li>Open <strong>MCP servers</strong> → <strong>Create MCP server</strong>. Give it a name and a line on what it’s for (agents see it).</li>
+          <li><strong>Add an API</strong>: its base URL (https), how Probaline signs in to it (bearer token or an API key header; kept in your secret store), and its OpenAPI 3 description (JSON or YAML, pasted or uploaded). Each operation becomes a tool. Tools that read are on; tools that change data are listed but can’t be turned on yet.</li>
+          <li>Switch tools off that agents shouldn’t have, and try any tool in the test console. It runs through every check and calls the API for real.</li>
+          <li>Set access (every key with the <C>mcp</C> permission, or chosen keys), calls per minute, the largest result, and whether personal data is removed from results (on by default).</li>
+          <li><strong>Publish</strong>. Drafts aren’t reachable; a paused server answers “paused”.</li>
+        </ol>
+        <H2>Connect an agent</H2>
+        <P>Create an API key with <strong>Connect AI agents (MCP)</strong> in <strong>More → API keys</strong>. The server page has copy-paste setup; for example, Claude Code:</P>
+        <Code>{`claude mcp add --transport http hr-self-service https://<gateway>/mcp/<company>/hr-self-service \
+  --header "Authorization: Bearer <your Probaline key>"`}</Code>
+        <P>Cursor and VS Code take the same address and header in their MCP settings. Claude Desktop and ChatGPT sign people in rather than using a key; that arrives with sign-in through your identity provider.</P>
+        <H2>What happens on every call</H2>
+        <Table head={['Step', 'What Probaline does']} rows={[
+          ['Arguments', 'Checked against the tool’s schema; unknown fields refused'],
+          ['Secrets', 'A key, token or password in the arguments stops the call'],
+          ['Company rules', 'Your words, patterns and personal-data rules, as for prompts'],
+          ['The API call', 'Only to the registered base URL, with Probaline’s credential; no redirects; private addresses refused unless your self-hosted gateway allows them'],
+          ['The result', 'Personal data removed; text that tries to instruct the agent flagged; cut at the size limit'],
+          ['Evidence', 'A case file per call: who, which tool, the checks, the API’s answer code; results are kept only as a fingerprint'],
+        ]} />
+        <P>Tool calls appear in Evidence and on each server’s page, not in the Gateway picture, which shows prompts to AI models.</P>
+      </>
+    ),
+  },
+  {
     slug: 'api',
     title: 'API reference',
     summary: 'Endpoints, headers and errors.',
@@ -297,6 +331,7 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           [<C>POST /v1/chat/completions</C>, 'OpenAI-compatible chat completion'],
           [<C>GET /v1/models</C>, 'Models your company allows'],
           [<C>ANY /v1/proxy/:provider/*</C>, 'Proxy mode (needs X-Probaline-Key)'],
+          [<C>POST /mcp/:company/:server</C>, 'An MCP server (Streamable HTTP, JSON-RPC); needs a key with the mcp permission'],
         ]} />
         <H2>Headers</H2>
         <Table head={['Header', 'Meaning']} rows={[
@@ -315,6 +350,8 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           ['403', <C>FORBIDDEN</C>, 'The key lacks the needed permission'],
           ['429', '—', 'Rate limit reached; retry after the stated time'],
           ['503', <C>GOVERNANCE_UNAVAILABLE</C>, 'A check couldn’t run and your company blocks in that case'],
+          ['503', <C>SERVER_PAUSED</C>, 'The MCP server is paused by your administrator'],
+          ['404', <C>NOT_FOUND</C>, 'No such MCP server, or it isn’t published yet'],
         ]} />
       </>
     ),

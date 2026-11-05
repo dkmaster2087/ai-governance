@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { collection } from '@ai-governance/storage';
 import { createLogger } from '@ai-governance/utils';
 import { requireAccess, TENANT_READ } from '../auth/guards';
-import { queryAuditLogs } from '../services/audit-query';
+import { isModelTraffic, queryAuditLogs } from '../services/audit-query';
 import { summarizeGatewayTraffic } from '../services/gateway-summary';
 import { summarizeStopped } from '../services/stopped-summary';
 import { tenantSettings } from '../services/tenant-settings.service';
@@ -38,7 +38,8 @@ export async function gatewayRoutes(app: FastifyInstance) {
     if (!range) return reply.status(400).send(INVALID_RANGE);
     const { fromIso, toIso } = range;
 
-    const { logs, truncated } = await queryAuditLogs(request.tenantId, fromIso, toIso);
+    const { logs: all, truncated } = await queryAuditLogs(request.tenantId, fromIso, toIso);
+    const logs = all.filter(isModelTraffic);
 
     let shadowEvents: Array<{ userId?: string; timestamp?: string }> = [];
     try {
@@ -57,7 +58,8 @@ export async function gatewayRoutes(app: FastifyInstance) {
   app.get('/gateway/stopped', { preHandler: requireAccess(TENANT_READ) }, async (request, reply) => {
     const range = parseRange(request.query);
     if (!range) return reply.status(400).send(INVALID_RANGE);
-    const { logs, truncated } = await queryAuditLogs(request.tenantId, range.fromIso, range.toIso);
+    const { logs: all, truncated } = await queryAuditLogs(request.tenantId, range.fromIso, range.toIso);
+    const logs = all.filter(isModelTraffic);
     const secretsActive = (await tenantSettings().getSecretsAction(request.tenantId)) !== 'off';
     return summarizeStopped(logs, { from: range.fromIso, to: range.toIso, truncated, tzOffsetMinutes: range.tz, secretsActive });
   });

@@ -81,7 +81,7 @@ enforce (for example "log every request") are listed separately on the Rules pag
 | User | Use AI through approved apps; no dashboard |
 | Platform admin | Manage tenants and licenses across companies |
 
-API key permissions: `chat`, `models`, `shadow_ai:ingest`. On-prem license keys (`reporting:ingest`) are issued
+API key permissions: `chat`, `models`, `shadow_ai:ingest`, `mcp`. On-prem license keys (`reporting:ingest`) are issued
 by platform admins only.
 
 ## Deployment
@@ -89,9 +89,14 @@ by platform admins only.
 - **Hosted** and **in the customer's AWS account** (same software, AWS CDK).
 - **On-premises / Kubernetes / air-gapped:** planned.
 
-## Planned
+## MCP servers (beta)
 
-- **MCP servers on demand:** from an MCP servers menu, admins create as many MCP servers as they need, each in
-  front of one or more company APIs, with its own address, tools (reads on, writes chosen one by one, approval
-  where needed) and list of who may connect. People sign in through the company's identity provider; arguments
-  and results are checked like prompts; every tool call has a case file. Plan: [MCP.md](MCP.md).
+From **MCP servers** in the dashboard, admins create as many MCP servers as they need, each in front of one or
+more company APIs added from their OpenAPI descriptions, with its own address, tools and list of which keys may
+connect. Agents (Claude Code, Cursor, VS Code, a company's own) connect with an API key that has the `mcp`
+permission. Read tools only for now. Every call: arguments checked against the schema, the secrets check and
+company rules; the API called with Probaline's own credential; personal data removed from the result;
+instruction-like text flagged; a case file in Evidence. A test console tries tools before publishing.
+
+Planned: people signing in through the company's identity provider, write tools with approval, versions, and a
+connector for on-premises APIs. Plan: [MCP.md](MCP.md).

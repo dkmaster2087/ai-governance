@@ -10,8 +10,9 @@ const SCOPES: Array<{ value: Scope; label: string; hint: string }> = [
   { value: 'chat', label: 'Send AI requests', hint: 'For apps and the IDE proxy' },
   { value: 'models', label: 'List models', hint: 'Lets an app see which models it may use' },
   { value: 'shadow_ai:ingest', label: 'Browser extension', hint: 'Report visits and read extension settings only' },
+  { value: 'mcp', label: 'Connect AI agents (MCP)', hint: 'Use the tools on your MCP servers' },
 ];
-const SCOPE_LABEL: Record<string, string> = { chat: 'Send AI requests', models: 'List models', 'shadow_ai:ingest': 'Browser extension', 'reporting:ingest': 'On-prem license' };
+const SCOPE_LABEL: Record<string, string> = { chat: 'Send AI requests', models: 'List models', 'shadow_ai:ingest': 'Browser extension', 'reporting:ingest': 'On-prem license', mcp: 'Connect AI agents (MCP)' };
 
 function date(iso?: string) {
   return iso ? new Date(iso).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : '—';

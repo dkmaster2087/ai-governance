@@ -35,6 +35,12 @@ export const SPECS = {
     indexes: { 'tenantId-timestamp-index': { partitionKey: 'tenantId', sortKey: 'timestamp' } },
   }),
   metrics: (): CollectionSpec => ({ name: 'metrics', table: env('METRICS_TABLE', 'ai-governance-metrics'), partitionKey: 'tenantId', sortKey: 'period', ttlField: 'ttl' }),
+  /** MCP servers created from the dashboard (one record each). */
+  mcpServers: (): CollectionSpec => ({ name: 'mcp_servers', table: env('MCP_SERVERS_TABLE', 'ai-gov-mcp-servers-dev'), partitionKey: 'tenantId', sortKey: 'serverId' }),
+  /** Backend APIs added to MCP servers. */
+  mcpApis: (): CollectionSpec => ({ name: 'mcp_apis', table: env('MCP_APIS_TABLE', 'ai-gov-mcp-apis-dev'), partitionKey: 'tenantId', sortKey: 'apiId' }),
+  /** Tools, keyed `<serverId>#<toolName>` so a server's tools are one prefix query. */
+  mcpTools: (): CollectionSpec => ({ name: 'mcp_tools', table: env('MCP_TOOLS_TABLE', 'ai-gov-mcp-tools-dev'), partitionKey: 'tenantId', sortKey: 'toolKey' }),
 };
 
 export type CollectionName = keyof typeof SPECS;

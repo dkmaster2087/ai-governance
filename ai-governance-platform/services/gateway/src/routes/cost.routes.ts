@@ -1,7 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import { createLogger } from '@ai-governance/utils';
 import { requireAccess, requireTenantParam, TENANT_READ } from '../auth/guards';
-import { queryAuditLogs } from '../services/audit-query';
+import { isModelTraffic, queryAuditLogs } from '../services/audit-query';
 
 const logger = createLogger('gateway:cost');
 
@@ -12,7 +12,7 @@ export async function costRoutes(app: FastifyInstance) {
     const toIso = to || new Date().toISOString();
     const fromIso = from || new Date(Date.parse(toIso) - 30 * 86_400_000).toISOString();
     try {
-      return (await queryAuditLogs(tenantId, fromIso, toIso)).logs;
+      return (await queryAuditLogs(tenantId, fromIso, toIso)).logs.filter(isModelTraffic);
     } catch (err) {
       logger.error('Failed to query audit logs for cost', { tenantId, error: (err as Error).message });
       throw err;

@@ -56,7 +56,8 @@ case "${1:-start}" in
     start_service policy-engine services/policy-engine 3001
     start_service data-protection services/data-protection 3002 COMPREHEND_ENABLED=false
     start_service analytics services/analytics 3003
-    start_service gateway services/gateway 3000 AUTH_DEV_MODE=true \
+    # MCP: local stand-in APIs run on http://localhost, which a deployed gateway refuses.
+    start_service gateway services/gateway 3000 AUTH_DEV_MODE=true MCP_ALLOW_PRIVATE_BACKENDS=true MCP_ALLOW_HTTP_BACKENDS=true \
       POLICY_ENGINE_URL=http://localhost:3001 DATA_PROTECTION_URL=http://localhost:3002 ALLOWED_ORIGINS=http://localhost:5174,http://localhost:5173 \
       OPENAI_BASE_URL=http://localhost:4010/v1 PROXY_TARGET_OPENAI=http://localhost:4010 GLOBAL_RATE_LIMIT=2000
     if lsof -tiTCP:5173 -sTCP:LISTEN >/dev/null 2>&1; then echo "  website: port 5173 already in use, skipping"

@@ -22,6 +22,7 @@ interface ServicesStackProps extends cdk.StackProps {
   apiKeysTable: dynamodb.Table;
   alertsTable: dynamodb.Table;
   shadowAiTable: dynamodb.Table;
+  mcpTables?: { servers: dynamodb.Table; apis: dynamodb.Table; tools: dynamodb.Table };
   auditLogsTable: dynamodb.Table;
   modelsTable: dynamodb.Table;
   complianceTable: dynamodb.Table;
@@ -148,6 +149,11 @@ export class ServicesStack extends cdk.Stack {
         API_KEYS_TABLE: apiKeysTable.tableName,
         ALERTS_TABLE: alertsTable.tableName,
         SHADOW_AI_TABLE: shadowAiTable.tableName,
+        ...(props.mcpTables ? {
+          MCP_SERVERS_TABLE: props.mcpTables.servers.tableName,
+          MCP_APIS_TABLE: props.mcpTables.apis.tableName,
+          MCP_TOOLS_TABLE: props.mcpTables.tools.tableName,
+        } : {}),
         AUDIT_LOGS_TABLE: auditLogsTable.tableName,
         POLICY_ENGINE_URL: `http://${internalAlb.loadBalancerDnsName}:3001`,
         DATA_PROTECTION_URL: `http://${internalAlb.loadBalancerDnsName}:3002`,
@@ -178,6 +184,7 @@ export class ServicesStack extends cdk.Stack {
     apiKeysTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     alertsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     shadowAiTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
+    for (const t of Object.values(props.mcpTables ?? {})) t.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     auditLogsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({

@@ -2,7 +2,7 @@ import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
 import { allPages, collection } from '@ai-governance/storage';
 import { requireAccess, PLATFORM_ADMIN } from '../auth/guards';
-import { queryAuditLogs } from '../services/audit-query';
+import { isModelTraffic, queryAuditLogs } from '../services/audit-query';
 import { summarizePlatform } from '../services/platform-usage';
 
 const querySchema = z.object({
@@ -31,7 +31,8 @@ export async function platformRoutes(app: FastifyInstance) {
     }
 
     const perTenant = await Promise.all(tenantIds.map(async (tenantId) => {
-      const { logs, truncated } = await queryAuditLogs(tenantId, from.toISOString(), to.toISOString(), MAX_PER_TENANT);
+      const { logs: all, truncated } = await queryAuditLogs(tenantId, from.toISOString(), to.toISOString(), MAX_PER_TENANT);
+      const logs = all.filter(isModelTraffic);
       return { tenantId, logs, truncated };
     }));
     return summarizePlatform(perTenant, { from: from.toISOString(), to: to.toISOString(), tz: q.tz });

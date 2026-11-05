@@ -111,7 +111,7 @@ nothing else installed. Plan: [ASSESSMENT.md](ASSESSMENT.md). Built in [collecto
 on-premises, and as beta Zscaler, Netskope, Azure, Google Cloud, Microsoft 365, Google Workspace, Okta, Entra and
 other identity providers' sign-in exports.
 
-**MCP servers on demand** (planned): admins create MCP servers from the dashboard, each in front of one or more
+**MCP servers on demand** (phase 1 built, beta): admins create MCP servers from the dashboard, each in front of one or more
 company APIs, with its own address, tools, access and approvals. Agents sign in through the company's identity
 provider; arguments and results are checked like prompts, and every tool call has a case file. Plan:
 [MCP.md](MCP.md).
@@ -133,5 +133,7 @@ provider; arguments and results are checked like prompts, and every tool call ha
   through when split across chunks.
 - A revoked API key stops working at once on the gateway instance that revoked it; other instances drop
   their cached copy within a minute.
+- MCP servers (beta): per-key rate limits are counted per gateway instance; backends are told who called in an
+  unsigned `X-Probaline-Caller` header (a signed identity token comes with OAuth sign-in); only read tools.
 - Policy engine, data protection and analytics have no service-to-service authentication; they rely on
   being reachable only inside the VPC.

@@ -1,6 +1,7 @@
 # MCP gateway: governed access from AI agents to company systems
 
-Status: planned. Written 2026-11-05.
+Status: phase 1 built (beta): servers created on demand, APIs from OpenAPI, read tools, API keys for agents,
+checks, case files, test console. Phases 2–4 planned. Written 2026-11-05.
 
 ## Why
 
@@ -195,12 +196,30 @@ second system.
 
 | Phase | What | Size |
 |---|---|---|
-| 1 | **Create MCP servers on demand**: the MCP servers menu, create flow and per-server address (Streamable HTTP); APIs from OpenAPI; read tools; workloads with API keys; argument and result checks; case files; test console; pause and delete | 3–4 weeks |
+| 1 (**built**) | **Create MCP servers on demand**: the MCP servers menu, create flow and per-server address (Streamable HTTP); APIs from OpenAPI; read tools; workloads with API keys; argument and result checks; case files; test console; pause and delete | 3–4 weeks |
 | 2 | People sign in through their identity provider (OAuth for MCP clients, federation per tenant); group access per server and tool; write tools with approval; draft, publish and versions; connector for on-premises APIs | 3–4 weeks |
 | 3 | Put existing MCP servers behind Probaline (company-run and vendor-hosted), with the same checks; templates for common systems; injection classifier; on-behalf-of token exchange; end dates; isolated servers | 3–4 weeks |
 | 4 | Find MCP use in the assessment: the collector looks for MCP servers and agent traffic in network and cloud logs, so the report says which agents already reach company data | 1–2 weeks |
 
 Phase 1 alone is a useful product for companies' own agents. Phase 2 is the one to sell to a CISO.
+
+### What phase 1 does today
+
+- **Dashboard → MCP servers:** list, **Create MCP server**, and a page per server: address and setup for
+  Claude Code, Cursor and VS Code; APIs added from an OpenAPI 3 description (JSON or YAML, pasted or uploaded);
+  tools grouped by API (reads on; writes shown as "comes next"); a test console; access (every key with the
+  `mcp` permission, or chosen keys), calls per minute, largest result, and personal-data removal.
+- **Agents** connect over Streamable HTTP to `/mcp/<company>/<server>` with a Probaline API key that has the
+  `mcp` permission. Drafts aren't reachable; paused servers answer "paused".
+- **Every call:** arguments validated against the schema; the secrets check (a secret in arguments stops the
+  call); company rules; the call with Probaline's own credential (bearer token or API key header, kept in the
+  secret store), only to the registered address, no redirects, private addresses refused unless a self-hosted
+  operator allows them; personal data removed from the result; instruction-like text flagged; size capped; a
+  case file in Evidence ("An agent called … on …").
+- **Not yet:** people signing in (OAuth), write tools and approvals, versions, the connector, signed identity
+  for backends (calls carry an `X-Probaline-Caller` header naming the key), rate limits shared across gateway
+  instances (they're per instance), and tool calls on the Gateway picture (they're on each server's page and
+  in Evidence).
 
 ## Not in scope (for now)
 

@@ -40,6 +40,7 @@ export function HomePage() {
           <IconFacts items={[
             ['lock', 'Confidential work stopped', 'Your words, patterns, approved models'],
             ['key', 'Secrets never leave', 'API keys, tokens, private keys, passwords'],
+            ['plug', 'Agents reach your APIs safely', 'MCP servers, every call checked'],
             ['identity', 'Personal data removed', 'In prompts and in answers'],
             ['browser', 'Shadow AI visible', 'Block, approve or keep watching'],
             ['report', 'Evidence for every decision', 'A case file per request'],

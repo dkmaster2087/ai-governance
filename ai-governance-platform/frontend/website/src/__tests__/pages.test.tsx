@@ -34,6 +34,13 @@ describe('website', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('One gateway, three checks');
   });
 
+  it('offers MCP servers as a fourth way in, marked beta', () => {
+    at('/gateway');
+    const card = screen.getByRole('heading', { name: 'AI agents (MCP)' }).closest('[class*="p-6"]')!;
+    expect(within(card as HTMLElement).getByText('Beta')).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /Give agents your APIs/ })).toBeInTheDocument();
+  });
+
   it('shows secrets as a live gateway check', () => {
     at('/gateway');
     expect(screen.getByRole('img', { name: /contain a secret such as an API key/ })).toBeInTheDocument();

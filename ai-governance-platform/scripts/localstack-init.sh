@@ -111,6 +111,39 @@ aws --endpoint-url=$ENDPOINT dynamodb create-table \
 
 echo "==> Creating S3 buckets..."
 
+aws --endpoint-url=$ENDPOINT dynamodb create-table \
+  --region $REGION \
+  --table-name $PREFIX-mcp-servers-$STAGE \
+  --attribute-definitions \
+    AttributeName=tenantId,AttributeType=S \
+    AttributeName=serverId,AttributeType=S \
+  --key-schema \
+    AttributeName=tenantId,KeyType=HASH \
+    AttributeName=serverId,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST || true
+
+aws --endpoint-url=$ENDPOINT dynamodb create-table \
+  --region $REGION \
+  --table-name $PREFIX-mcp-apis-$STAGE \
+  --attribute-definitions \
+    AttributeName=tenantId,AttributeType=S \
+    AttributeName=apiId,AttributeType=S \
+  --key-schema \
+    AttributeName=tenantId,KeyType=HASH \
+    AttributeName=apiId,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST || true
+
+aws --endpoint-url=$ENDPOINT dynamodb create-table \
+  --region $REGION \
+  --table-name $PREFIX-mcp-tools-$STAGE \
+  --attribute-definitions \
+    AttributeName=tenantId,AttributeType=S \
+    AttributeName=toolKey,AttributeType=S \
+  --key-schema \
+    AttributeName=tenantId,KeyType=HASH \
+    AttributeName=toolKey,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST || true
+
 aws --endpoint-url=$ENDPOINT s3 mb s3://$PREFIX-audit-logs-$STAGE-$ACCOUNT --region $REGION || true
 aws --endpoint-url=$ENDPOINT s3 mb s3://$PREFIX-athena-results-$STAGE-$ACCOUNT --region $REGION || true
 

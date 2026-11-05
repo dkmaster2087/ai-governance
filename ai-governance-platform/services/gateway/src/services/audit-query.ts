@@ -24,3 +24,6 @@ export async function queryAuditLogs(
   } while (after && logs.length < maxItems);
   return { logs: logs.slice(0, maxItems), truncated: !!after || logs.length > maxItems };
 }
+
+/** Prompts to AI models, as opposed to tool calls through MCP servers, which have their own pages. */
+export const isModelTraffic = (log: AuditLog) => log.metadata?.kind !== 'mcp_tool_call';

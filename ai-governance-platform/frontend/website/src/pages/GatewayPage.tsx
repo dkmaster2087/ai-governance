@@ -35,6 +35,11 @@ const WAYS_IN: Array<{ title: string; status: 'Available' | 'Beta'; points: stri
     status: 'Beta',
     points: ['Pushed by your IT team; settings locked', 'Records the tool’s domain only, never what people type', 'Watch-only until you decide'],
   },
+  {
+    title: 'AI agents (MCP)',
+    status: 'Beta',
+    points: ['Your APIs become tools, from their OpenAPI', 'Agents reach Probaline, never your APIs', 'Every call checked and kept as evidence'],
+  },
 ];
 
 export function GatewayPage() {
@@ -49,7 +54,7 @@ export function GatewayPage() {
 
       <section aria-labelledby="ways-in" className="py-16 border-t border-line">
         <Eyebrow className="mb-3">Ways in</Eyebrow>
-        <h2 id="ways-in" className="m-0 text-[32px] leading-[1.12] font-bold tracking-[-0.02em] max-w-[760px]">Three ways in. Nobody works differently.</h2>
+        <h2 id="ways-in" className="m-0 text-[32px] leading-[1.12] font-bold tracking-[-0.02em] max-w-[760px]">Four ways in. Nobody works differently.</h2>
         <div className="grid gap-5 mt-10" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))' }}>
           {WAYS_IN.map((w) => (
             <Panel key={w.title} className="p-6 flex flex-col gap-3">
@@ -85,6 +90,25 @@ export function GatewayPage() {
         }
       >
         <p className="m-0">Each rule that fired gets one card: how often, which apps and people, and a short excerpt of exactly what triggered it.</p>
+      </Feature>
+
+      <Feature
+        eyebrow="MCP servers"
+        title={<>Give agents your APIs. Keep the <span className="text-stop">keys</span>.</>}
+        sample={
+          <Panel className="p-6 flex flex-col gap-3">
+            <div className="flex items-center gap-2.5"><span className="text-xl font-bold">HR self-service</span><span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-ink text-white">Live</span></div>
+            <div className="font-mono text-xs text-ink-muted">/mcp/acme/hr-self-service</div>
+            <ul className="m-0 p-0 list-none flex flex-col gap-1.5 text-sm">
+              <li className="flex justify-between gap-3"><span><span className="font-mono text-[11px] bg-ink-tint rounded px-1.5 mr-1.5">GET</span>One employee</span><span className="font-semibold">On</span></li>
+              <li className="flex justify-between gap-3"><span><span className="font-mono text-[11px] bg-ink-tint rounded px-1.5 mr-1.5">GET</span>Search employees</span><span className="font-semibold">On</span></li>
+              <li className="flex justify-between gap-3 text-ink-muted"><span><span className="font-mono text-[11px] bg-line-subtle rounded px-1.5 mr-1.5">POST</span>Add an employee</span><span>Off</span></li>
+            </ul>
+            <div className="bg-canvas border border-line-subtle rounded-[10px] px-4 py-3 font-mono text-[12px]">{'{"name":"Jane Doe","email":'}<mark className="bg-ink-tint text-ink font-bold px-1 rounded">[REDACTED]</mark>{'}'}</div>
+          </Panel>
+        }
+      >
+        <p className="m-0">Create an MCP server in a minute from an OpenAPI description. Reads are on, writes stay off, and every call passes your rules, with personal data removed before the agent sees it.</p>
       </Feature>
 
       <Feature
