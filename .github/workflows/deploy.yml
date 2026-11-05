@@ -1,14 +1,15 @@
+# Deploys to AWS. Started by hand only (Actions → Deploy → Run workflow); a push never deploys.
+# Needs the repository secrets AWS_DEPLOY_ROLE_ARN, AWS_ACCOUNT_ID, WEBSITE_BUCKET_NAME and
+# CLOUDFRONT_DISTRIBUTION_ID, and a GitHub environment per stage (add required reviewers to prod).
 name: Deploy
 
 on:
-  push:
-    branches: [main]
   workflow_dispatch:
     inputs:
       stage:
         description: 'Deployment stage'
         required: true
-        default: 'dev'
+        default: dev
         type: choice
         options: [dev, staging, prod]
       destroy:
@@ -17,9 +18,17 @@ on:
         default: false
         type: boolean
 
+concurrency:
+  group: deploy-${{ inputs.stage }}
+  cancel-in-progress: false
+
 env:
   NODE_VERSION: '20'
   AWS_REGION: us-east-1
+
+defaults:
+  run:
+    working-directory: ai-governance-platform
 
 jobs:
   # ─── Build & Push Docker Images ───────────────────────────────────────────
@@ -51,18 +60,18 @@ jobs:
       - name: Build & push Docker image
         env:
           ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          STAGE: ${{ inputs.stage || 'dev' }}
+          STAGE: ${{ inputs.stage }}
         run: |
-          IMAGE_URI=$ECR_REGISTRY/ai-gov-${{ matrix.service }}-$STAGE:${{ github.sha }}
-          # The Dockerfiles build from the repository root (npm workspaces)
-          docker build -f ai-governance-platform/services/${{ matrix.service }}/Dockerfile -t $IMAGE_URI ai-governance-platform
-          docker push $IMAGE_URI
-          docker tag $IMAGE_URI $ECR_REGISTRY/ai-gov-${{ matrix.service }}-$STAGE:latest
-          docker push $ECR_REGISTRY/ai-gov-${{ matrix.service }}-$STAGE:latest
+          REPO="$ECR_REGISTRY/ai-gov-${{ matrix.service }}-$STAGE"
+          # The Dockerfiles build from the ai-governance-platform folder (npm workspaces)
+          docker build -f "services/${{ matrix.service }}/Dockerfile" -t "$REPO:${{ github.sha }}" .
+          docker push "$REPO:${{ github.sha }}"
+          docker tag "$REPO:${{ github.sha }}" "$REPO:latest"
+          docker push "$REPO:latest"
 
   # ─── CDK Deploy ───────────────────────────────────────────────────────────
   cdk-deploy:
-    name: CDK Deploy — ${{ inputs.stage || 'dev' }}
+    name: CDK Deploy — ${{ inputs.stage }}
     runs-on: ubuntu-latest
     needs: build-and-push
     if: ${{ !inputs.destroy }}
@@ -70,7 +79,7 @@ jobs:
       id-token: write
       contents: read
     environment:
-      name: ${{ inputs.stage || 'dev' }}
+      name: ${{ inputs.stage }}
     steps:
       - uses: actions/checkout@v4
 
@@ -84,14 +93,14 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: npm
+          cache-dependency-path: ai-governance-platform/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build infra
-        run: npm run build
-        working-directory: ai-governance-platform/infra
+      - name: Build shared packages and infra
+        run: npm run build -w shared/types -w shared/utils -w infra
 
       - name: CDK Bootstrap (idempotent)
         run: npx cdk bootstrap
@@ -101,7 +110,7 @@ jobs:
           CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
 
       - name: CDK Deploy all stacks
-        run: npx cdk deploy --all --require-approval never --context stage=${{ inputs.stage || 'dev' }}
+        run: npx cdk deploy --all --require-approval never --context stage=${{ inputs.stage }}
         working-directory: ai-governance-platform/infra
         env:
           CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
@@ -129,12 +138,13 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: npm
+          cache-dependency-path: ai-governance-platform/package-lock.json
 
       - name: Install & build website
         run: |
           npm ci
-          npx turbo run build --filter=@ai-governance/website
+          npm run build -w frontend/website
 
       - name: Sync to S3
         run: |
@@ -153,14 +163,14 @@ jobs:
 
   # ─── Teardown (destroy all stacks) ────────────────────────────────────────
   cdk-destroy:
-    name: CDK Destroy — ${{ inputs.stage || 'dev' }}
+    name: CDK Destroy — ${{ inputs.stage }}
     runs-on: ubuntu-latest
     if: ${{ inputs.destroy == true }}
     permissions:
       id-token: write
       contents: read
     environment:
-      name: ${{ inputs.stage || 'dev' }}
+      name: ${{ inputs.stage }}
     steps:
       - uses: actions/checkout@v4
 
@@ -174,17 +184,17 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: ${{ env.NODE_VERSION }}
-          cache: 'npm'
+          cache: npm
+          cache-dependency-path: ai-governance-platform/package-lock.json
 
       - name: Install dependencies
         run: npm ci
 
-      - name: Build infra
-        run: npm run build
-        working-directory: ai-governance-platform/infra
+      - name: Build shared packages and infra
+        run: npm run build -w shared/types -w shared/utils -w infra
 
       - name: CDK Destroy all stacks
-        run: npx cdk destroy --all --force --context stage=${{ inputs.stage || 'dev' }}
+        run: npx cdk destroy --all --force --context stage=${{ inputs.stage }}
         working-directory: ai-governance-platform/infra
         env:
           CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}

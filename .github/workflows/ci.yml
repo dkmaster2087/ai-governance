@@ -1,0 +1,142 @@
+# Tests and builds on every push and pull request. Never deploys and needs no cloud credentials;
+# deploying is a separate, manually started workflow (deploy.yml).
+name: CI
+
+on:
+  push:
+  pull_request:
+    branches: [main]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+env:
+  NODE_VERSION: '20'
+
+defaults:
+  run:
+    working-directory: ai-governance-platform
+
+jobs:
+  test:
+    name: Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ai-governance-platform/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared packages
+        run: npm run build -w shared/types -w shared/utils
+
+      - name: Shared utils
+        working-directory: ai-governance-platform/shared/utils
+        run: npx jest --ci
+
+      - name: Gateway
+        working-directory: ai-governance-platform/services/gateway
+        run: npx jest --runInBand --ci
+
+      - name: Policy engine
+        working-directory: ai-governance-platform/services/policy-engine
+        run: npx jest --runInBand --ci
+
+      - name: Data protection
+        working-directory: ai-governance-platform/services/data-protection
+        run: npx jest --runInBand --ci
+
+      - name: Analytics
+        working-directory: ai-governance-platform/services/analytics
+        run: npx jest --runInBand --ci
+
+      - name: Reporting agent
+        working-directory: ai-governance-platform/services/reporting-agent
+        run: npx jest --runInBand --ci
+
+      - name: Infrastructure
+        working-directory: ai-governance-platform/infra
+        run: npx jest --ci
+
+      - name: Collector
+        working-directory: ai-governance-platform/collector
+        run: npx jest --runInBand --ci
+
+      - name: Browser extension
+        run: node --test extensions/shadow-ai-guard/tests/lib.test.mjs
+
+      - name: Dashboard
+        working-directory: ai-governance-platform/frontend/dashboard
+        run: npx vitest run
+
+      - name: Website
+        working-directory: ai-governance-platform/frontend/website
+        run: npx vitest run
+
+      - name: Docs site
+        working-directory: ai-governance-platform/frontend/docs
+        run: npx vitest run
+
+  build:
+    name: Build
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ai-governance-platform/package-lock.json
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build shared packages
+        run: npm run build -w shared/types -w shared/utils
+
+      - name: Build services and collector
+        run: npm run build -w services/gateway -w services/policy-engine -w services/data-protection -w services/analytics -w services/reporting-agent -w collector
+
+      - name: Build frontends
+        run: npm run build -w frontend/dashboard -w frontend/website -w frontend/docs
+
+      # No account set, so CDK makes no AWS lookups and needs no credentials.
+      - name: Synthesize infrastructure
+        working-directory: ai-governance-platform/infra
+        run: npx cdk synth --context stage=dev -q
+        env:
+          CDK_DEFAULT_REGION: us-east-1
+
+  images:
+    name: Image · ${{ matrix.name }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { name: gateway, dockerfile: services/gateway/Dockerfile, context: . }
+          - { name: policy-engine, dockerfile: services/policy-engine/Dockerfile, context: . }
+          - { name: data-protection, dockerfile: services/data-protection/Dockerfile, context: . }
+          - { name: analytics, dockerfile: services/analytics/Dockerfile, context: . }
+          - { name: reporting-agent, dockerfile: services/reporting-agent/Dockerfile, context: . }
+          - { name: collector, dockerfile: collector/deploy/onprem/Dockerfile, context: collector }
+    steps:
+      - uses: actions/checkout@v4
+
+      # Build only, to prove each Dockerfile works; pushing happens in deploy.yml.
+      - name: Build image
+        run: docker build -f ${{ matrix.dockerfile }} -t aegis-${{ matrix.name }}:ci ${{ matrix.context }}

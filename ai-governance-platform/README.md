@@ -78,7 +78,17 @@ stages serve plain HTTP. See "Known gaps" in [docs/ARCHITECTURE.md](docs/ARCHITE
 | `AUTH_DEV_MODE` | gateway | Local demo sign-in only; refused outside dev stages |
 | `VITE_API_URL`, `VITE_DASHBOARD_URL` | website | Gateway and dashboard addresses |
 
-### GitHub secrets for CI/CD
+### CI and deployment
+
+The workflows live in `.github/workflows/` at the repository root (one level above this folder).
+
+- **CI** (`ci.yml`) runs on every push and pull request: all unit tests, every build, the CDK synth, and a
+  build of each container image. It never deploys and needs no secrets.
+- **Deploy** (`deploy.yml`) runs only when started by hand (Actions → Deploy → Run workflow), for a chosen
+  stage, or to tear one down. A push never deploys.
+- The end-to-end suite (`npm run test:e2e`) needs the local stack and isn't run in CI yet.
+
+Deploy needs these repository secrets:
 
 | Secret | Description |
 |---|---|

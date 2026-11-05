@@ -105,9 +105,11 @@ nothing else installed. Plan: [ASSESSMENT.md](ASSESSMENT.md); the core, the AWS 
 
 ## Known gaps before production
 
-- The CI and deploy workflows are in `ai-governance-platform/.github/workflows/`, but GitHub only runs workflows
-  from the repository root, so they don't run. Moving them also turns on `deploy.yml`, which deploys to AWS on
-  every push to `main`.
+- CI runs unit tests, builds and image builds on every push, but not the end-to-end suite, which needs
+  LocalStack. Deploying is manual only.
+- The first deploy to a new AWS account will fail: the deploy workflow pushes images before CDK creates the
+  image repositories, and the services stack starts containers from an image that doesn't exist yet. The
+  repositories need their own stack (or the services must start at zero tasks) before the first deploy.
 
 - Production deploys need `-c certificateArn=…` for HTTPS; the service Dockerfiles haven't been built on a
   developer machine yet (CI builds them).
