@@ -1,11 +1,12 @@
 import { Actor, Observation } from '../core/sightings';
+import { HeaderTable, parseSseMessage, SseSource } from '../sse/parsers';
 
 /**
  * On-premises log lines: syslog from firewalls and proxies, and DNS / proxy log files. Each line is
  * recognized by its shape, so one syslog port can take several products at once.
  */
 
-export type OnpremSource = 'syslog_paloalto' | 'syslog_fortinet' | 'syslog_cef' | 'squid' | 'bind_dns' | 'windows_dns';
+export type OnpremSource = 'syslog_paloalto' | 'syslog_fortinet' | 'syslog_cef' | 'squid' | 'bind_dns' | 'windows_dns' | SseSource;
 
 const MONTHS: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
 
@@ -122,8 +123,11 @@ function cef(msg: string, fallback: Date): Observation | null {
   if (ext.rt && /^\d{12,13}$/.test(ext.rt)) t = new Date(Number(ext.rt));
   else if (ext.rt) t = validDate(new Date(ext.rt));
   const bytes = Number(ext.out);
+  // Zscaler and Netskope can send CEF too; name them, so the report says where the data came from.
+  const vendor = parts[1] ?? '';
+  const source = /zscaler/i.test(vendor) ? 'zscaler' : /netskope/i.test(vendor) ? 'netskope' : 'syslog_cef';
   return {
-    time: validDate(t) ?? fallback, domain, who: actor(ext.suser, ext.src), source: 'syslog_cef',
+    time: validDate(t) ?? fallback, domain, who: actor(ext.suser, ext.src), source,
     ...(Number.isFinite(bytes) && bytes > 0 ? { bytesOut: bytes } : {}),
   };
 }
@@ -171,7 +175,8 @@ export function parseOnpremLine(line: string, receivedAt = new Date()): Observat
   const frame = unwrapSyslog(line, receivedAt);
   const fallback = frame.time ?? receivedAt;
   const msg = frame.msg;
-  return cef(msg, fallback)
+  return parseSseMessage(msg, fallback)
+    ?? cef(msg, fallback)
     ?? fortinet(msg, fallback)
     ?? paloAlto(msg.replace(/^\S+:\s/, ''), fallback) ?? paloAlto(msg, fallback)
     ?? squid(msg)
@@ -179,9 +184,27 @@ export function parseOnpremLine(line: string, receivedAt = new Date()): Observat
     ?? windowsDns(msg, fallback);
 }
 
+/**
+ * Reads the lines of one file or stream in order. Files with a header row (Netskope log streaming) need
+ * the header to read the rows under it, so the reader keeps it; `header` can be saved and passed back
+ * to resume tailing a file after a restart.
+ */
+export class LineReader {
+  private table: HeaderTable;
+  constructor(header?: HeaderTable['header']) { this.table = new HeaderTable(header); }
+  get header() { return this.table.header; }
+
+  read(line: string, receivedAt = new Date()): Observation | null {
+    if (!line || line.length > 65_536) return null;
+    const row = this.table.line(line.replace(/^\uFEFF/, '').trimEnd(), receivedAt);
+    return row === undefined ? parseOnpremLine(line, receivedAt) : row;
+  }
+}
+
 export function* parseOnpremText(text: string, receivedAt = new Date()): Generator<Observation> {
+  const reader = new LineReader();
   for (const line of text.split(/\r?\n/)) {
-    const o = parseOnpremLine(line, receivedAt);
+    const o = reader.read(line, receivedAt);
     if (o) yield o;
   }
 }

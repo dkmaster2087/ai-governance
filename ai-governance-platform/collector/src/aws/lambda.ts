@@ -1,6 +1,7 @@
 import { ListObjectsV2Command, S3Client } from '@aws-sdk/client-s3';
 import { buildReport, decode, isoDay, processInput } from '../core/run';
 import { detectSource, parse } from './parsers';
+import { parseOnpremText } from '../onprem/parsers';
 import { readObject, S3Store } from './s3-store';
 
 /**
@@ -35,9 +36,15 @@ async function processObject(bucket: string, key: string) {
   if (!cfg.logBuckets.has(bucket)) return { key, skipped: 'bucket not configured' };
   const text = decode(await readObject(s3, bucket, key));
   const source = detectSource(key, text);
-  if (!source) return { key, skipped: 'not a log this collector reads' };
-  const result = await processInput(new S3Store(s3, cfg.results), `s3://${bucket}/${key}`, parse(source, text), cfg.ignore);
-  return { key, source, ...result };
+  if (source) {
+    const result = await processInput(new S3Store(s3, cfg.results), `s3://${bucket}/${key}`, parse(source, text), cfg.ignore);
+    return { key, source, ...result };
+  }
+  // Not an AWS log: logs other products stream into S3 (Netskope, Zscaler) are read line by line.
+  const observations = [...parseOnpremText(text)];
+  if (observations.length === 0) return { key, skipped: 'not a log this collector reads' };
+  const result = await processInput(new S3Store(s3, cfg.results), `s3://${bucket}/${key}`, observations, cfg.ignore);
+  return { key, source: observations[0].source, ...result };
 }
 
 async function report(now = new Date()) {

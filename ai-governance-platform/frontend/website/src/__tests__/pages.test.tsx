@@ -51,7 +51,8 @@ describe('website', () => {
     const tile = (name: string) => screen.getAllByText(name)[0].closest('li')!;
     expect(within(tile('AWS')).getByText('Available')).toBeInTheDocument();
     expect(within(tile('Palo Alto Networks')).getByText('Available')).toBeInTheDocument();
-    for (const coming of ['Microsoft Azure', 'Google Cloud', 'Zscaler', 'Netskope', 'Microsoft 365']) {
+    for (const beta of ['Zscaler', 'Netskope']) expect(within(tile(beta)).getByText('Beta')).toBeInTheDocument();
+    for (const coming of ['Microsoft Azure', 'Google Cloud', 'Microsoft 365']) {
       expect(within(tile(coming)).getByText('Coming')).toBeInTheDocument();
     }
     expect(screen.getByRole('img', { name: /Nothing goes to Probaline unless you share it/ })).toBeInTheDocument();

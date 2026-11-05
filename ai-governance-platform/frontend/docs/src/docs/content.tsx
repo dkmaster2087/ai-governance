@@ -244,12 +244,15 @@ client = OpenAI(
         <Table head={['Product', 'How it arrives']} rows={[
           ['Palo Alto Networks (URL filtering)', 'syslog'],
           ['Fortinet FortiGate (web filter, DNS)', 'syslog'],
-          ['Check Point and other CEF sources', 'syslog'],
+          ['Check Point and other CEF or LEEF sources', 'syslog'],
+          ['Zscaler Internet Access (beta)', 'NSS web log feed over TCP syslog: JSON, LEEF, key=value or CEF'],
+          ['Netskope (beta)', 'Cloud Log Shipper over syslog (JSON or CEF), or transaction log streaming files (CSV or W3C, plain or .gz) in a watched folder or an S3 bucket the AWS collector reads'],
           ['Squid', 'access log file'],
           ['BIND, Windows DNS', 'query log files'],
         ]} />
         <H2>Not built yet</H2>
-        <P>Azure, Google Cloud, Zscaler, Netskope, Microsoft 365, Google Workspace and Okta/Entra sources, and sending results to a Probaline install. See <C>docs/ASSESSMENT.md</C> in the repository.</P>
+        <P>Zscaler and Netskope are in beta: they read the formats these products document, but haven’t yet been run on a customer’s logs.</P>
+        <P>Azure, Google Cloud, Microsoft 365, Google Workspace and Okta/Entra sources, and sending results to a Probaline install. See <C>docs/ASSESSMENT.md</C> in the repository.</P>
       </>
     ),
   },

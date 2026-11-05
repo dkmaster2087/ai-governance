@@ -109,4 +109,26 @@ describe('on-premises collector', () => {
       expect(status).toMatchObject({ matched: 1, udpPort: c.udpAddress });
     } finally { await c.stop(); }
   });
+
+  it('reads a Netskope file with a header row, and keeps the header across a restart', async () => {
+    const { dir, logs, c } = await setup(true);
+    const file = path.join(logs, 'netskope-transactions.csv');
+    const row = (host: string, ip: string) => `${day},10:00:00,${ip},-,${host},/`;
+    await fs.writeFile(file, `date,time,c-ip,cs-username,cs-host,cs-uri\n${row('chatgpt.com', '10.7.0.1')}\n`);
+    await c.pollFiles();
+    await c.stop();
+    // A new process: it must still know the columns when only new rows arrive.
+    const again = new OnpremCollector({ dataDir: path.join(dir, 'data'), udpPort: 0, tcpPort: 0, watchDir: logs, pollSeconds: 3600, flushSeconds: 3600, log: () => {} });
+    await again.start();
+    try {
+      await fs.appendFile(file, `${row('claude.ai', '10.7.0.2')}\n${row('www.bbc.co.uk', '10.7.0.3')}\n`);
+      await again.pollFiles();
+      await again.flush();
+      const rows = mergeSightings(await loadSightings(new FileStore(path.join(dir, 'data')), '2026-01-01', '2027-12-31'));
+      expect(Object.fromEntries(rows.map((r) => [`${r.domain}|${r.who}|${r.source}`, r.count]))).toEqual({
+        'chatgpt.com|ip:10.7.0.1|netskope': 1,
+        'claude.ai|ip:10.7.0.2|netskope': 1,
+      });
+    } finally { await again.stop(); }
+  });
 });

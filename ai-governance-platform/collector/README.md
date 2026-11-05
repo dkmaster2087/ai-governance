@@ -6,8 +6,9 @@ own environment. It is separate from the Probaline gateway and needs nothing els
 
 **Built:** the shared core; the AWS collector (Route 53 Resolver DNS query logs, Network Firewall logs,
 CloudTrail for Amazon Bedrock and SageMaker); the on-premises collector (syslog from Palo Alto, Fortinet and any
-CEF source such as Check Point; Squid, BIND and Windows DNS log files). **Not built yet:** Zscaler/Netskope,
-Azure, Google Cloud, work apps, and sending results to a Probaline instance (`probaline` output).
+CEF or LEEF source such as Check Point; Squid, BIND and Windows DNS log files); Zscaler and Netskope (beta:
+tested on made-up logs in their documented formats, not yet on a customer's). **Not built yet:** Azure, Google
+Cloud, work apps, and sending results to a Probaline instance (`probaline` output).
 
 ## What it keeps
 
@@ -96,18 +97,35 @@ node collector/dist/cli.js report --out ./assessment --days 30 --company "Acme"
 
 `--reveal-names` builds a second copy with real names into `private/`.
 
+## Zscaler and Netskope (beta)
+
+Both see laptops wherever they are, which firewall and DNS logs miss once people leave the office. They use
+the same on-premises container (or the AWS collector, for logs streamed into S3); nothing new to install.
+
+| Product | Send it as | Formats read |
+|---|---|---|
+| Zscaler Internet Access | An NSS web log feed to the container over TCP syslog (port 5514) | JSON (also wrapped as Splunk HEC), LEEF (QRadar), key=value (Splunk), CEF (ArcSight). Fields used: `hostname` or `url`, `login`, `cip`, `epochtime` or `datetime`, `requestsize` |
+| Netskope | Cloud Log Shipper to the container over syslog, as JSON or CEF | Page and application events: `domain` or `url`, `ur_normalized` or `user`, `srcip`, `timestamp`, `client_bytes` |
+| Netskope | Log streaming of transaction events to a folder the container watches, or to an S3 bucket the AWS collector reads | CSV with a header row, or W3C with a `#Fields:` line, plain or `.gz`. Columns used: `cs-host` or `cs-uri`, `cs-username`, `c-ip`, `date` + `time`, `cs-bytes` |
+
+Use TCP for Zscaler NSS: a busy feed over UDP drops lines. Files with a header row are read with that header,
+and the header is remembered while a file is followed, including across restarts. Zscaler and Netskope lines
+sent as CEF are labelled with their product in the report.
+
 ## Demo data
 
 ```bash
 node collector/scripts/sample-aws-logs.mjs ./sample-logs 21
 node collector/scripts/sample-onprem-logs.mjs files ./sample-onprem 14
 node collector/scripts/sample-onprem-logs.mjs send localhost 5514
+node collector/scripts/sample-sse-logs.mjs files ./sample-sse 14
 ```
 
-Made-up AWS logs in the layout AWS uses; on-premises log files; or on-premises syslog sent over UDP.
+Made-up AWS logs in the layout AWS uses; on-premises log files; on-premises syslog sent over UDP; or Zscaler
+and Netskope logs in their feed formats.
 
 ## Tests
 
-`npm test -w collector`: the catalog, AWS and on-premises parsers, privacy (pseudonyms, no raw lines, ignored
+`npm test -w collector`: the catalog, AWS, on-premises, Zscaler and Netskope parsers, privacy (pseudonyms, no raw lines, ignored
 callers), findings, recommendations, report escaping, repeat-safe processing, and the on-premises server over
 real UDP and TCP sockets and growing, rotated and compressed files.

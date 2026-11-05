@@ -6,7 +6,7 @@ import { gunzipSync } from 'zlib';
 import { Aggregator } from '../core/sightings';
 import { buildReport, isoDay } from '../core/run';
 import { FileStore, loadPseudonymizer, saveNames, saveSightings } from '../core/store';
-import { parseOnpremLine } from './parsers';
+import { LineReader, parseOnpremLine } from './parsers';
 
 /**
  * The on-premises collector: one process that receives syslog (UDP and TCP) from firewalls and proxies,
@@ -31,7 +31,7 @@ export interface OnpremOptions {
 const MAX_MESSAGE = 65_536;
 const MAX_TCP_CLIENTS = 200;
 
-interface Offset { size: number; pos: number; done?: boolean }
+interface Offset { size: number; pos: number; done?: boolean; header?: LineReader['header'] }
 
 export class OnpremCollector {
   private store: FileStore;
@@ -56,10 +56,10 @@ export class OnpremCollector {
     this.agg = new Aggregator({ pseudonyms: await loadPseudonymizer(this.store), ignore: this.o.ignore });
   }
 
-  /** One log line, from syslog or a file. */
-  ingest(line: string, receivedAt = new Date()) {
+  /** One log line, from syslog or a file. Files pass their own reader, which remembers a header row. */
+  ingest(line: string, receivedAt = new Date(), reader?: LineReader) {
     this.stats.received++;
-    const o = parseOnpremLine(line, receivedAt);
+    const o = reader ? reader.read(line, receivedAt) : parseOnpremLine(line, receivedAt);
     if (!o) return;
     const before = this.agg.matched;
     this.agg.add(o);
@@ -179,7 +179,8 @@ export class OnpremCollector {
         if (off.done) continue;
         const text = gunzipSync(await fs.readFile(file)).toString('utf8');
         const now = new Date();
-        for (const line of text.split(/\r?\n/)) if (line) this.ingest(line, now);
+        const reader = new LineReader();
+        for (const line of text.split(/\r?\n/)) if (line) this.ingest(line, now, reader);
         this.offsets[key] = { size: st.size, pos: st.size, done: true };
         this.stats.files++;
         continue;
@@ -194,7 +195,10 @@ export class OnpremCollector {
       // Keep a trailing partial line for next time.
       const lastNl = text.lastIndexOf('\n');
       const complete = lastNl >= 0 ? text.slice(0, lastNl) : '';
-      for (const line of complete.split(/\r?\n/)) if (line) this.ingest(line, now);
+      if (off.pos === 0) off.header = undefined;
+      const reader = new LineReader(off.header);
+      for (const line of complete.split(/\r?\n/)) if (line) this.ingest(line, now, reader);
+      off.header = reader.header;
       off.pos += Buffer.byteLength(lastNl >= 0 ? text.slice(0, lastNl + 1) : '');
       off.size = st.size;
       if (!this.offsets[key]) this.stats.files++;

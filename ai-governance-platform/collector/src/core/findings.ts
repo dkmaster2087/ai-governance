@@ -11,6 +11,9 @@ export const SOURCE_LABELS: Record<string, string> = {
   squid: 'Squid proxy access logs',
   bind_dns: 'BIND DNS query logs',
   windows_dns: 'Windows DNS server debug logs',
+  zscaler: 'Zscaler Internet Access web logs',
+  netskope: 'Netskope events',
+  syslog_leef: 'Security device logs (LEEF)',
 };
 
 /** What each source can't see, said plainly in the report. */
@@ -24,6 +27,9 @@ const SOURCE_LIMITS: Record<string, string> = {
   squid: 'Shows web traffic through this proxy only.',
   bind_dns: 'Shows lookups through this DNS server; devices using other resolvers or encrypted DNS aren’t seen.',
   windows_dns: 'Shows lookups through this DNS server; devices using other resolvers or encrypted DNS aren’t seen.',
+  zscaler: 'Shows web traffic sent through Zscaler, in the office and away from it; traffic set to bypass Zscaler isn’t seen.',
+  netskope: 'Shows traffic sent through Netskope, in the office and away from it; traffic set to bypass Netskope isn’t seen.',
+  syslog_leef: 'Shows what the sending device logged with a destination name.',
 };
 
 export const isPerson = (who: string) => who.startsWith('user-');
