@@ -107,8 +107,14 @@ The tenant field `deploymentMode` holds `saas` (Cloud) or `onprem` (Self-hosted 
 
 **Collectors** for AI usage assessments and continuous shadow-AI discovery are a separate component, not part
 of any of these installs. The same collector runs alongside all three, or on its own for an assessment with
-nothing else installed. Plan: [ASSESSMENT.md](ASSESSMENT.md); the core, the AWS collector and the on-premises collector are built in
-[collector/](../collector/README.md).
+nothing else installed. Plan: [ASSESSMENT.md](ASSESSMENT.md). Built in [collector/](../collector/README.md): AWS,
+on-premises, and as beta Zscaler, Netskope, Azure, Google Cloud, Microsoft 365, Google Workspace, Okta, Entra and
+other identity providers' sign-in exports.
+
+**MCP servers on demand** (planned): admins create MCP servers from the dashboard, each in front of one or more
+company APIs, with its own address, tools, access and approvals. Agents sign in through the company's identity
+provider; arguments and results are checked like prompts, and every tool call has a case file. Plan:
+[MCP.md](MCP.md).
 
 ## Known gaps before production
 

@@ -88,3 +88,10 @@ by platform admins only.
 
 - **Hosted** and **in the customer's AWS account** (same software, AWS CDK).
 - **On-premises / Kubernetes / air-gapped:** planned.
+
+## Planned
+
+- **MCP servers on demand:** from an MCP servers menu, admins create as many MCP servers as they need, each in
+  front of one or more company APIs, with its own address, tools (reads on, writes chosen one by one, approval
+  where needed) and list of who may connect. People sign in through the company's identity provider; arguments
+  and results are checked like prompts; every tool call has a case file. Plan: [MCP.md](MCP.md).
