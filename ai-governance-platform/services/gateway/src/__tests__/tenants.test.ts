@@ -1,10 +1,5 @@
 import Fastify from 'fastify';
-
-const send = jest.fn();
-jest.mock('@aws-sdk/lib-dynamodb', () => ({
-  ...jest.requireActual('@aws-sdk/lib-dynamodb'),
-  DynamoDBDocumentClient: { from: () => ({ send }) },
-}));
+import { collection, MemoryStore, setRecords } from '@ai-governance/storage';
 
 async function platformApp() {
   const { tenantRoutes } = await import('../routes/tenant.routes');
@@ -22,7 +17,7 @@ async function platformApp() {
 }
 
 describe('tenant onboarding and edits', () => {
-  beforeEach(() => { jest.clearAllMocks(); send.mockResolvedValue({}); });
+  beforeEach(() => { setRecords(new MemoryStore()); });
 
   it('creates a tenant that fails closed by default', async () => {
     const res = await (await platformApp()).inject({ method: 'POST', url: '/v1/tenants', payload: { name: 'Acme', adminEmail: 'it@acme.com' } });
@@ -33,24 +28,27 @@ describe('tenant onboarding and edits', () => {
   it('refuses a tenant without a valid admin email', async () => {
     const res = await (await platformApp()).inject({ method: 'POST', url: '/v1/tenants', payload: { name: 'Acme', adminEmail: 'nope' } });
     expect(res.statusCode).toBe(400);
-    expect(send).not.toHaveBeenCalled();
+    expect((await collection('tenants').scan()).items).toEqual([]);
   });
 
   it('changes only the fields sent, never replacing settings wholesale', async () => {
+    await collection('tenants').put({
+      tenantId: 'tenant_acme', name: 'Acme', plan: 'starter',
+      settings: { governanceFailMode: 'open', auditLogRetentionDays: 365, shadowAiDecisions: 'kept' },
+    });
     const res = await (await platformApp()).inject({ method: 'PUT', url: '/v1/tenants/tenant_acme', payload: { plan: 'enterprise', auditLogRetentionDays: 730 } });
     expect(res.statusCode).toBe(200);
-    const update = send.mock.calls.map((c) => c[0].input).find((i) => i.UpdateExpression?.includes('#plan'));
-    expect(update.UpdateExpression).toContain('settings.auditLogRetentionDays = :retention');
-    expect(update.UpdateExpression).not.toMatch(/settings = :settings/);
-    expect(update.ExpressionAttributeValues).toMatchObject({ ':plan': 'enterprise', ':retention': 730 });
+    expect(await collection('tenants').get({ tenantId: 'tenant_acme' })).toMatchObject({
+      name: 'Acme', plan: 'enterprise',
+      // Other settings survive; only the retention changed.
+      settings: { governanceFailMode: 'open', auditLogRetentionDays: 730, shadowAiDecisions: 'kept' },
+    });
   });
 
   it('says when the tenant does not exist', async () => {
-    send.mockImplementation(async (cmd: any) => {
-      if (cmd.input.ConditionExpression) throw Object.assign(new Error('nope'), { name: 'ConditionalCheckFailedException' });
-      return {};
-    });
     const res = await (await platformApp()).inject({ method: 'PUT', url: '/v1/tenants/missing', payload: { name: 'X' } });
     expect(res.statusCode).toBe(404);
+    // …and doesn't create it as a side effect.
+    expect(await collection('tenants').get({ tenantId: 'missing' })).toBeNull();
   });
 });

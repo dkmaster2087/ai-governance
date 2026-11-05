@@ -32,7 +32,7 @@ rejected, for three reasons:
 | Model configs and provider keys | No | Yes. Keys stay in their Secrets Manager |
 | App API keys | No | Yes |
 | Gateway, policy engine, data protection | No | Yes |
-| Prompts, responses, masked excerpts, case files | Never | Yes, in their DynamoDB and S3 |
+| Prompts, responses, masked excerpts, case files | Never | Yes, in their database (DynamoDB or PostgreSQL) and file store |
 | Decisions and counts (per hour, per app, per rule, per model) | Yes | Source |
 
 Model configs and app API keys stay customer-side because they are secrets or grant access to their AI

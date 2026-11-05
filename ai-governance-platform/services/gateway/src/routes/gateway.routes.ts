@@ -1,7 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { collection } from '@ai-governance/storage';
 import { createLogger } from '@ai-governance/utils';
 import { requireAccess, TENANT_READ } from '../auth/guards';
 import { queryAuditLogs } from '../services/audit-query';
@@ -33,9 +32,6 @@ function parseRange(query: unknown): Range | null {
 const INVALID_RANGE = { error: 'from and to must be ISO timestamps, at most 31 days apart', code: 'INVALID_RANGE' };
 
 export async function gatewayRoutes(app: FastifyInstance) {
-  const dynamo = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' }));
-  const shadowTable = process.env.SHADOW_AI_TABLE || 'ai-gov-shadow-ai-dev';
-
   /** What happened to the tenant's AI traffic between `from` and `to` (default: the last 7 days). */
   app.get('/gateway/summary', { preHandler: requireAccess(TENANT_READ) }, async (request, reply) => {
     const range = parseRange(request.query);
@@ -46,13 +42,8 @@ export async function gatewayRoutes(app: FastifyInstance) {
 
     let shadowEvents: Array<{ userId?: string; timestamp?: string }> = [];
     try {
-      const result = await dynamo.send(new QueryCommand({
-        TableName: shadowTable,
-        KeyConditionExpression: 'tenantId = :tid',
-        ExpressionAttributeValues: { ':tid': request.tenantId },
-        Limit: 2000,
-      }));
-      shadowEvents = ((result.Items ?? []) as Array<{ userId?: string; timestamp?: string }>)
+      const page = await collection('shadowAi').query({ partition: request.tenantId, limit: 2000 });
+      shadowEvents = (page.items as Array<{ userId?: string; timestamp?: string }>)
         .filter((e) => !!e.timestamp && e.timestamp >= fromIso && e.timestamp <= toIso);
     } catch (err) {
       logger.warn('Shadow AI events unavailable for summary', { tenantId: request.tenantId, error: (err as Error).message });

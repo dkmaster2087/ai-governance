@@ -1,5 +1,4 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { collection } from '@ai-governance/storage';
 import { AI_TOOLS, toolById } from './ai-tools';
 
 export type ToolDecision = 'blocked' | 'allowed';
@@ -31,12 +30,11 @@ export const DEFAULT_SHADOW_POLICY: ShadowAiPolicy = { mode: 'monitor', decision
 
 /** Stored on the tenant record so it moves with the tenant. */
 export class ShadowAiPolicyStore {
-  private client = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' }));
-  private table = process.env.TENANTS_TABLE || 'ai-gov-tenants-dev';
+  private tenants = () => collection('tenants');
 
   async get(tenantId: string): Promise<ShadowAiPolicy> {
-    const result = await this.client.send(new GetCommand({ TableName: this.table, Key: { tenantId }, ProjectionExpression: 'shadowAi' }));
-    const stored = result.Item?.shadowAi as Partial<ShadowAiPolicy> | undefined;
+    const tenant = await this.tenants().get({ tenantId });
+    const stored = tenant?.shadowAi as Partial<ShadowAiPolicy> | undefined;
     return {
       mode: stored?.mode === 'block' ? 'block' : 'monitor',
       decisions: { ...(stored?.decisions ?? {}) },
@@ -48,13 +46,8 @@ export class ShadowAiPolicyStore {
   }
 
   async save(tenantId: string, policy: ShadowAiPolicy): Promise<void> {
-    await this.client.send(new UpdateCommand({
-      TableName: this.table,
-      Key: { tenantId },
-      UpdateExpression: 'SET shadowAi = :p, updatedAt = :t',
-      ConditionExpression: 'attribute_exists(tenantId)',
-      ExpressionAttributeValues: { ':p': policy, ':t': new Date().toISOString() },
-    }));
+    const saved = await this.tenants().update({ tenantId }, { set: { shadowAi: policy, updatedAt: new Date().toISOString() }, ifExists: true });
+    if (!saved) throw Object.assign(new Error('Tenant not found'), { statusCode: 404, code: 'NOT_FOUND' });
   }
 }
 

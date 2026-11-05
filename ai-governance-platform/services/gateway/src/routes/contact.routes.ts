@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
+import { objects } from '@ai-governance/storage';
 import { createLogger } from '@ai-governance/utils';
 
 const logger = createLogger('gateway:contact');
@@ -16,7 +16,6 @@ const contactSchema = z.object({
 });
 
 export async function contactRoutes(app: FastifyInstance) {
-  const s3 = new S3Client({ region: process.env.AWS_REGION || 'us-east-1' });
   const bucket = process.env.AUDIT_LOG_BUCKET || 'ai-governance-audit-logs';
 
   app.post('/contact', async (request, reply) => {
@@ -34,14 +33,8 @@ export async function contactRoutes(app: FastifyInstance) {
 
     try {
       // Store in S3 for CRM/follow-up
-      await s3.send(
-        new PutObjectCommand({
-          Bucket: bucket,
-          Key: `contact-submissions/${submission.submittedAt}-${body.email.replace('@', '_at_')}.json`,
-          Body: JSON.stringify(submission),
-          ContentType: 'application/json',
-        })
-      );
+      const key = `contact-submissions/${submission.submittedAt}-${body.email.replace('@', '_at_')}.json`.replace(/[^A-Za-z0-9._\/-]/g, '_');
+      await objects(bucket).put(key, JSON.stringify(submission), 'application/json');
       logger.info('Contact form submission stored', { company: body.company });
     } catch (err) {
       // Tell the visitor rather than silently losing their enquiry.

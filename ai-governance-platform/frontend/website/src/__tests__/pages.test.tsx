@@ -68,6 +68,7 @@ describe('website', () => {
   it('marks hybrid as coming and on-premises as planned', () => {
     render(<MemoryRouter><DeploymentPage /></MemoryRouter>);
     expect(screen.getByRole('heading', { name: 'Hybrid' }).closest('[class*="p-6"]')).toHaveTextContent('Coming');
-    expect(screen.getByText('On-premises and Kubernetes: planned')).toBeInTheDocument();
+    expect(screen.getByText(/On-premises and Kubernetes: planned/)).toBeInTheDocument();
+    expect(screen.getByText(/DynamoDB or PostgreSQL/)).toBeInTheDocument();
   });
 });

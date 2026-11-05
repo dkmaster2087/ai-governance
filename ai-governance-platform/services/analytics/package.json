@@ -10,6 +10,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@ai-governance/storage": "*",
     "@ai-governance/types": "*",
     "@ai-governance/utils": "*",
     "@aws-sdk/client-athena": "^3.0.0",

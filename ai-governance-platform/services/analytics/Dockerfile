@@ -5,12 +5,14 @@ WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY shared/types/package.json shared/types/
 COPY shared/utils/package.json shared/utils/
+COPY shared/storage/package.json shared/storage/
 COPY services/analytics/package.json services/analytics/
-RUN npm ci -w shared/types -w shared/utils -w services/analytics --include-workspace-root=false
+RUN npm ci -w shared/types -w shared/utils -w shared/storage -w services/analytics --include-workspace-root=false
 COPY shared/types shared/types
 COPY shared/utils shared/utils
+COPY shared/storage shared/storage
 COPY services/analytics services/analytics
-RUN npm run build -w shared/types -w shared/utils -w services/analytics
+RUN npm run build -w shared/types -w shared/utils -w shared/storage -w services/analytics
 
 FROM node:20-alpine
 WORKDIR /repo
@@ -18,10 +20,12 @@ RUN apk add --no-cache curl
 COPY package.json package-lock.json ./
 COPY shared/types/package.json shared/types/
 COPY shared/utils/package.json shared/utils/
+COPY shared/storage/package.json shared/storage/
 COPY services/analytics/package.json services/analytics/
-RUN npm ci --omit=dev -w shared/types -w shared/utils -w services/analytics --include-workspace-root=false && npm cache clean --force
+RUN npm ci --omit=dev -w shared/types -w shared/utils -w shared/storage -w services/analytics --include-workspace-root=false && npm cache clean --force
 COPY --from=build /repo/shared/types/dist shared/types/dist
 COPY --from=build /repo/shared/utils/dist shared/utils/dist
+COPY --from=build /repo/shared/storage/dist shared/storage/dist
 COPY --from=build /repo/services/analytics/dist services/analytics/dist
 ENV NODE_ENV=production
 ENV PORT=3003

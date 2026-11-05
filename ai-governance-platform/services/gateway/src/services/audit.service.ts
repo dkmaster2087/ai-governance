@@ -1,8 +1,6 @@
 import { NormalizedAIRequest, NormalizedAIResponse, PolicyEvaluationResult, AuditLog } from '@ai-governance/types';
 import { hashContent, estimateCost, createLogger } from '@ai-governance/utils';
-import { S3Client, PutObjectCommand } from '@aws-sdk/client-s3';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand } from '@aws-sdk/lib-dynamodb';
+import { collection, objects } from '@ai-governance/storage';
 import { ModelConfigRepository } from '../repositories/model-config.repository';
 import { redactSecrets } from './secret-detector';
 
@@ -23,20 +21,8 @@ function stopMetadata(base: Record<string, string>, result: PolicyEvaluationResu
 }
 
 export class AuditService {
-  private s3 = new S3Client({
-    region: process.env.AWS_REGION || 'us-east-1',
-    forcePathStyle: true,
-  });
   private bucket = process.env.AUDIT_LOG_BUCKET || 'ai-governance-audit-logs';
   private modelConfigRepo = new ModelConfigRepository();
-
-  private ddbClient: DynamoDBDocumentClient;
-  private auditTable = process.env.AUDIT_LOGS_TABLE || 'ai-gov-audit-logs-dev';
-
-  constructor() {
-    const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
-    this.ddbClient = DynamoDBDocumentClient.from(dynamo);
-  }
 
   async log(
     request: NormalizedAIRequest,
@@ -102,29 +88,14 @@ export class AuditService {
     }
   }
 
-  private async writeToS3(log: AuditLog, requestId: string): Promise<void> {
+  /** Archive copy, one file per record (S3 in AWS; a directory or S3-compatible store elsewhere). */
+  private async writeToS3(log: AuditLog, _requestId: string): Promise<void> {
     const key = `logs/${log.tenantId}/${new Date().toISOString().slice(0, 10)}/${log.logId}.json`;
-    await this.s3.send(
-      new PutObjectCommand({
-        Bucket: this.bucket,
-        Key: key,
-        Body: JSON.stringify(log),
-        ContentType: 'application/json',
-        ServerSideEncryption: 'aws:kms',
-      })
-    );
+    await objects(this.bucket, { kms: true }).put(key, JSON.stringify(log), 'application/json');
   }
 
+  /** The queryable record. */
   private async writeToDynamoDB(log: AuditLog): Promise<void> {
-    await this.ddbClient.send(
-      new PutCommand({
-        TableName: this.auditTable,
-        Item: {
-          ...log,
-          // Add a date partition key for efficient querying
-          dateKey: log.timestamp.slice(0, 10),
-        },
-      })
-    );
+    await collection('auditLogs').put({ ...log, dateKey: log.timestamp.slice(0, 10) });
   }
 }

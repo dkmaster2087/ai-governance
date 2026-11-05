@@ -5,12 +5,14 @@ WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY shared/types/package.json shared/types/
 COPY shared/utils/package.json shared/utils/
+COPY shared/storage/package.json shared/storage/
 COPY services/gateway/package.json services/gateway/
-RUN npm ci -w shared/types -w shared/utils -w services/gateway --include-workspace-root=false
+RUN npm ci -w shared/types -w shared/utils -w shared/storage -w services/gateway --include-workspace-root=false
 COPY shared/types shared/types
 COPY shared/utils shared/utils
+COPY shared/storage shared/storage
 COPY services/gateway services/gateway
-RUN npm run build -w shared/types -w shared/utils -w services/gateway
+RUN npm run build -w shared/types -w shared/utils -w shared/storage -w services/gateway
 
 FROM node:20-alpine
 WORKDIR /repo
@@ -18,10 +20,12 @@ RUN apk add --no-cache curl
 COPY package.json package-lock.json ./
 COPY shared/types/package.json shared/types/
 COPY shared/utils/package.json shared/utils/
+COPY shared/storage/package.json shared/storage/
 COPY services/gateway/package.json services/gateway/
-RUN npm ci --omit=dev -w shared/types -w shared/utils -w services/gateway --include-workspace-root=false && npm cache clean --force
+RUN npm ci --omit=dev -w shared/types -w shared/utils -w shared/storage -w services/gateway --include-workspace-root=false && npm cache clean --force
 COPY --from=build /repo/shared/types/dist shared/types/dist
 COPY --from=build /repo/shared/utils/dist shared/utils/dist
+COPY --from=build /repo/shared/storage/dist shared/storage/dist
 COPY --from=build /repo/services/gateway/dist services/gateway/dist
 ENV NODE_ENV=production
 ENV PORT=3000

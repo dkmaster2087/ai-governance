@@ -1,7 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { allPages, collection } from '@ai-governance/storage';
 import { requireAccess, PLATFORM_ADMIN } from '../auth/guards';
 import { queryAuditLogs } from '../services/audit-query';
 import { summarizePlatform } from '../services/platform-usage';
@@ -16,8 +15,6 @@ const querySchema = z.object({
 const MAX_PER_TENANT = 20_000;
 
 export async function platformRoutes(app: FastifyInstance) {
-  const client = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' }));
-  const table = process.env.TENANTS_TABLE || 'ai-gov-tenants-dev';
 
   /** AI traffic per tenant from the audit log, for platform admins. */
   app.get('/platform/usage', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request) => {
@@ -29,13 +26,8 @@ export async function platformRoutes(app: FastifyInstance) {
     if (q.tenantId) {
       tenantIds = [q.tenantId];
     } else {
-      tenantIds = [];
-      let lastKey: Record<string, unknown> | undefined;
-      do {
-        const page = await client.send(new ScanCommand({ TableName: table, ProjectionExpression: 'tenantId', ExclusiveStartKey: lastKey }));
-        tenantIds.push(...(page.Items ?? []).map((i) => i.tenantId as string));
-        lastKey = page.LastEvaluatedKey;
-      } while (lastKey);
+      const tenants = await allPages((after) => collection('tenants').scan({ after, limit: 1000 }));
+      tenantIds = tenants.map((t) => t.tenantId as string);
     }
 
     const perTenant = await Promise.all(tenantIds.map(async (tenantId) => {

@@ -75,6 +75,9 @@ stages serve plain HTTP. See "Known gaps" in [docs/ARCHITECTURE.md](docs/ARCHITE
 | `VITE_GATEWAY_PUBLIC_URL` | dashboard | Gateway address shown to admins (defaults to the dashboard's `/api`) |
 | `GOVERNANCE_FAIL_MODE` | gateway | Default when a check can't run: `closed` (block) or `open` |
 | `PROVIDER_KEYS_SECRET_PREFIX` | gateway | Secrets Manager prefix for customers' provider keys |
+| `STORAGE_BACKEND` | gateway, policy engine, analytics | `dynamodb` (default), `postgres` or `memory` |
+| `DATABASE_URL`, `PG_TABLE_PREFIX` | same | PostgreSQL connection (`?sslmode=require` for TLS) and optional table prefix |
+| `OBJECT_STORE`, `OBJECT_STORE_DIR`, `S3_ENDPOINT` | gateway | Audit archives and contact requests: `s3` (default; `S3_ENDPOINT` for MinIO and other S3-compatible stores) or `file` (a directory) |
 | `AUTH_DEV_MODE` | gateway | Local demo sign-in only; refused outside dev stages |
 | `VITE_API_URL`, `VITE_DASHBOARD_URL` | website | Gateway and dashboard addresses |
 

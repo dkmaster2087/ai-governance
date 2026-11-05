@@ -1,5 +1,6 @@
 import Fastify from 'fastify';
 import { AuditLog } from '@ai-governance/types';
+import { collection, MemoryStore, setRecords } from '@ai-governance/storage';
 import { buildEvidenceRecord, listEvidence } from '../services/evidence';
 
 const log = (over: Partial<AuditLog>): AuditLog => ({
@@ -88,15 +89,11 @@ describe('evidence list', () => {
   });
 });
 
-const send = jest.fn();
-jest.mock('@aws-sdk/lib-dynamodb', () => ({
-  ...jest.requireActual('@aws-sdk/lib-dynamodb'),
-  DynamoDBDocumentClient: { from: () => ({ send }) },
-}));
 jest.mock('../services/tenant-settings.service', () => ({ tenantSettings: () => ({ getSettings: async () => ({ auditLogRetentionDays: 90 }) }) }));
 jest.mock('../services/audit-query', () => ({ queryAuditLogs: jest.fn(async () => ({ logs: [], truncated: false })) }));
 
 describe('evidence routes', () => {
+  beforeEach(() => setRecords(new MemoryStore()));
   async function app() {
     const { evidenceRoutes } = await import('../routes/evidence.routes');
     const a = Fastify();
@@ -111,14 +108,14 @@ describe('evidence routes', () => {
   }
 
   it('looks records up under the caller’s tenant only', async () => {
-    send.mockResolvedValue({ Item: undefined });
+    // The request exists, but under another tenant.
+    await collection('auditLogs').put({ ...log({ requestId: 'someone-elses-request' }), tenantId: 'tenant_other' });
     const res = await (await app()).inject({ method: 'GET', url: '/v1/evidence/someone-elses-request' });
     expect(res.statusCode).toBe(404);
-    expect(send.mock.calls[0][0].input.Key).toEqual({ tenantId: 'tenant_acme', requestId: 'someone-elses-request' });
   });
 
   it('exports a record as a downloadable file', async () => {
-    send.mockResolvedValue({ Item: log({}) });
+    await collection('auditLogs').put(log({}) as unknown as Record<string, unknown>);
     const res = await (await app()).inject({ method: 'GET', url: '/v1/evidence/req-1/export' });
     expect(res.statusCode).toBe(200);
     expect(res.headers['content-disposition']).toBe('attachment; filename="probaline-evidence-req-1.json"');

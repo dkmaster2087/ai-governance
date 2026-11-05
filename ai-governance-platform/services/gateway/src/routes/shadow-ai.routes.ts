@@ -1,6 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { allPages, collection } from '@ai-governance/storage';
 import { createLogger } from '@ai-governance/utils';
 import { z } from 'zod';
 import { requireAccess, requireTenantParam, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
@@ -53,10 +52,7 @@ const summaryRangeSchema = z.object({
 });
 
 export async function shadowAIRoutes(app: FastifyInstance) {
-  const dynamo = DynamoDBDocumentClient.from(
-    new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' })
-  );
-  const table = process.env.SHADOW_AI_TABLE || 'ai-gov-shadow-ai-dev';
+  const shadow = () => collection('shadowAi');
 
   // Receive events from the browser extension. The tenant comes from the extension's API key.
   app.post('/shadow-ai/events', { preHandler: requireAccess({ scopes: ['shadow_ai:ingest'] }) }, async (request, reply) => {
@@ -75,9 +71,7 @@ export async function shadowAIRoutes(app: FastifyInstance) {
     let stored = 0;
     for (const evt of events) {
       try {
-        await dynamo.send(new PutCommand({
-          TableName: table,
-          Item: {
+        await shadow().put({
             tenantId,
             eventId: evt.id || `evt_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`,
             timestamp: evt.timestamp || new Date().toISOString(),
@@ -88,8 +82,7 @@ export async function shadowAIRoutes(app: FastifyInstance) {
             blocked: evt.blocked,
             userId: evt.userId || 'unknown',
             ttl: Math.floor(Date.now() / 1000) + 30 * 86400, // 30 day TTL
-          },
-        }));
+        });
         stored++;
       } catch (err) {
         logger.warn('Failed to store shadow AI event', { error: err });
@@ -138,23 +131,12 @@ export async function shadowAIRoutes(app: FastifyInstance) {
 
   /** All stored events for a tenant (kept 30 days), following pagination with a safety cap. */
   async function readAllEvents(tenantId: string): Promise<ShadowEvent[]> {
-    const out: ShadowEvent[] = [];
-    let lastKey: Record<string, unknown> | undefined;
     try {
-      do {
-        const page = await dynamo.send(new QueryCommand({
-          TableName: table,
-          KeyConditionExpression: 'tenantId = :tid',
-          ExpressionAttributeValues: { ':tid': tenantId },
-          ExclusiveStartKey: lastKey,
-        }));
-        out.push(...((page.Items ?? []) as ShadowEvent[]));
-        lastKey = page.LastEvaluatedKey;
-      } while (lastKey && out.length < 50_000);
+      return (await allPages((after) => shadow().query({ partition: tenantId, after, limit: 1000 }), 50_000)) as unknown as ShadowEvent[];
     } catch (err) {
-      logger.warn('Shadow AI table not available', { tenantId, error: (err as Error).message });
+      logger.warn('Shadow AI events not available', { tenantId, error: (err as Error).message });
+      return [];
     }
-    return out;
   }
 
   // Get aggregated shadow AI data for dashboard
@@ -163,14 +145,8 @@ export async function shadowAIRoutes(app: FastifyInstance) {
 
     let events: ShadowAIEvent[] = [];
     try {
-      const result = await dynamo.send(new QueryCommand({
-        TableName: table,
-        KeyConditionExpression: 'tenantId = :tid',
-        ExpressionAttributeValues: { ':tid': tenantId },
-        ScanIndexForward: false,
-        Limit: 500,
-      }));
-      events = (result.Items || []) as ShadowAIEvent[];
+      const page = await shadow().query({ partition: tenantId, order: 'desc', limit: 500 });
+      events = page.items as unknown as ShadowAIEvent[];
     } catch (err) {
       logger.warn('Shadow AI table not available, returning empty', { tenantId });
     }

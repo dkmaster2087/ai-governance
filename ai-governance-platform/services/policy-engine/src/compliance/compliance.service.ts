@@ -1,7 +1,6 @@
 import { ComplianceFramework, CompliancePack, TenantComplianceState } from '@ai-governance/types';
 import { createLogger } from '@ai-governance/utils';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, QueryCommand, DeleteCommand } from '@aws-sdk/lib-dynamodb';
+import { allPages, collection } from '@ai-governance/storage';
 import { PolicyRepository } from '../repositories/policy.repository';
 import { soc2Pack } from './packs/soc2';
 import { hipaaPack } from './packs/hipaa';
@@ -126,14 +125,8 @@ const FRAMEWORK_RULES: Record<string, object> = {
 };
 
 export class ComplianceService {
-  private client: DynamoDBDocumentClient;
-  private complianceTable = process.env.COMPLIANCE_TABLE || 'ai-gov-compliance-dev';
+  private states = () => collection<TenantComplianceState & Record<string, unknown>>('compliance');
   private policyRepo = new PolicyRepository();
-
-  constructor() {
-    const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
-    this.client = DynamoDBDocumentClient.from(dynamo);
-  }
 
   getAllPacks(): CompliancePack[] {
     return Object.values(ALL_PACKS);
@@ -145,14 +138,7 @@ export class ComplianceService {
 
   async getTenantComplianceStates(tenantId: string): Promise<TenantComplianceState[]> {
     try {
-      const result = await this.client.send(
-        new QueryCommand({
-          TableName: this.complianceTable,
-          KeyConditionExpression: 'tenantId = :tid',
-          ExpressionAttributeValues: { ':tid': tenantId },
-        })
-      );
-      return (result.Items || []) as TenantComplianceState[];
+      return await allPages((after) => this.states().query({ partition: tenantId, after }));
     } catch (err) {
       // Table may not exist yet in dev — return empty gracefully
       logger.warn('Compliance table not available, returning empty state', { tenantId });
@@ -194,9 +180,7 @@ export class ComplianceService {
     };
 
     try {
-      await this.client.send(
-        new PutCommand({ TableName: this.complianceTable, Item: state })
-      );
+      await this.states().put(state as TenantComplianceState & Record<string, unknown>);
     } catch (err) {
       logger.warn('Could not persist compliance state (table may not exist), continuing', { framework });
     }
@@ -218,12 +202,7 @@ export class ComplianceService {
     }
 
     try {
-      await this.client.send(
-        new DeleteCommand({
-          TableName: this.complianceTable,
-          Key: { tenantId, framework },
-        })
-      );
+      await this.states().delete({ tenantId, framework });
     } catch (err) {
       logger.warn('Could not delete compliance state (table may not exist)', { framework });
     }
@@ -253,7 +232,7 @@ export class ComplianceService {
       lastAssessedAt: new Date().toISOString(),
     };
 
-    await this.client.send(new PutCommand({ TableName: this.complianceTable, Item: state }));
+    await this.states().put(state as TenantComplianceState & Record<string, unknown>);
     return state;
   }
 

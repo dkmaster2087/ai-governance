@@ -16,7 +16,7 @@ App ──POST /v1/chat/completions──▶ Gateway (:3000)
                                        ├─ 5. Provider: Bedrock (IAM role) or OpenAI-compatible
                                        │       (provider key read from Secrets Manager)
                                        ├─ 6. Response scanned for personal data (in process + service)
-                                       └─ 7. Audit record (DynamoDB, queryable) + archive copy (S3, KMS)
+                                       └─ 7. Audit record (queryable) + archive copy (S3 with KMS, or a directory)
 ```
 
 - Policy runs **before** masking so rules about personal data can see it; only the masked prompt leaves.
@@ -58,14 +58,21 @@ tenants via `X-Tenant-Id`; everyone else is limited to their own.
 
 ## Storage
 
-| Data | Where |
-|---|---|
-| Tenants, settings (fail mode, shadow-AI decisions) | DynamoDB `tenants` |
-| Policies and rules | DynamoDB `policies` |
-| API keys (SHA-256 hashes only) | DynamoDB `api-keys`, index `keyHash-index` |
-| Model configs (secret ARN + hint only) | DynamoDB `models`; provider keys in Secrets Manager |
-| Audit records | DynamoDB `audit-logs` (index `tenantId-timestamp-index`) + S3 archive |
-| Shadow-AI events (30-day TTL) | DynamoDB `shadow-ai` |
+Every service reads and writes through `shared/storage` (`@ai-governance/storage`). `STORAGE_BACKEND` picks
+DynamoDB (default, and what the AWS deployment uses), PostgreSQL, or memory (unit tests). Files go to S3 (or an
+S3-compatible store) or a directory, chosen by `OBJECT_STORE`. Design and limits: [STORAGE.md](STORAGE.md).
+
+| Data | Collection (DynamoDB table / PostgreSQL table) | Lookups |
+|---|---|---|
+| Tenants, settings (fail mode, secrets, shadow-AI decisions) | `tenants` | by tenant |
+| Policies and rules | `policies` | by tenant |
+| Compliance packs | `compliance` | by tenant |
+| API keys (SHA-256 hashes only) | `api-keys` / `api_keys` | by tenant; `keyHash-index` |
+| Model configs (secret ARN + hint only) | `models`; provider keys in Secrets Manager | by tenant |
+| Alert rules | `alerts` | by tenant |
+| Audit records (expire) | `audit-logs` / `audit_logs`, + archive file | `tenantId-timestamp-index` |
+| Shadow-AI events (30-day expiry) | `shadow-ai` / `shadow_ai` | by tenant, newest first |
+| Metrics (expire) | `metrics` | by tenant and period prefix |
 
 ## Websites
 

@@ -5,7 +5,7 @@ import { DeploymentPicture } from '../components/visuals';
 export const MODELS: Array<{ name: string; status: 'Available' | 'Coming'; line: string; ours: string[]; theirs: string[]; note?: string }> = [
   { name: 'Cloud', status: 'Available', line: 'We run everything.', ours: ['Gateway', 'Dashboard', 'Evidence'], theirs: [] },
   { name: 'Hybrid', status: 'Coming', line: 'Prompts stay with you; we run the dashboard.', ours: ['Dashboard', 'Rules'], theirs: ['Gateway', 'Evidence'] },
-  { name: 'Self-hosted', status: 'Available', line: 'Everything in your AWS account.', ours: [], theirs: ['Gateway', 'Dashboard', 'Evidence'], note: 'On-premises and Kubernetes: planned' },
+  { name: 'Self-hosted', status: 'Available', line: 'Everything in your AWS account.', ours: [], theirs: ['Gateway', 'Dashboard', 'Evidence'], note: 'Your database: DynamoDB or PostgreSQL. On-premises and Kubernetes: planned' },
 ];
 
 export function DeploymentPage() {

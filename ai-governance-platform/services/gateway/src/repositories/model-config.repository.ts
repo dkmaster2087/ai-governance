@@ -1,50 +1,32 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import {
-  DynamoDBDocumentClient, QueryCommand, PutCommand,
-  UpdateCommand, DeleteCommand, GetCommand,
-} from '@aws-sdk/lib-dynamodb';
+import { allPages, collection } from '@ai-governance/storage';
 import { ModelConfig } from '@ai-governance/types';
 import { createLogger } from '@ai-governance/utils';
 import { randomUUID } from 'crypto';
 
 const logger = createLogger('gateway:model-config-repo');
 
-export class ModelConfigRepository {
-  private client: DynamoDBDocumentClient;
-  private table = process.env.MODELS_TABLE || 'ai-gov-models-dev';
+/** Fields a model config update may change. */
+const EDITABLE = ['name', 'status', 'isDefault', 'maxTokensPerRequest', 'maxContextTokens', 'inputCostPer1kTokens', 'outputCostPer1kTokens', 'allowedForRoles', 'allowedForApps', 'requiresApproval', 'tags', 'region', 'modelId', 'provider', 'endpoint', 'apiKeyHint', 'apiKeySecretArn'] as const;
 
-  constructor() {
-    const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
-    this.client = DynamoDBDocumentClient.from(dynamo);
-  }
+const notFound = () => Object.assign(new Error('Model config not found'), { statusCode: 404, code: 'NOT_FOUND' });
+
+export class ModelConfigRepository {
+  private models = () => collection<ModelConfig & Record<string, unknown>>('models');
 
   async getForTenant(tenantId: string): Promise<ModelConfig[]> {
     try {
-      const result = await this.client.send(
-        new QueryCommand({
-          TableName: this.table,
-          KeyConditionExpression: 'tenantId = :tid',
-          ExpressionAttributeValues: { ':tid': tenantId },
-        })
-      );
-      return (result.Items || []) as ModelConfig[];
+      return await allPages((after) => this.models().query({ partition: tenantId, after }));
     } catch (err) {
-      logger.error('Failed to fetch model configs', { tenantId, error: err });
+      logger.error('Failed to fetch model configs', { tenantId, error: (err as Error).message });
       return [];
     }
   }
 
   async getById(tenantId: string, modelConfigId: string): Promise<ModelConfig | null> {
     try {
-      const result = await this.client.send(
-        new GetCommand({
-          TableName: this.table,
-          Key: { tenantId, modelConfigId },
-        })
-      );
-      return (result.Item as ModelConfig) ?? null;
+      return await this.models().get({ tenantId, modelConfigId });
     } catch (err) {
-      logger.error('Failed to get model config', { modelConfigId, error: err });
+      logger.error('Failed to get model config', { modelConfigId, error: (err as Error).message });
       return null;
     }
   }
@@ -56,58 +38,21 @@ export class ModelConfigRepository {
       createdAt: new Date().toISOString(),
       updatedAt: new Date().toISOString(),
     };
-    await this.client.send(new PutCommand({ TableName: this.table, Item: config }));
+    await this.models().put(config as ModelConfig & Record<string, unknown>);
     logger.info('Model config created', { modelConfigId: config.modelConfigId, tenantId: config.tenantId });
     return config;
   }
 
+  /** Change the given fields (undefined ones are left alone) and return the config as it now is. */
   async update(tenantId: string, modelConfigId: string, data: Partial<ModelConfig>): Promise<ModelConfig> {
-    const updatedAt = new Date().toISOString();
-
-    // Build dynamic update expression — only include fields that are defined
-    const fieldMap: Record<string, { expr: string; alias: string; value: unknown }> = {
-      name:                 { expr: '#name',              alias: '#name',   value: data.name },
-      status:               { expr: '#status',            alias: '#status', value: data.status },
-      isDefault:            { expr: 'isDefault',          alias: '',        value: data.isDefault },
-      maxTokensPerRequest:  { expr: 'maxTokensPerRequest',alias: '',        value: data.maxTokensPerRequest },
-      maxContextTokens:     { expr: 'maxContextTokens',   alias: '',        value: data.maxContextTokens },
-      inputCostPer1kTokens: { expr: 'inputCostPer1kTokens',alias: '',      value: data.inputCostPer1kTokens },
-      outputCostPer1kTokens:{ expr: 'outputCostPer1kTokens',alias: '',     value: data.outputCostPer1kTokens },
-      allowedForRoles:      { expr: 'allowedForRoles',    alias: '',        value: data.allowedForRoles },
-      allowedForApps:       { expr: 'allowedForApps',     alias: '',        value: data.allowedForApps },
-      requiresApproval:     { expr: 'requiresApproval',   alias: '',        value: data.requiresApproval },
-      tags:                 { expr: '#tags',               alias: '#tags',  value: data.tags },
-      region:               { expr: '#region',             alias: '#region',value: data.region },
-      modelId:              { expr: '#modelId',           alias: '#modelId', value: (data as any).modelId },
-      provider:             { expr: '#provider',          alias: '#provider', value: (data as any).provider },
-      endpoint:             { expr: 'endpoint',           alias: '',        value: data.endpoint },
-      apiKeyHint:           { expr: 'apiKeyHint',         alias: '',        value: (data as any).apiKeyHint },
-      apiKeySecretArn:      { expr: 'apiKeySecretArn',    alias: '',        value: data.apiKeySecretArn },
-    };
-
-    const updates: string[] = ['updatedAt = :updatedAt'];
-    const names: Record<string, string> = {};
-    const values: Record<string, unknown> = { ':updatedAt': updatedAt };
-
-    for (const [key, field] of Object.entries(fieldMap)) {
-      if (field.value !== undefined) {
-        const valKey = `:${key}`;
-        updates.push(`${field.expr} = ${valKey}`);
-        values[valKey] = field.value;
-        if (field.alias) names[field.alias] = key;
-      }
+    const set: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+    for (const f of EDITABLE) {
+      const v = (data as Record<string, unknown>)[f];
+      if (v !== undefined) set[f] = v;
     }
-
-    await this.client.send(
-      new UpdateCommand({
-        TableName: this.table,
-        Key: { tenantId, modelConfigId },
-        UpdateExpression: `SET ${updates.join(', ')}`,
-        ExpressionAttributeNames: Object.keys(names).length > 0 ? names : undefined,
-        ExpressionAttributeValues: values,
-      })
-    );
-    return { ...data, tenantId, modelConfigId, updatedAt } as ModelConfig;
+    const updated = await this.models().update({ tenantId, modelConfigId }, { set, ifExists: true });
+    if (!updated) throw notFound();
+    return updated;
   }
 
   /**
@@ -115,37 +60,22 @@ export class ModelConfigRepository {
    * older versions (the `apiKeyStored` attribute).
    */
   async setApiKeySecret(tenantId: string, modelConfigId: string, secretArn: string, hint?: string): Promise<void> {
-    await this.client.send(
-      new UpdateCommand({
-        TableName: this.table,
-        Key: { tenantId, modelConfigId },
-        UpdateExpression: `SET apiKeySecretArn = :arn, updatedAt = :t${hint ? ', apiKeyHint = :hint' : ''} REMOVE apiKeyStored`,
-        ExpressionAttributeValues: {
-          ':arn': secretArn,
-          ':t': new Date().toISOString(),
-          ...(hint ? { ':hint': hint } : {}),
-        },
-      })
-    );
+    const updated = await this.models().update({ tenantId, modelConfigId }, {
+      set: { apiKeySecretArn: secretArn, updatedAt: new Date().toISOString(), ...(hint ? { apiKeyHint: hint } : {}) },
+      remove: ['apiKeyStored'],
+      ifExists: true,
+    });
+    if (!updated) throw notFound();
   }
 
   async updateTestResult(tenantId: string, modelConfigId: string, success: boolean): Promise<void> {
-    await this.client.send(
-      new UpdateCommand({
-        TableName: this.table,
-        Key: { tenantId, modelConfigId },
-        UpdateExpression: 'SET lastTestedAt = :t, lastTestStatus = :s',
-        ExpressionAttributeValues: {
-          ':t': new Date().toISOString(),
-          ':s': success ? 'pass' : 'fail',
-        },
-      })
-    );
+    await this.models().update({ tenantId, modelConfigId }, {
+      set: { lastTestedAt: new Date().toISOString(), lastTestStatus: success ? 'pass' : 'fail' },
+      ifExists: true,
+    });
   }
 
   async delete(tenantId: string, modelConfigId: string): Promise<void> {
-    await this.client.send(
-      new DeleteCommand({ TableName: this.table, Key: { tenantId, modelConfigId } })
-    );
+    await this.models().delete({ tenantId, modelConfigId });
   }
 }

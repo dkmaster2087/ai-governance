@@ -1,7 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import axios from 'axios';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, ScanCommand } from '@aws-sdk/lib-dynamodb';
+import { records } from '@ai-governance/storage';
 
 const startTime = Date.now();
 
@@ -23,8 +22,9 @@ async function checkDependency(name: string, fn: () => Promise<void>): Promise<D
 }
 
 export async function healthRoutes(app: FastifyInstance) {
-  const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
-  const client = DynamoDBDocumentClient.from(dynamo);
+  // The record store's name in health output: dynamodb, postgres or memory.
+  const storeName = () => records().kind;
+  const pingStore = () => records().ping();
 
   /** Liveness probe — is the process alive? */
   app.get('/', async () => ({
@@ -38,12 +38,7 @@ export async function healthRoutes(app: FastifyInstance) {
   /** Readiness probe — can the service handle requests? Checks dependencies. */
   app.get('/ready', async () => {
     const checks = await Promise.all([
-      checkDependency('dynamodb', async () => {
-        await client.send(new ScanCommand({
-          TableName: process.env.TENANTS_TABLE || 'ai-gov-tenants-dev',
-          Limit: 1,
-        }));
-      }),
+      checkDependency(storeName(), pingStore),
       checkDependency('policy-engine', async () => {
         const url = process.env.POLICY_ENGINE_URL || 'http://localhost:3001';
         await axios.get(`${url}/health`, { timeout: 3000 });
@@ -63,12 +58,7 @@ export async function healthRoutes(app: FastifyInstance) {
   /** Deep health check — all dependencies including optional ones */
   app.get('/deep', async () => {
     const checks = await Promise.all([
-      checkDependency('dynamodb', async () => {
-        await client.send(new ScanCommand({
-          TableName: process.env.TENANTS_TABLE || 'ai-gov-tenants-dev',
-          Limit: 1,
-        }));
-      }),
+      checkDependency(storeName(), pingStore),
       checkDependency('policy-engine', async () => {
         const url = process.env.POLICY_ENGINE_URL || 'http://localhost:3001';
         await axios.get(`${url}/health`, { timeout: 3000 });

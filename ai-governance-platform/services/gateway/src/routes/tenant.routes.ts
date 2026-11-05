@@ -1,9 +1,5 @@
 import { FastifyInstance } from 'fastify';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import {
-  DynamoDBDocumentClient, ScanCommand, GetCommand,
-  PutCommand, UpdateCommand,
-} from '@aws-sdk/lib-dynamodb';
+import { allPages, collection } from '@ai-governance/storage';
 import { createLogger } from '@ai-governance/utils';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
@@ -32,15 +28,13 @@ const tenantCreateSchema = z.object({
 const tenantUpdateSchema = z.object(tenantFields).partial();
 
 export async function tenantRoutes(app: FastifyInstance) {
-  const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
-  const client = DynamoDBDocumentClient.from(dynamo);
-  const table = process.env.TENANTS_TABLE || 'ai-gov-tenants-dev';
+  const tenants = () => collection('tenants');
+  const allTenants = () => allPages((after) => tenants().scan({ after, limit: 1000 }));
 
   // List all tenants (platform admin only in production)
   app.get('/tenants', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (_request, reply) => {
     try {
-      const result = await client.send(new ScanCommand({ TableName: table }));
-      return reply.send(result.Items || []);
+      return reply.send(await allTenants());
     } catch (err) {
       logger.error('Failed to list tenants', { error: err });
       return reply.status(500).send({ error: 'Failed to fetch tenants' });
@@ -51,9 +45,9 @@ export async function tenantRoutes(app: FastifyInstance) {
   app.get('/tenants/:tenantId', { preHandler: [requireAccess({ roles: ['tenant_admin', 'tenant_auditor', 'tenant_user'] }), requireTenantParam] }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
     try {
-      const result = await client.send(new GetCommand({ TableName: table, Key: { tenantId } }));
-      if (!result.Item) return reply.status(404).send({ error: 'Tenant not found' });
-      return reply.send(result.Item);
+      const tenant = await tenants().get({ tenantId });
+      if (!tenant) return reply.status(404).send({ error: 'Tenant not found' });
+      return reply.send(tenant);
     } catch (err) {
       return reply.status(500).send({ error: 'Failed to fetch tenant' });
     }
@@ -84,7 +78,7 @@ export async function tenantRoutes(app: FastifyInstance) {
       updatedAt: new Date().toISOString(),
     };
 
-    await client.send(new PutCommand({ TableName: table, Item: tenant }));
+    await tenants().put(tenant);
     logger.info('Tenant onboarded', { tenantId: tenant.tenantId, name: tenant.name });
     return reply.status(201).send(tenant);
   });
@@ -96,37 +90,13 @@ export async function tenantRoutes(app: FastifyInstance) {
     const updatedAt = new Date().toISOString();
 
     // Only the fields sent are changed; other settings (fail mode, shadow AI decisions) stay as they are.
-    const sets: string[] = ['updatedAt = :updatedAt'];
-    const names: Record<string, string> = {};
-    const values: Record<string, unknown> = { ':updatedAt': updatedAt };
+    const set: Record<string, unknown> = { updatedAt };
     for (const key of ['name', 'adminEmail', 'plan', 'deploymentMode', 'region'] as const) {
-      if (body[key] === undefined) continue;
-      sets.push(`#${key} = :${key}`);
-      names[`#${key}`] = key;
-      values[`:${key}`] = body[key];
+      if (body[key] !== undefined) set[key] = body[key];
     }
-    if (body.auditLogRetentionDays !== undefined) {
-      await client.send(new UpdateCommand({
-        TableName: table, Key: { tenantId },
-        UpdateExpression: 'SET settings = if_not_exists(settings, :empty)', ExpressionAttributeValues: { ':empty': {} },
-      }));
-      sets.push('settings.auditLogRetentionDays = :retention');
-      values[':retention'] = body.auditLogRetentionDays;
-    }
-
-    try {
-      await client.send(new UpdateCommand({
-        TableName: table,
-        Key: { tenantId },
-        UpdateExpression: `SET ${sets.join(', ')}`,
-        ConditionExpression: 'attribute_exists(tenantId)',
-        ...(Object.keys(names).length ? { ExpressionAttributeNames: names } : {}),
-        ExpressionAttributeValues: values,
-      }));
-    } catch (err) {
-      if ((err as Error).name === 'ConditionalCheckFailedException') return reply.status(404).send({ error: 'Tenant not found', code: 'NOT_FOUND' });
-      throw err;
-    }
+    if (body.auditLogRetentionDays !== undefined) set['settings.auditLogRetentionDays'] = body.auditLogRetentionDays;
+    const updated = await tenants().update({ tenantId }, { set, ifExists: true });
+    if (!updated) return reply.status(404).send({ error: 'Tenant not found', code: 'NOT_FOUND' });
 
     tenantSettings().invalidate(tenantId);
     return reply.send({ tenantId, ...body, updatedAt });
@@ -135,13 +105,8 @@ export async function tenantRoutes(app: FastifyInstance) {
   // Suspend tenant
   app.post('/tenants/:tenantId/suspend', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
-    await client.send(new UpdateCommand({
-      TableName: table,
-      Key: { tenantId },
-      UpdateExpression: 'SET #status = :status, updatedAt = :updatedAt',
-      ExpressionAttributeNames: { '#status': 'status' },
-      ExpressionAttributeValues: { ':status': 'suspended', ':updatedAt': new Date().toISOString() },
-    }));
+    const updated = await tenants().update({ tenantId }, { set: { status: 'suspended', updatedAt: new Date().toISOString() }, ifExists: true });
+    if (!updated) return reply.status(404).send({ error: 'Tenant not found', code: 'NOT_FOUND' });
     tenantSettings().invalidate(tenantId);
     logger.info('Tenant suspended', { tenantId });
     return reply.send({ tenantId, status: 'suspended' });
@@ -150,13 +115,8 @@ export async function tenantRoutes(app: FastifyInstance) {
   // Activate tenant
   app.post('/tenants/:tenantId/activate', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
-    await client.send(new UpdateCommand({
-      TableName: table,
-      Key: { tenantId },
-      UpdateExpression: 'SET #status = :status, updatedAt = :updatedAt',
-      ExpressionAttributeNames: { '#status': 'status' },
-      ExpressionAttributeValues: { ':status': 'active', ':updatedAt': new Date().toISOString() },
-    }));
+    const updated = await tenants().update({ tenantId }, { set: { status: 'active', updatedAt: new Date().toISOString() }, ifExists: true });
+    if (!updated) return reply.status(404).send({ error: 'Tenant not found', code: 'NOT_FOUND' });
     tenantSettings().invalidate(tenantId);
     logger.info('Tenant activated', { tenantId });
     return reply.send({ tenantId, status: 'active' });
@@ -200,9 +160,8 @@ export async function tenantRoutes(app: FastifyInstance) {
 
   /** Every license across tenants (platform admins). */
   app.get('/licenses', { preHandler: requireAccess(PLATFORM_ADMIN) }, async () => {
-    const result = await client.send(new ScanCommand({ TableName: table, ProjectionExpression: 'tenantId, #n', ExpressionAttributeNames: { '#n': 'name' } }));
-    const tenants = (result.Items ?? []) as Array<{ tenantId: string; name?: string }>;
-    const lists = await Promise.all(tenants.map(async (t) => (await licensesOf(t.tenantId)).map((k) => toView(k, t.name))));
+    const list = (await allTenants()) as Array<{ tenantId: string; name?: string }>;
+    const lists = await Promise.all(list.map(async (t) => (await licensesOf(t.tenantId)).map((k) => toView(k, t.name))));
     return lists.flat().sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
   });
 
@@ -211,8 +170,8 @@ export async function tenantRoutes(app: FastifyInstance) {
     const all = (await licensesOf(request.tenantId)).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const current = all.find((k) => statusOf(k) === 'active') ?? all[0];
     if (!current) return reply.status(404).send({ error: 'No license', code: 'NOT_FOUND' });
-    const tenant = await client.send(new GetCommand({ TableName: table, Key: { tenantId: request.tenantId } }));
-    return toView(current, tenant.Item?.name as string | undefined);
+    const tenant = await tenants().get({ tenantId: request.tenantId });
+    return toView(current, tenant?.name as string | undefined);
   });
 
   /** Choose what the on-prem agent may report back (tenant admins). */
@@ -236,8 +195,8 @@ export async function tenantRoutes(app: FastifyInstance) {
     const parsed = issueLicenseSchema.safeParse(request.body ?? {});
     if (!parsed.success) return reply.status(400).send({ error: 'Invalid license', code: 'INVALID_LICENSE' });
     const body = parsed.data;
-    const tenant = await client.send(new GetCommand({ TableName: table, Key: { tenantId } }));
-    if (!tenant.Item) return reply.status(404).send({ error: 'Tenant not found' });
+    const tenant = await tenants().get({ tenantId });
+    if (!tenant) return reply.status(404).send({ error: 'Tenant not found' });
 
     const { raw, hash, prefix, keyId } = generateApiKey(tenantId);
     const expiresAt = new Date(Date.now() + body.validityDays * 86400000).toISOString();
@@ -252,7 +211,7 @@ export async function tenantRoutes(app: FastifyInstance) {
     });
     logger.info('License issued', { tenantId, keyId, expiresAt, plan: body.plan });
     return reply.status(201).send({
-      ...toView({ tenantId, keyId, keyHash: hash, keyPrefix: prefix, name: body.name, scopes: ['reporting:ingest'], status: 'active', rateLimit: 60, createdAt: new Date().toISOString(), expiresAt, createdBy: request.userId, license }, tenant.Item.name as string),
+      ...toView({ tenantId, keyId, keyHash: hash, keyPrefix: prefix, name: body.name, scopes: ['reporting:ingest'], status: 'active', rateLimit: 60, createdAt: new Date().toISOString(), expiresAt, createdBy: request.userId, license }, tenant.name as string),
       licenseKey: raw,
       message: 'Store this license key securely. It will not be shown again.',
     });

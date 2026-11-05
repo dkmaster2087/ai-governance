@@ -21,6 +21,24 @@ services:
       timeout: 5s
       retries: 10
 
+  # ── PostgreSQL (STORAGE_BACKEND=postgres; scripts/dev-local.sh start --postgres) ──
+  postgres:
+    image: postgres:16-alpine
+    container_name: probaline-postgres
+    ports:
+      - '5433:5432'
+    environment:
+      - POSTGRES_USER=probaline
+      - POSTGRES_PASSWORD=probaline-dev
+      - POSTGRES_DB=probaline
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ['CMD', 'pg_isready', '-U', 'probaline']
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
   # ── Gateway ────────────────────────────────────────────────────────────────
   gateway:
     build:
@@ -90,3 +108,4 @@ services:
 
 volumes:
   localstack-data:
+  postgres-data:

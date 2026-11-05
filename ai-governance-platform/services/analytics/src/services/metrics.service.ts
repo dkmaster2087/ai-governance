@@ -1,30 +1,15 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, QueryCommand } from '@aws-sdk/lib-dynamodb';
+import { collection } from '@ai-governance/storage';
 import { createLogger } from '@ai-governance/utils';
 
 const logger = createLogger('analytics:metrics');
 
 export class MetricsService {
-  private client: DynamoDBDocumentClient;
-  private metricsTable = process.env.METRICS_TABLE || 'ai-governance-metrics';
-
-  constructor() {
-    const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
-    this.client = DynamoDBDocumentClient.from(dynamo);
-  }
-
   async getSummary(tenantId: string, period: string) {
     try {
-      const result = await this.client.send(
-        new QueryCommand({
-          TableName: this.metricsTable,
-          KeyConditionExpression: 'tenantId = :tid AND begins_with(period, :p)',
-          ExpressionAttributeValues: { ':tid': tenantId, ':p': this.periodPrefix(period) },
-          ScanIndexForward: false,
-          Limit: 30,
-        })
-      );
-      return { tenantId, period, data: result.Items || [] };
+      const page = await collection('metrics').query({
+        partition: tenantId, range: { beginsWith: this.periodPrefix(period) }, order: 'desc', limit: 30,
+      });
+      return { tenantId, period, data: page.items };
     } catch (err) {
       logger.error('Failed to fetch metrics summary', { tenantId, error: err });
       return { tenantId, period, data: [] };

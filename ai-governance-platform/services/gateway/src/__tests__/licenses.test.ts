@@ -1,10 +1,5 @@
 import Fastify from 'fastify';
-
-const send = jest.fn();
-jest.mock('@aws-sdk/lib-dynamodb', () => ({
-  ...jest.requireActual('@aws-sdk/lib-dynamodb'),
-  DynamoDBDocumentClient: { from: () => ({ send }) },
-}));
+import { collection, MemoryStore, setRecords } from '@ai-governance/storage';
 const keys = { getForTenant: jest.fn(), create: jest.fn(), revoke: jest.fn(), setLicenseInfo: jest.fn() };
 jest.mock('../repositories/api-key.repository', () => ({
   ...jest.requireActual('../repositories/api-key.repository'),
@@ -32,10 +27,11 @@ const license = (over: object = {}) => ({
 });
 
 describe('licenses', () => {
-  beforeEach(() => {
+  beforeEach(async () => {
     jest.clearAllMocks();
     keys.getForTenant.mockResolvedValue([license(), { ...license({ keyId: 'app', scopes: ['chat'] }) }]);
-    send.mockResolvedValue({ Item: { tenantId: 'tenant_acme', name: 'Acme' }, Items: [{ tenantId: 'tenant_acme', name: 'Acme' }] });
+    setRecords(new MemoryStore());
+    await collection('tenants').put({ tenantId: 'tenant_acme', name: 'Acme' });
   });
 
   it('shows a tenant its own license without the key hash', async () => {

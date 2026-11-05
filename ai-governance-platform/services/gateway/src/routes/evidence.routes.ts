@@ -1,7 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, GetCommand } from '@aws-sdk/lib-dynamodb';
+import { collection } from '@ai-governance/storage';
 import { AuditLog } from '@ai-governance/types';
 import { createLogger } from '@ai-governance/utils';
 import { requireAccess, TENANT_READ } from '../auth/guards';
@@ -22,15 +21,12 @@ const listQuery = z.object({
 });
 
 export async function evidenceRoutes(app: FastifyInstance) {
-  const client = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' }));
-  const auditTable = process.env.AUDIT_LOGS_TABLE || 'ai-gov-audit-logs-dev';
-
   async function loadRecord(tenantId: string, requestId: string) {
     // Keyed by the caller's tenant, so another tenant's request ID finds nothing.
-    const result = await client.send(new GetCommand({ TableName: auditTable, Key: { tenantId, requestId } }));
-    if (!result.Item) return null;
+    const item = await collection<AuditLog & Record<string, unknown>>('auditLogs').get({ tenantId, requestId });
+    if (!item) return null;
     const retention = (await tenantSettings().getSettings(tenantId))?.auditLogRetentionDays ?? DEFAULT_RETENTION_DAYS;
-    return buildEvidenceRecord(result.Item as AuditLog, retention);
+    return buildEvidenceRecord(item, retention);
   }
 
   /** Every decision in a range, newest first, filtered by outcome and free-text search. */

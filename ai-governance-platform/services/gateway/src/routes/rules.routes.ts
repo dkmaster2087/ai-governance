@@ -1,7 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import { z } from 'zod';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { collection } from '@ai-governance/storage';
 import { createLogger } from '@ai-governance/utils';
 import { requireAccess, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
 import { PolicyAdminClient } from '../clients/policy-admin.client';
@@ -28,8 +27,6 @@ const ruleChange = z.object({
 
 export async function rulesRoutes(app: FastifyInstance) {
   const engine = new PolicyAdminClient();
-  const tenants = DynamoDBDocumentClient.from(new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' }));
-  const tenantsTable = process.env.TENANTS_TABLE || 'ai-gov-tenants-dev';
 
   /** Every rule for the tenant, what it did in the last 7 days, and the gateway's fail mode. */
   app.get('/rules', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
@@ -114,19 +111,11 @@ export async function rulesRoutes(app: FastifyInstance) {
     if (!parsed.success) {
       return reply.status(400).send({ error: 'Send governanceFailMode (open or closed) and/or secretsAction (block, redact or off)', code: 'INVALID_SETTINGS' });
     }
-    const key = { tenantId: request.tenantId };
-    // Make sure the settings map exists before setting a field inside it.
-    await tenants.send(new UpdateCommand({
-      TableName: tenantsTable, Key: key, ConditionExpression: 'attribute_exists(tenantId)',
-      UpdateExpression: 'SET settings = if_not_exists(settings, :empty)', ExpressionAttributeValues: { ':empty': {} },
-    }));
-    const sets = ['updatedAt = :t'];
-    const values: Record<string, unknown> = { ':t': new Date().toISOString() };
-    if (parsed.data.governanceFailMode) { sets.push('settings.governanceFailMode = :m'); values[':m'] = parsed.data.governanceFailMode; }
-    if (parsed.data.secretsAction) { sets.push('settings.secretsAction = :s'); values[':s'] = parsed.data.secretsAction; }
-    await tenants.send(new UpdateCommand({
-      TableName: tenantsTable, Key: key, UpdateExpression: `SET ${sets.join(', ')}`, ExpressionAttributeValues: values,
-    }));
+    const set: Record<string, unknown> = { updatedAt: new Date().toISOString() };
+    if (parsed.data.governanceFailMode) set['settings.governanceFailMode'] = parsed.data.governanceFailMode;
+    if (parsed.data.secretsAction) set['settings.secretsAction'] = parsed.data.secretsAction;
+    const updated = await collection('tenants').update({ tenantId: request.tenantId }, { set, ifExists: true });
+    if (!updated) return reply.status(404).send({ error: 'Tenant not found', code: 'NOT_FOUND' });
     tenantSettings().invalidate(request.tenantId);
     logger.info('Gateway settings changed', { tenantId: request.tenantId, ...parsed.data, by: request.userId });
     return parsed.data;

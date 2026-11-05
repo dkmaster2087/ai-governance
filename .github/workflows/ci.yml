@@ -26,6 +26,17 @@ jobs:
     name: Test
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    # A real PostgreSQL for the storage contract tests.
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: probaline
+          POSTGRES_PASSWORD: probaline-ci
+          POSTGRES_DB: probaline
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd "pg_isready -U probaline" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
       - uses: actions/checkout@v4
 
@@ -39,7 +50,13 @@ jobs:
         run: npm ci
 
       - name: Build shared packages
-        run: npm run build -w shared/types -w shared/utils
+        run: npm run build -w shared/types -w shared/utils -w shared/storage
+
+      - name: Storage (memory and PostgreSQL)
+        working-directory: ai-governance-platform/shared/storage
+        run: npx jest --runInBand --ci
+        env:
+          PG_TEST_URL: postgres://probaline:probaline-ci@localhost:5432/probaline
 
       - name: Shared utils
         working-directory: ai-governance-platform/shared/utils
@@ -105,7 +122,7 @@ jobs:
         run: npm ci
 
       - name: Build shared packages
-        run: npm run build -w shared/types -w shared/utils
+        run: npm run build -w shared/types -w shared/utils -w shared/storage
 
       - name: Build services and collector
         run: npm run build -w services/gateway -w services/policy-engine -w services/data-protection -w services/analytics -w services/reporting-agent -w collector

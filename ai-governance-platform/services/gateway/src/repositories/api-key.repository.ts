@@ -1,8 +1,4 @@
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import {
-  DynamoDBDocumentClient, PutCommand, QueryCommand,
-  GetCommand, UpdateCommand, DeleteCommand,
-} from '@aws-sdk/lib-dynamodb';
+import { allPages, collection } from '@ai-governance/storage';
 import { createLogger } from '@ai-governance/utils';
 import { randomBytes, createHash } from 'crypto';
 
@@ -50,109 +46,52 @@ export function hashApiKey(raw: string): string {
 }
 
 export class ApiKeyRepository {
-  private client: DynamoDBDocumentClient;
-  private table: string;
-
-  constructor() {
-    const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
-    this.client = DynamoDBDocumentClient.from(dynamo);
-    this.table = process.env.API_KEYS_TABLE || 'ai-gov-api-keys-dev';
-  }
+  private keys = () => collection<ApiKey>('apiKeys');
 
   /** Create a new API key record */
   async create(key: ApiKey): Promise<void> {
-    await this.client.send(new PutCommand({ TableName: this.table, Item: key }));
+    await this.keys().put(key);
     logger.info('API key created', { tenantId: key.tenantId, keyId: key.keyId, name: key.name });
   }
 
   /** Get all keys for a tenant */
   async getForTenant(tenantId: string): Promise<ApiKey[]> {
     try {
-      const result = await this.client.send(new QueryCommand({
-        TableName: this.table,
-        KeyConditionExpression: 'tenantId = :tid',
-        ExpressionAttributeValues: { ':tid': tenantId },
-      }));
-      return (result.Items || []) as ApiKey[];
+      return await allPages((after) => this.keys().query({ partition: tenantId, after }));
     } catch (err) {
-      logger.warn('API keys table not available', { tenantId });
+      logger.warn('API keys not available', { tenantId, error: (err as Error).message });
       return [];
     }
   }
 
   /** Find a key by its hash (for auth validation) */
   async findByHash(keyHash: string): Promise<ApiKey | null> {
-    try {
-      // Scan with filter — in production, use a GSI on keyHash
-      const result = await this.client.send(new QueryCommand({
-        TableName: this.table,
-        IndexName: 'keyHash-index',
-        KeyConditionExpression: 'keyHash = :kh',
-        ExpressionAttributeValues: { ':kh': keyHash },
-      }));
-      const item = result.Items?.[0] as ApiKey | undefined;
-      return item || null;
-    } catch {
-      // Fallback: scan (for local dev without GSI)
-      return this.findByHashScan(keyHash);
-    }
+    const page = await this.keys().query({ partition: keyHash, index: 'keyHash-index', limit: 1 });
+    return page.items[0] ?? null;
   }
 
-  private async findByHashScan(keyHash: string): Promise<ApiKey | null> {
-    try {
-      const { ScanCommand: SC } = await import('@aws-sdk/lib-dynamodb');
-      const result = await this.client.send(new SC({
-        TableName: this.table,
-        FilterExpression: 'keyHash = :kh',
-        ExpressionAttributeValues: { ':kh': keyHash },
-      }));
-      return (result.Items?.[0] as ApiKey) || null;
-    } catch {
-      return null;
-    }
-  }
-
-  /** Revoke a key */
+  /** Revoke a key. Does nothing if the key no longer exists. */
   async revoke(tenantId: string, keyId: string): Promise<void> {
-    await this.client.send(new UpdateCommand({
-      TableName: this.table,
-      Key: { tenantId, keyId },
-      UpdateExpression: 'SET #status = :s',
-      ExpressionAttributeNames: { '#status': 'status' },
-      ExpressionAttributeValues: { ':s': 'revoked' },
-    }));
+    await this.keys().update({ tenantId, keyId }, { set: { status: 'revoked' }, ifExists: true });
     logger.info('API key revoked', { tenantId, keyId });
   }
 
-  /** Replace the license details on a license key. */
+  /** Replace the license details on a license key. Throws if the key doesn't exist. */
   async setLicenseInfo(tenantId: string, keyId: string, license: LicenseInfo): Promise<void> {
-    await this.client.send(new UpdateCommand({
-      TableName: this.table,
-      Key: { tenantId, keyId },
-      UpdateExpression: 'SET license = :l',
-      ConditionExpression: 'attribute_exists(keyId)',
-      ExpressionAttributeValues: { ':l': license },
-    }));
+    const updated = await this.keys().update({ tenantId, keyId }, { set: { license }, ifExists: true });
+    if (!updated) throw Object.assign(new Error('License key not found'), { statusCode: 404, code: 'NOT_FOUND' });
   }
 
   /** Update last used timestamp */
   async touchLastUsed(tenantId: string, keyId: string): Promise<void> {
     try {
-      await this.client.send(new UpdateCommand({
-        TableName: this.table,
-        Key: { tenantId, keyId },
-        UpdateExpression: 'SET lastUsedAt = :ts',
-        ExpressionAttributeValues: { ':ts': new Date().toISOString() },
-      }));
+      await this.keys().update({ tenantId, keyId }, { set: { lastUsedAt: new Date().toISOString() }, ifExists: true });
     } catch { /* non-critical */ }
   }
 
   /** Delete a key permanently */
   async delete(tenantId: string, keyId: string): Promise<void> {
-    await this.client.send(new DeleteCommand({
-      TableName: this.table,
-      Key: { tenantId, keyId },
-    }));
+    await this.keys().delete({ tenantId, keyId });
     logger.info('API key deleted', { tenantId, keyId });
   }
 }

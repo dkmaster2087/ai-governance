@@ -1,7 +1,6 @@
 import axios from 'axios';
 import { createLogger } from '@ai-governance/utils';
-import { DynamoDBClient } from '@aws-sdk/client-dynamodb';
-import { DynamoDBDocumentClient, PutCommand, QueryCommand, UpdateCommand } from '@aws-sdk/lib-dynamodb';
+import { allPages, collection } from '@ai-governance/storage';
 import { randomUUID } from 'crypto';
 
 const logger = createLogger('gateway:alerting');
@@ -48,24 +47,12 @@ const DEFAULT_RULES: Omit<AlertRule, 'ruleId' | 'tenantId' | 'destination' | 'cr
 ];
 
 export class AlertingService {
-  private client: DynamoDBDocumentClient;
-  private table: string;
-
-  constructor() {
-    const dynamo = new DynamoDBClient({ region: process.env.AWS_REGION || 'us-east-1' });
-    this.client = DynamoDBDocumentClient.from(dynamo);
-    this.table = process.env.ALERTS_TABLE || 'ai-gov-alerts-dev';
-  }
+  private rules = () => collection<AlertRule & Record<string, unknown>>('alerts');
 
   /** Get all alert rules for a tenant */
   async getRules(tenantId: string): Promise<AlertRule[]> {
     try {
-      const result = await this.client.send(new QueryCommand({
-        TableName: this.table,
-        KeyConditionExpression: 'tenantId = :tid',
-        ExpressionAttributeValues: { ':tid': tenantId },
-      }));
-      return (result.Items || []) as AlertRule[];
+      return await allPages((after) => this.rules().query({ partition: tenantId, after }));
     } catch {
       return [];
     }
@@ -73,7 +60,7 @@ export class AlertingService {
 
   /** Create a new alert rule */
   async createRule(rule: AlertRule): Promise<void> {
-    await this.client.send(new PutCommand({ TableName: this.table, Item: rule }));
+    await this.rules().put(rule as AlertRule & Record<string, unknown>);
     logger.info('Alert rule created', { tenantId: rule.tenantId, ruleId: rule.ruleId, type: rule.type });
   }
 
@@ -118,12 +105,7 @@ export class AlertingService {
 
     // Update rule trigger count
     try {
-      await this.client.send(new UpdateCommand({
-        TableName: this.table,
-        Key: { tenantId, ruleId: rule.ruleId },
-        UpdateExpression: 'SET lastTriggeredAt = :ts, triggerCount = triggerCount + :one',
-        ExpressionAttributeValues: { ':ts': event.timestamp, ':one': 1 },
-      }));
+      await this.rules().update({ tenantId, ruleId: rule.ruleId }, { set: { lastTriggeredAt: event.timestamp }, increment: { triggerCount: 1 }, ifExists: true });
     } catch { /* non-critical */ }
 
     return event;

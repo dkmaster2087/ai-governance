@@ -314,6 +314,15 @@ node collector/dist/cli.js report --out ./results --company "Acme"
 npm install
 npx cdk bootstrap
 npx cdk deploy --all --context stage=prod`}</Code>
+        <H2>Database</H2>
+        <P>Records are stored in DynamoDB by default, which is what the AWS deployment creates. PostgreSQL 12 or later works too: set <C>STORAGE_BACKEND=postgres</C> and <C>DATABASE_URL</C> on the gateway, policy engine and analytics. Tables are created on first start; no migration step. Files (audit archives) go to S3 or any S3-compatible store (<C>S3_ENDPOINT</C>), or to a directory with <C>OBJECT_STORE=file</C> and <C>OBJECT_STORE_DIR</C>.</P>
+        <Table head={['Setting', 'Values']} rows={[
+          [<C>STORAGE_BACKEND</C>, <><C>dynamodb</C> (default) or <C>postgres</C></>],
+          [<C>DATABASE_URL</C>, <><C>postgres://user:password@host:5432/db</C>; add <C>?sslmode=require</C> for TLS</>],
+          [<C>PG_TABLE_PREFIX</C>, 'Optional prefix for table names, e.g. probaline_'],
+          [<C>OBJECT_STORE</C>, <><C>s3</C> (default) or <C>file</C></>],
+        ]} />
+        <Note>Provider API keys (for OpenAI and others) are still kept in AWS Secrets Manager, so a PostgreSQL deployment still needs it for now. Storing them encrypted in the database is next.</Note>
         <H2>From GitHub</H2>
         <P>The <strong>Deploy</strong> workflow runs only when started by hand: Actions → Deploy → Run workflow, then choose the stage, or tear one down. A push never deploys. It signs in to AWS with a role (OIDC) and needs these repository secrets: <C>AWS_DEPLOY_ROLE_ARN</C>, <C>AWS_ACCOUNT_ID</C>, <C>WEBSITE_BUCKET_NAME</C> and <C>CLOUDFRONT_DISTRIBUTION_ID</C>. Add required reviewers to the <C>prod</C> environment.</P>
         <Note>The first deploy to a new AWS account will fail: images are pushed before CDK creates their repositories. Until that’s fixed, deploy the infrastructure with CDK from your machine first.</Note>
@@ -321,7 +330,8 @@ npx cdk deploy --all --context stage=prod`}</Code>
         <P>The <strong>CI</strong> workflow runs on every push and pull request: all unit tests, every build, the CDK synth and a build of each container image. It never deploys and needs no secrets. The end-to-end suite isn’t in CI yet; run it locally (below).</P>
         <H2>Locally, for evaluation</H2>
         <P>Runs everything on your machine with LocalStack, a stand-in model and sample traffic. Requires Docker and Node.js 20+.</P>
-        <Code>{`scripts/dev-local.sh start
+        <Code>{`scripts/dev-local.sh start              # records in DynamoDB (LocalStack)
+scripts/dev-local.sh start --postgres   # or in PostgreSQL (Docker, port 5433)
 node scripts/seed-traffic.mjs
 # dashboard: http://localhost:5174
 

@@ -1,7 +1,9 @@
 #!/bin/bash
 # Run the platform locally against LocalStack (http://localhost:4566).
 #
-#   scripts/dev-local.sh start    # LocalStack (docker) + gateway, policy engine, data protection, analytics, dashboard
+#   scripts/dev-local.sh start             # LocalStack (docker) + gateway, policy engine, data protection, analytics, dashboard
+#   scripts/dev-local.sh start --postgres  # the same, storing records in PostgreSQL (docker, :5433) and files on disk
+#                                          # (LocalStack still runs: provider keys are in Secrets Manager)
 #   scripts/dev-local.sh stop     # stop the Node processes (LocalStack keeps running; `docker rm -f ai-gov-localstack` to remove it)
 #   scripts/dev-local.sh status
 #
@@ -28,13 +30,24 @@ start_service() { # name dir port [extra env...]
 
 case "${1:-start}" in
   start)
+    if [ "${2:-}" = "--postgres" ] || [ "${STORAGE_BACKEND:-}" = "postgres" ]; then
+      export STORAGE_BACKEND=postgres OBJECT_STORE=file OBJECT_STORE_DIR="$ROOT/.dev-data/objects"
+      export DATABASE_URL="${DATABASE_URL:-postgres://probaline:probaline-dev@localhost:5433/probaline}"
+      if ! docker ps --format '{{.Names}}' | grep -q '^probaline-postgres$'; then
+        echo "Starting PostgreSQL..."
+        docker start probaline-postgres >/dev/null 2>&1 || (cd "$ROOT" && docker compose -p probaline up -d postgres)
+      fi
+      until docker exec probaline-postgres pg_isready -U probaline >/dev/null 2>&1; do sleep 1; done
+    fi
+    echo "Storage: ${STORAGE_BACKEND:-dynamodb} (restart with 'stop' first to switch)"
     if ! docker ps --format '{{.Names}}' | grep -q '^ai-gov-localstack$'; then
       echo "Starting LocalStack..."
       (cd "$ROOT" && docker compose -p probaline up -d localstack)
       until docker logs ai-gov-localstack 2>&1 | grep -q "LocalStack init complete"; do sleep 1; done
     fi
     echo "Building shared packages..."
-    (cd "$ROOT" && npm run build -w shared/types -w shared/utils >/dev/null)
+    (cd "$ROOT" && npm run build -w shared/types -w shared/utils -w shared/storage >/dev/null)
+    if [ "${STORAGE_BACKEND:-}" = "postgres" ]; then (cd "$ROOT" && node scripts/seed-dev-data.mjs); fi
     echo "Starting services:"
     if ! lsof -tiTCP:4010 -sTCP:LISTEN >/dev/null 2>&1; then
       (cd "$ROOT" && nohup node scripts/mock-llm.mjs 4010 > "$LOGS/mock-llm.log" 2>&1 < /dev/null &) > /dev/null 2>&1

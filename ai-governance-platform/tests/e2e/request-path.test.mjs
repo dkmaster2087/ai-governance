@@ -138,9 +138,20 @@ const AWS_KEY = ['AKIA', 'Q3EGRV7XKZ2PLM4N'].join('');
 const GH_TOKEN = ['ghp_', 'aB3dE6gH9jK2mN5pQ8sT1vW4yZ7bC0eF3hJ6'].join('');
 
 /** A gateway whose policy engine and data protection addresses point at nothing. */
+/** Which record store the running gateway uses, from its readiness check: dynamodb or postgres. */
+let storage = 'dynamodb';
+const storageEnv = () => (storage === 'postgres'
+  ? {
+    // Same as scripts/dev-local.sh start --postgres
+    STORAGE_BACKEND: 'postgres', OBJECT_STORE: 'file', OBJECT_STORE_DIR: path.join(ROOT, '.dev-data/objects'),
+    DATABASE_URL: process.env.DATABASE_URL || 'postgres://probaline:probaline-dev@localhost:5433/probaline',
+  }
+  : { STORAGE_BACKEND: 'dynamodb' });
+
 async function startDegradedGateway() {
   const env = {
     ...process.env,
+    ...storageEnv(),
     // Same as scripts/dev-local.sh
     AWS_ENDPOINT_URL: 'http://localhost:4566', AWS_ACCESS_KEY_ID: 'test', AWS_SECRET_ACCESS_KEY: 'test', AWS_REGION: 'us-east-1', STAGE: 'dev',
     AUDIT_LOG_BUCKET: 'ai-gov-audit-logs-dev-000000000000', POLICIES_TABLE: 'ai-gov-policies-dev', METRICS_TABLE: 'ai-gov-metrics-dev',
@@ -166,6 +177,9 @@ async function startDegradedGateway() {
 before(async () => {
   const health = await fetch(`${GATEWAY}/health`).catch(() => null);
   assert.ok(health?.ok, `gateway not running at ${GATEWAY}; start it with scripts/dev-local.sh start`);
+  const ready = await fetch(`${GATEWAY}/health/ready`).then((r) => r.json()).catch(() => null);
+  if (ready?.dependencies?.some((d) => d.name === 'postgres')) storage = 'postgres';
+  console.log(`# storage: ${storage}`);
   const mock = await fetch(`${MOCK}/_received?contains=x`).catch(() => null);
   assert.ok(mock?.ok, `mock model at ${MOCK} doesn't support /_received; restart it (scripts/dev-local.sh stop && start)`);
 

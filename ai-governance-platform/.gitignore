@@ -11,3 +11,4 @@ cdk.out/
 *.d.ts
 .DS_Store
 .dev-logs/
+.dev-data/
