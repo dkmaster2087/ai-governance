@@ -49,6 +49,7 @@ const SOURCES = [
   { y: 202, title: 'CloudTrail', sub: 'Bedrock and SageMaker calls' },
   { y: 318, title: 'Firewalls and proxies', sub: 'Palo Alto, Fortinet, Check Point…' },
   { y: 386, title: 'DNS servers', sub: 'BIND, Windows DNS' },
+  { y: 454, title: 'Zscaler, Netskope', sub: 'laptops, in the office or not' },
 ];
 const COLLECTOR_Y = 250;
 
@@ -57,8 +58,8 @@ export function CollectorFlow() {
   return (
     <figure className="m-0">
       <div className="overflow-x-auto">
-        <svg viewBox="0 0 1000 560" className="w-full min-w-[760px] h-auto" role="img"
-          aria-label="Log lines from AWS (DNS, firewall, CloudTrail) and from the data centre (firewalls, proxies, DNS servers) flow into the Probaline collector inside your environment. It drops everything that isn't an AI service and passes AI matches on as daily counts to results in your own storage, which build the assessment report. Nothing goes to Probaline unless you share it.">
+        <svg viewBox="0 0 1000 628" className="w-full min-w-[760px] h-auto" role="img"
+          aria-label="Log lines from AWS (DNS, firewall, CloudTrail), from the data centre (firewalls, proxies, DNS servers) and from Zscaler or Netskope (laptops wherever they are) flow into the Probaline collector inside your environment. It drops everything that isn't an AI service and passes AI matches on as daily counts to results in your own storage, which build the assessment report. Nothing goes to Probaline unless you share it.">
           <defs>
             {SOURCES.map((s, i) => {
               const sy = s.y + 29;
@@ -76,10 +77,10 @@ export function CollectorFlow() {
           </defs>
 
           {/* The customer's environment */}
-          <rect x="8" y="8" width="984" height="452" rx="16" fill="#F6F7F9" stroke={INK} strokeWidth="2" />
+          <rect x="8" y="8" width="984" height="520" rx="16" fill="#F6F7F9" stroke={INK} strokeWidth="2" />
           <Label x={28} y={34} size={12} weight={700} fill={MUTED}>YOUR ENVIRONMENT</Label>
           <Label x={28} y={58} size={11} weight={600} fill={MUTED}>AWS ACCOUNT</Label>
-          <Label x={28} y={310} size={11} weight={600} fill={MUTED}>DATA CENTRE AND OFFICES</Label>
+          <Label x={28} y={310} size={11} weight={600} fill={MUTED}>NETWORK AND SECURITY TOOLS</Label>
 
           {SOURCES.map((s) => <SourceBox key={s.title} {...s} />)}
 
@@ -107,11 +108,11 @@ export function CollectorFlow() {
           <Label x={768} y={335} size={12} weight={400} fill={MUTED}>your team reads it first</Label>
 
           {/* Outside: Probaline, only on the customer's say-so */}
-          <path d="M866 350 L866 486" fill="none" stroke={GREY} strokeWidth="2" strokeDasharray="5 6" />
-          <Label x={878} y={412} size={12} weight={400} fill={MUTED}>only if you</Label>
-          <Label x={878} y={428} size={12} weight={400} fill={MUTED}>choose to share</Label>
-          <rect x="752" y="486" width="228" height="52" rx="10" fill="#fff" stroke={GREY} strokeDasharray="5 5" />
-          <Label x={866} y={517} anchor="middle" fill={MUTED}>Probaline</Label>
+          <path d="M866 350 L866 554" fill="none" stroke={GREY} strokeWidth="2" strokeDasharray="5 6" />
+          <Label x={878} y={446} size={12} weight={400} fill={MUTED}>only if you</Label>
+          <Label x={878} y={462} size={12} weight={400} fill={MUTED}>choose to share</Label>
+          <rect x="752" y="554" width="228" height="52" rx="10" fill="#fff" stroke={GREY} strokeDasharray="5 5" />
+          <Label x={866} y={585} anchor="middle" fill={MUTED}>Probaline</Label>
 
           {/* Moving log lines: grey ones stop at the collector; ink ones are AI matches and go through. */}
           {SOURCES.map((_, i) => (

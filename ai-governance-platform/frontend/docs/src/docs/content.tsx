@@ -239,19 +239,32 @@ client = OpenAI(
         <P>Daily counts per AI service, source and caller. Servers keep the name the log gives them; people become codes such as <C>user-3f9a…</C>, made with a key that stays in the customer’s <C>private/</C> folder with the code-to-name lookup.</P>
         <H2>AWS</H2>
         <P>Deploy <C>collector/deploy/aws/collector.yaml</C> with the names of the log buckets. It reads Route 53 Resolver DNS query logs, Network Firewall logs and CloudTrail (Amazon Bedrock and SageMaker calls). Turn on EventBridge notifications for each log bucket, put the Probaline gateway’s role in <C>Ignore</C>, then run the backfill command from the stack outputs. The report is at <C>reports/latest.html</C> in the results bucket.</P>
+        <P>Other products’ logs that are streamed into one of those buckets (Netskope transaction logs, for example) are read too.</P>
         <H2>On-premises</H2>
         <P>Run the container from <C>collector/deploy/onprem</C>. Point firewalls and proxies at it over syslog (UDP or TCP) and mount DNS server and proxy log folders under <C>/logs</C>.</P>
         <Table head={['Product', 'How it arrives']} rows={[
           ['Palo Alto Networks (URL filtering)', 'syslog'],
           ['Fortinet FortiGate (web filter, DNS)', 'syslog'],
           ['Check Point and other CEF or LEEF sources', 'syslog'],
-          ['Zscaler Internet Access (beta)', 'NSS web log feed over TCP syslog: JSON, LEEF, key=value or CEF'],
-          ['Netskope (beta)', 'Cloud Log Shipper over syslog (JSON or CEF), or transaction log streaming files (CSV or W3C, plain or .gz) in a watched folder or an S3 bucket the AWS collector reads'],
           ['Squid', 'access log file'],
           ['BIND, Windows DNS', 'query log files'],
         ]} />
+        <P>Use TCP for busy senders; UDP syslog drops lines when a burst outpaces it.</P>
+        <H2>Zscaler and Netskope (beta)</H2>
+        <P>These see laptops wherever they are, which firewall and DNS logs miss once people leave the office. They use the same container, or the AWS collector; nothing new to install. Both are in beta: they read the formats these products document, but haven’t yet been run on a customer’s logs.</P>
+        <Table head={['Product', 'Send it as', 'Fields used']} rows={[
+          ['Zscaler Internet Access', 'An NSS web log feed to the container over TCP syslog (port 5514), in the JSON, LEEF, key=value or CEF format', <><C>hostname</C> or <C>url</C>, <C>login</C>, <C>cip</C>, <C>epochtime</C> or <C>datetime</C>, <C>requestsize</C></>],
+          ['Netskope events', 'Cloud Log Shipper to the container over syslog, as JSON or CEF', <><C>domain</C> or <C>url</C>, <C>ur_normalized</C> or <C>user</C>, <C>srcip</C>, <C>timestamp</C>, <C>client_bytes</C></>],
+          ['Netskope transaction logs', 'Log streaming to a folder the container watches, or to an S3 bucket the AWS collector reads; CSV with a header row or W3C with #Fields, plain or .gz', <><C>cs-host</C> or <C>cs-uri</C>, <C>cs-username</C>, <C>c-ip</C>, <C>date</C> + <C>time</C>, <C>cs-bytes</C></>],
+        ]} />
+        <P>A file’s header row is remembered while the file is followed, including after a restart. Zscaler or Netskope lines sent as CEF are labelled with their product in the report.</P>
+        <H2>Try it with sample data</H2>
+        <Code>{`node collector/scripts/sample-sse-logs.mjs files ./sample-sse 14
+node collector/dist/cli.js collect --out ./results ./sample-sse
+node collector/dist/cli.js report --out ./results --company "Acme"
+# open results/reports/latest.html`}</Code>
+        <P>The same works with <C>sample-aws-logs.mjs</C> and <C>sample-onprem-logs.mjs</C>. All sample data is made up.</P>
         <H2>Not built yet</H2>
-        <P>Zscaler and Netskope are in beta: they read the formats these products document, but haven’t yet been run on a customer’s logs.</P>
         <P>Azure, Google Cloud, Microsoft 365, Google Workspace and Okta/Entra sources, and sending results to a Probaline install. See <C>docs/ASSESSMENT.md</C> in the repository.</P>
       </>
     ),
@@ -301,11 +314,20 @@ client = OpenAI(
 npm install
 npx cdk bootstrap
 npx cdk deploy --all --context stage=prod`}</Code>
+        <H2>From GitHub</H2>
+        <P>The <strong>Deploy</strong> workflow runs only when started by hand: Actions → Deploy → Run workflow, then choose the stage, or tear one down. A push never deploys. It signs in to AWS with a role (OIDC) and needs these repository secrets: <C>AWS_DEPLOY_ROLE_ARN</C>, <C>AWS_ACCOUNT_ID</C>, <C>WEBSITE_BUCKET_NAME</C> and <C>CLOUDFRONT_DISTRIBUTION_ID</C>. Add required reviewers to the <C>prod</C> environment.</P>
+        <Note>The first deploy to a new AWS account will fail: images are pushed before CDK creates their repositories. Until that’s fixed, deploy the infrastructure with CDK from your machine first.</Note>
+        <H2>Checks on every change</H2>
+        <P>The <strong>CI</strong> workflow runs on every push and pull request: all unit tests, every build, the CDK synth and a build of each container image. It never deploys and needs no secrets. The end-to-end suite isn’t in CI yet; run it locally (below).</P>
         <H2>Locally, for evaluation</H2>
         <P>Runs everything on your machine with LocalStack, a stand-in model and sample traffic. Requires Docker and Node.js 20+.</P>
         <Code>{`scripts/dev-local.sh start
 node scripts/seed-traffic.mjs
-# dashboard: http://localhost:5174`}</Code>
+# dashboard: http://localhost:5174
+
+npm run test:e2e        # the end-to-end suite, against the running stack
+scripts/dev-local.sh status`}</Code>
+        <P>If the backend services stop answering after a while (the auto-reload helper lives in the system’s temporary folder, which macOS clears), run <C>scripts/dev-local.sh start</C> again; it starts only what isn’t running.</P>
       </>
     ),
   },
