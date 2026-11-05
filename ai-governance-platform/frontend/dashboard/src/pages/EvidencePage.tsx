@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { RangeKey, RANGE_LABELS } from '../lib/gateway-api';
 import { downloadEvidence, EvidenceListItem, EvidenceRecord, fetchEvidence, fetchEvidenceRecord, Outcome } from '../lib/evidence-api';
-import { Button, Note, Panel, SectionLabel, Segmented } from '../components/aegis/primitives';
+import { Button, Note, Panel, SectionLabel, Segmented } from '../components/kit/primitives';
 
 const RANGE_OPTIONS = (Object.keys(RANGE_LABELS) as RangeKey[]).map((value) => ({ value, label: RANGE_LABELS[value].button }));
 const OUTCOMES: Array<{ value: Outcome | 'all'; label: string }> = [

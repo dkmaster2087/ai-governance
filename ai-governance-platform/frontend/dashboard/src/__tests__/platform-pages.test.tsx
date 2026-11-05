@@ -36,7 +36,7 @@ const tenant = (over: Partial<platform.Tenant> = {}): platform.Tenant => ({
   deploymentMode: 'saas', region: 'us-east-1', createdAt: '2026-01-01T00:00:00Z', settings: { governanceFailMode: 'closed', auditLogRetentionDays: 365 }, ...over,
 });
 const license = (over: Partial<License> = {}): License => ({
-  licenseId: 'l1', keyPrefix: 'aegis_…', tenantId: 'tenant_acme', tenantName: 'Acme', status: 'active', issuedAt: '2026-01-01T00:00:00Z',
+  licenseId: 'l1', keyPrefix: 'pbl_…', tenantId: 'tenant_acme', tenantName: 'Acme', status: 'active', issuedAt: '2026-01-01T00:00:00Z',
   expiresAt: '2099-01-01T00:00:00Z', plan: 'enterprise', type: 'cloud', maxUsers: 100,
   reportingConfig: { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: false }, ...over,
 });

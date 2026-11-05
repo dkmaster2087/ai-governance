@@ -52,7 +52,7 @@ async function streamChat(key, content, { abortAfterChunks, url = '/v1/chat/comp
   const res = await fetch(GATEWAY + url, {
     method: 'POST',
     signal: ac.signal,
-    headers: { 'content-type': 'application/json', ...(url.includes('/proxy/') ? { 'x-aegis-key': key, authorization: 'Bearer sk-dev-own' } : { authorization: `Bearer ${key}` }), 'x-app-id': 'e2e-suite' },
+    headers: { 'content-type': 'application/json', ...(url.includes('/proxy/') ? { 'x-probaline-key': key, authorization: 'Bearer sk-dev-own' } : { authorization: `Bearer ${key}` }), 'x-app-id': 'e2e-suite' },
     body: JSON.stringify(body ?? { model: MODEL, stream: true, stream_options: { include_usage: true }, messages: [{ role: 'user', content }] }),
   });
   if (!(res.headers.get('content-type') ?? '').includes('text/event-stream')) return { status: res.status, headers: res.headers, json: await res.json(), events: [], text: '' };
@@ -335,7 +335,7 @@ describe('secrets', () => {
 
   test('IDE traffic is checked too, and redacted before it is forwarded', async () => {
     const proxy = (content) => call('POST', '/v1/proxy/openai/v1/chat/completions', {
-      headers: { 'x-aegis-key': keyA, authorization: 'Bearer sk-developer-own-key' },
+      headers: { 'x-probaline-key': keyA, authorization: 'Bearer sk-developer-own-key' },
       body: { model: MODEL, messages: [{ role: 'user', content: [{ type: 'text', text: content }] }] },
     });
     const m1 = marker();
@@ -379,7 +379,7 @@ describe('who can call', () => {
     const none = await call('POST', '/v1/chat/completions', { body: { model: MODEL, messages: [{ role: 'user', content: 'hi' }] } });
     assert.equal(none.status, 401);
 
-    const fake = await chat('aegis_not_a_real_key_000000000000', 'hi');
+    const fake = await chat('pbl_not_a_real_key_000000000000', 'hi');
     assert.equal(fake.status, 401);
     assert.equal(fake.body.code, 'INVALID_KEY');
 
@@ -416,7 +416,7 @@ describe('who can call', () => {
 
 describe('IDE traffic (proxy mode)', () => {
   const proxy = (key, content) => call('POST', '/v1/proxy/openai/v1/chat/completions', {
-    headers: { 'x-aegis-key': key, authorization: 'Bearer sk-developer-own-key' },
+    headers: { 'x-probaline-key': key, authorization: 'Bearer sk-developer-own-key' },
     body: { model: MODEL, messages: [{ role: 'user', content: [{ type: 'text', text: content }] }] },
   });
 
@@ -435,7 +435,7 @@ describe('IDE traffic (proxy mode)', () => {
     const m = marker();
     const res = await proxy(keyA, `explain this function ${m}`);
     assert.equal(res.status, 200, JSON.stringify(res.body));
-    assert.ok(res.headers.get('x-aegis-request-id'), 'response carries the Aegis request ID');
+    assert.ok(res.headers.get('x-probaline-request-id'), 'response carries the Probaline request ID');
     assert.equal((await atModel(m)).length, 1);
   });
 });
@@ -449,7 +449,7 @@ describe('streaming', () => {
     assert.ok(r.parsed.every((p) => p.object === 'chat.completion.chunk'));
     assert.equal(r.text, 'Mock reply to a 3-word prompt.');
     assert.equal(r.parsed.find((p) => p.usage)?.usage.total_tokens > 0, true, 'usage sent when asked for');
-    const id = r.headers.get('x-aegis-request-id');
+    const id = r.headers.get('x-probaline-request-id');
     assert.equal(r.parsed[0].id, id);
     await new Promise((res) => setTimeout(res, 200));
     const record = await caseFile(A, id);
@@ -477,7 +477,7 @@ describe('streaming', () => {
 
   test('an app that leaves mid-answer still gets a case file', async () => {
     const r = await streamChat(keyA, `MOCK_SLOW_STREAM ${marker()}`, { abortAfterChunks: 3 });
-    const id = r.headers.get('x-aegis-request-id');
+    const id = r.headers.get('x-probaline-request-id');
     await new Promise((res) => setTimeout(res, 500));
     const record = await caseFile(A, id);
     assert.equal(record.status, 200, JSON.stringify(record.body));

@@ -34,7 +34,7 @@ export const DOCS: DocPage[] = [
     summary: 'What the gateway does to each request, in order.',
     body: (
       <>
-        <P>Aegis is a gateway between your company and AI providers. Every request passes the same checks, in the same order, before anything leaves:</P>
+        <P>Probaline is a gateway between your company and AI providers. Every request passes the same checks, in the same order, before anything leaves:</P>
         <ol className="my-3 pl-6 flex flex-col gap-2 text-[16px] leading-relaxed">
           <li><strong>Policy rules.</strong> Your words and phrases, patterns, approved models and personal-data types. A match <strong className="text-stop">stops</strong> the request.</li>
           <li><strong>Secrets.</strong> API keys, tokens, private keys and passwords. By default a match <strong className="text-stop">stops</strong> the request; your company can choose to remove them and send the rest. See <Link to="/docs/secrets" className="font-semibold text-ink">Secrets</Link>.</li>
@@ -61,9 +61,9 @@ export const DOCS: DocPage[] = [
         <H2>2. Add a model</H2>
         <P>Open <strong>More → Models &amp; keys</strong> and add the models your apps use, from Amazon Bedrock or OpenAI. For OpenAI, paste your API key; it’s stored in AWS Secrets Manager. Bedrock models use the gateway’s AWS role and need no key. To refuse every other model, add an <strong>Approved models</strong> rule.</P>
         <H2>3. Point your app at the gateway</H2>
-        <P>The gateway speaks the OpenAI chat completions format. Change the base URL and use your Aegis key:</P>
+        <P>The gateway speaks the OpenAI chat completions format. Change the base URL and use your Probaline key:</P>
         <Code label="curl">{`curl https://gateway.example.com/v1/chat/completions \\
-  -H "Authorization: Bearer $AEGIS_API_KEY" \\
+  -H "Authorization: Bearer $PROBALINE_API_KEY" \\
   -H "X-App-Id: support-bot" \\
   -H "X-User-Id: jane@example.com" \\
   -H "Content-Type: application/json" \\
@@ -72,7 +72,7 @@ export const DOCS: DocPage[] = [
 
 client = OpenAI(
     base_url="https://gateway.example.com/v1",
-    api_key=os.environ["AEGIS_API_KEY"],
+    api_key=os.environ["PROBALINE_API_KEY"],
     default_headers={"X-App-Id": "support-bot"},
 )`}</Code>
         <P><C>X-App-Id</C> names the app in the dashboard. <C>X-User-Id</C> says which of your app’s users the request is for; it’s recorded for attribution, not used for authentication.</P>
@@ -89,15 +89,15 @@ client = OpenAI(
     summary: 'Govern Cursor, Copilot and other tools without changing them.',
     body: (
       <>
-        <P>Developers’ tools call providers directly with the developer’s own key. In proxy mode, your corporate proxy routes those calls through Aegis, which checks them and forwards them unchanged.</P>
+        <P>Developers’ tools call providers directly with the developer’s own key. In proxy mode, your corporate proxy routes those calls through Probaline, which checks them and forwards them unchanged.</P>
         <H2>How a request is routed</H2>
         <Code>{`https://api.openai.com/v1/chat/completions
   → https://gateway.example.com/v1/proxy/openai/v1/chat/completions`}</Code>
         <P>Supported providers in the path: <C>openai</C>, <C>anthropic</C>, <C>cohere</C>, <C>mistral</C>.</P>
         <H2>Authentication</H2>
-        <P>The developer’s <C>Authorization</C> or <C>x-api-key</C> header is the provider key and is passed through untouched. Your proxy adds the Aegis key in a separate header:</P>
-        <Code>{`X-Aegis-Key: <an Aegis API key with the chat permission>`}</Code>
-        <P>Requests without <C>X-Aegis-Key</C> are rejected. Prompts sent as content blocks and Anthropic system prompts are checked like any other text.</P>
+        <P>The developer’s <C>Authorization</C> or <C>x-api-key</C> header is the provider key and is passed through untouched. Your proxy adds the Probaline key in a separate header:</P>
+        <Code>{`X-Probaline-Key: <a Probaline API key with the chat permission>`}</Code>
+        <P>Requests without <C>X-Probaline-Key</C> are rejected. Prompts sent as content blocks and Anthropic system prompts are checked like any other text.</P>
         <Note>Proxy mode is in beta. Streamed answers pass straight through after the request is checked. Proxy mode applies your rules and the secrets check (stopping the request, or removing the secret from the body before it’s forwarded) but doesn’t remove personal data.</Note>
       </>
     ),
@@ -108,7 +108,7 @@ client = OpenAI(
     summary: 'See and control AI tools used outside the gateway.',
     body: (
       <>
-        <P>The Aegis extension for Chrome records which AI tools, such as ChatGPT, Claude, Gemini and Perplexity, are opened in your company’s browsers. It blocks only the tools you decide to block, and points people to the ones you approve.</P>
+        <P>The Probaline extension for Chrome records which AI tools, such as ChatGPT, Claude, Gemini and Perplexity, are opened in your company’s browsers. It blocks only the tools you decide to block, and points people to the ones you approve.</P>
         <P>It records the tool’s domain, the time and whether it was blocked. It never records the page address, what people type or what the tool answers. Repeat visits to the same tool within ten minutes count once.</P>
         <H2>1. Create an extension key</H2>
         <P>In <strong>More → API keys</strong>, create a key with only the <C>shadow_ai:ingest</C> permission. It can report visits and read the extension’s settings, nothing else.</P>
@@ -234,11 +234,11 @@ client = OpenAI(
     summary: 'Find AI use in logs a company already has, and build the assessment report inside their environment.',
     body: (
       <>
-        <P>The collector is separate from the gateway and needs nothing else installed. It reads logs where they already are, keeps only lines that match a known AI service as daily counts, and builds an HTML report in the customer’s own storage. Nothing is sent to Aegis.</P>
+        <P>The collector is separate from the gateway and needs nothing else installed. It reads logs where they already are, keeps only lines that match a known AI service as daily counts, and builds an HTML report in the customer’s own storage. Nothing is sent to Probaline.</P>
         <H2>What it keeps</H2>
         <P>Daily counts per AI service, source and caller. Servers keep the name the log gives them; people become codes such as <C>user-3f9a…</C>, made with a key that stays in the customer’s <C>private/</C> folder with the code-to-name lookup.</P>
         <H2>AWS</H2>
-        <P>Deploy <C>collector/deploy/aws/collector.yaml</C> with the names of the log buckets. It reads Route 53 Resolver DNS query logs, Network Firewall logs and CloudTrail (Amazon Bedrock and SageMaker calls). Turn on EventBridge notifications for each log bucket, put the Aegis gateway’s role in <C>Ignore</C>, then run the backfill command from the stack outputs. The report is at <C>reports/latest.html</C> in the results bucket.</P>
+        <P>Deploy <C>collector/deploy/aws/collector.yaml</C> with the names of the log buckets. It reads Route 53 Resolver DNS query logs, Network Firewall logs and CloudTrail (Amazon Bedrock and SageMaker calls). Turn on EventBridge notifications for each log bucket, put the Probaline gateway’s role in <C>Ignore</C>, then run the backfill command from the stack outputs. The report is at <C>reports/latest.html</C> in the results bucket.</P>
         <H2>On-premises</H2>
         <P>Run the container from <C>collector/deploy/onprem</C>. Point firewalls and proxies at it over syslog (UDP or TCP) and mount DNS server and proxy log folders under <C>/logs</C>.</P>
         <Table head={['Product', 'How it arrives']} rows={[
@@ -249,7 +249,7 @@ client = OpenAI(
           ['BIND, Windows DNS', 'query log files'],
         ]} />
         <H2>Not built yet</H2>
-        <P>Azure, Google Cloud, Zscaler, Netskope, Microsoft 365, Google Workspace and Okta/Entra sources, and sending results to an Aegis install. See <C>docs/ASSESSMENT.md</C> in the repository.</P>
+        <P>Azure, Google Cloud, Zscaler, Netskope, Microsoft 365, Google Workspace and Okta/Entra sources, and sending results to a Probaline install. See <C>docs/ASSESSMENT.md</C> in the repository.</P>
       </>
     ),
   },
@@ -263,12 +263,12 @@ client = OpenAI(
         <Table head={['Endpoint', 'Purpose']} rows={[
           [<C>POST /v1/chat/completions</C>, 'OpenAI-compatible chat completion'],
           [<C>GET /v1/models</C>, 'Models your company allows'],
-          [<C>ANY /v1/proxy/:provider/*</C>, 'Proxy mode (needs X-Aegis-Key)'],
+          [<C>ANY /v1/proxy/:provider/*</C>, 'Proxy mode (needs X-Probaline-Key)'],
         ]} />
         <H2>Headers</H2>
         <Table head={['Header', 'Meaning']} rows={[
-          [<C>Authorization: Bearer …</C>, 'Your Aegis API key (in proxy mode, the provider key)'],
-          [<C>X-Aegis-Key</C>, 'Your Aegis API key, proxy mode only'],
+          [<C>Authorization: Bearer …</C>, 'Your Probaline API key (in proxy mode, the provider key)'],
+          [<C>X-Probaline-Key</C>, 'Your Probaline API key, proxy mode only'],
           [<C>X-App-Id</C>, 'Optional app name shown in the dashboard'],
           [<C>X-User-Id</C>, 'Optional end-user ID, for attribution'],
         ]} />

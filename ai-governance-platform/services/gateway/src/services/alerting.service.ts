@@ -143,7 +143,7 @@ export class AlertingService {
   private async sendWebhook(url: string, event: AlertEvent): Promise<boolean> {
     try {
       await axios.post(url, {
-        source: 'aegis-ai',
+        source: 'probaline',
         event: event.type,
         severity: event.severity,
         title: event.title,

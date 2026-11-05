@@ -24,7 +24,7 @@ export function HomePage() {
         </Container>
       </section>
 
-      <Section id="phases" eyebrow="How Aegis works" title="Inspect. Protect. Enforce.">
+      <Section id="phases" eyebrow="How Probaline works" title="Inspect. Protect. Enforce.">
         <PhaseCards compact />
       </Section>
 

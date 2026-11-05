@@ -50,7 +50,7 @@ export class OnpremCollector {
     this.store = new FileStore(o.dataDir);
   }
 
-  private log(msg: string) { (this.o.log ?? ((m) => console.log(`[aegis-collector] ${m}`)))(msg); }
+  private log(msg: string) { (this.o.log ?? ((m) => console.log(`[probaline-collector] ${m}`)))(msg); }
 
   private async freshAggregator() {
     this.agg = new Aggregator({ pseudonyms: await loadPseudonymizer(this.store), ignore: this.o.ignore });

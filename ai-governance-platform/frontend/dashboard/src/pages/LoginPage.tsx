@@ -81,7 +81,7 @@ export function LoginPage() {
           <div className="w-14 h-14 rounded-2xl bg-gradient-to-br from-brand-500 to-brand-700 flex items-center justify-center mx-auto mb-5 shadow-glow-brand">
             <Shield className="w-7 h-7 text-white" />
           </div>
-          <h1 className={clsx('text-2xl font-bold tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>Aegis AI</h1>
+          <h1 className={clsx('text-2xl font-bold tracking-tight', isDark ? 'text-white' : 'text-gray-900')}>Probaline</h1>
           <p className={clsx('text-sm mt-1.5', isDark ? 'text-slate-500' : 'text-gray-400')}>AI Governance Platform</p>
         </div>
 

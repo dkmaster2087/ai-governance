@@ -36,9 +36,9 @@ describe('ReportingAgent', () => {
 
   describe('configure', () => {
     it('updates config fields', () => {
-      agent.configure({ licenseKey: 'AEGIS-TEST-1234', tenantId: 'tenant_test', enabled: true });
+      agent.configure({ licenseKey: 'PBL-TEST-1234', tenantId: 'tenant_test', enabled: true });
       const config = agent.getConfig();
-      expect(config.licenseKey).toBe('AEGIS-TEST-1234');
+      expect(config.licenseKey).toBe('PBL-TEST-1234');
       expect(config.tenantId).toBe('tenant_test');
       expect(config.enabled).toBe(true);
     });
@@ -51,10 +51,10 @@ describe('ReportingAgent', () => {
     });
 
     it('preserves unmodified fields', () => {
-      agent.configure({ licenseKey: 'AEGIS-X' });
+      agent.configure({ licenseKey: 'PBL-X' });
       agent.configure({ tenantId: 'tenant_y' });
       const config = agent.getConfig();
-      expect(config.licenseKey).toBe('AEGIS-X');
+      expect(config.licenseKey).toBe('PBL-X');
       expect(config.tenantId).toBe('tenant_y');
     });
   });
@@ -80,7 +80,7 @@ describe('ReportingAgent', () => {
     });
 
     it('does not start when disabled', () => {
-      agent.configure({ enabled: false, licenseKey: 'AEGIS-TEST' });
+      agent.configure({ enabled: false, licenseKey: 'PBL-TEST' });
       agent.start();
       // No error thrown
     });

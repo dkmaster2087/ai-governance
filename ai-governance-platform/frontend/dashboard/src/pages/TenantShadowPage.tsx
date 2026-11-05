@@ -5,7 +5,7 @@ import { useAuth } from '../lib/auth';
 import { RangeKey, RANGE_LABELS } from '../lib/gateway-api';
 import { fetchShadowPolicy, fetchShadowSummary, GuidanceLink, ShadowAiSummary, updateShadowPolicy } from '../lib/shadow-api';
 import { errorMessage } from '../lib/rules-api';
-import { Button, Note, Panel, SectionLabel, Segmented, formatCount } from '../components/aegis/primitives';
+import { Button, Note, Panel, SectionLabel, Segmented, formatCount } from '../components/kit/primitives';
 
 const RANGE_OPTIONS = (Object.keys(RANGE_LABELS) as RangeKey[]).map((value) => ({ value, label: RANGE_LABELS[value].button }));
 const MODE_OPTIONS = [
@@ -155,7 +155,7 @@ export function ShadowAiPage() {
               <>{formatCount(people)} {people === 1 ? 'person' : 'people'} used AI tools that go <span className="text-stop">around</span> the gateway {inline}.</>
             )}
           </h1>
-          <p className="m-0 mt-2 text-ink-muted text-base">Nothing typed into these tools was checked by Aegis. Decide tool by tool.</p>
+          <p className="m-0 mt-2 text-ink-muted text-base">Nothing typed into these tools was checked by Probaline. Decide tool by tool.</p>
         </div>
         <Segmented label="Time range" options={RANGE_OPTIONS} value={range} onChange={setRange} />
       </div>
@@ -192,7 +192,7 @@ export function ShadowAiPage() {
       {data && data.tools.length === 0 && (
         <Panel className="px-6">
           <Note title={`No visits to AI tools outside the gateway ${inline}.`}>
-            Visits appear here once the Aegis browser extension is installed and reporting from your company’s browsers.
+            Visits appear here once the Probaline browser extension is installed and reporting from your company’s browsers.
           </Note>
         </Panel>
       )}
@@ -228,7 +228,7 @@ export function ShadowAiPage() {
 
       {data && (
         <p className="m-0 text-xs text-ink-muted">
-          Only browsers with the Aegis extension are counted. A person is their work email when your IT team turns that on, otherwise one browser. Visits are kept for {data.retentionDays} days, so trends need the previous period to fall inside that.
+          Only browsers with the Probaline extension are counted. A person is their work email when your IT team turns that on, otherwise one browser. Visits are kept for {data.retentionDays} days, so trends need the previous period to fall inside that.
         </p>
       )}
     </div>

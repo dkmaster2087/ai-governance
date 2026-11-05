@@ -121,7 +121,7 @@ describe('evidence routes', () => {
     send.mockResolvedValue({ Item: log({}) });
     const res = await (await app()).inject({ method: 'GET', url: '/v1/evidence/req-1/export' });
     expect(res.statusCode).toBe(200);
-    expect(res.headers['content-disposition']).toBe('attachment; filename="aegis-evidence-req-1.json"');
+    expect(res.headers['content-disposition']).toBe('attachment; filename="probaline-evidence-req-1.json"');
     expect(JSON.parse(res.body).record.requestId).toBe('req-1');
   });
 });

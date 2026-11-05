@@ -1,14 +1,14 @@
 {
   "name": "@ai-governance/collector",
   "version": "0.1.0",
-  "description": "Aegis collector: finds AI usage in a customer's own logs and builds an assessment report locally. Read-only; installed on its own.",
+  "description": "Probaline collector: finds AI usage in a customer's own logs and builds an assessment report locally. Read-only; installed on its own.",
   "private": true,
-  "bin": { "aegis-collector": "dist/cli.js" },
+  "bin": { "probaline-collector": "dist/cli.js" },
   "scripts": {
     "build": "tsc",
-    "bundle:lambda": "esbuild src/aws/lambda.ts --bundle --platform=node --target=node20 --outfile=dist-lambda/index.js && cd dist-lambda && rm -f ../aegis-collector-aws.zip && zip -q ../aegis-collector-aws.zip index.js",
+    "bundle:lambda": "esbuild src/aws/lambda.ts --bundle --platform=node --target=node20 --outfile=dist-lambda/index.js && cd dist-lambda && rm -f ../probaline-collector-aws.zip && zip -q ../probaline-collector-aws.zip index.js",
     "test": "jest --runInBand",
-    "clean": "rm -rf dist dist-lambda aegis-collector-aws.zip"
+    "clean": "rm -rf dist dist-lambda probaline-collector-aws.zip"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0"

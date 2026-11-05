@@ -1,6 +1,6 @@
 {
   "manifest_version": 3,
-  "name": "Aegis AI — Shadow AI Guard",
+  "name": "Probaline — Shadow AI Guard",
   "version": "1.1.0",
   "description": "Tells your company which AI tools are used in this browser and steers you to the approved ones. Managed by your IT team.",
   "permissions": [

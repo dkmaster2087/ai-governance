@@ -1,10 +1,10 @@
-# Aegis — architecture
+# Probaline — architecture
 
 ## Request path (apps)
 
 ```
 App ──POST /v1/chat/completions──▶ Gateway (:3000)
-   Authorization: Bearer <Aegis key>   │
+   Authorization: Bearer <Probaline key>   │
                                        ├─ 1. Auth: key → tenant (from the key record, never from headers),
                                        │       scope check, tenant not suspended
                                        ├─ 2. Policy engine (:3001) evaluates rules on the ORIGINAL prompt
@@ -32,7 +32,7 @@ App ──POST /v1/chat/completions──▶ Gateway (:3000)
 
 ```
 IDE ──▶ corporate proxy ──▶ Gateway /v1/proxy/:provider/*  ──▶ provider
-         adds X-Aegis-Key      checks policy and secrets on       (developer's own key, untouched)
+         adds X-Probaline-Key      checks policy and secrets on       (developer's own key, untouched)
                                extracted text; in redact mode the
                                body's strings are redacted first
 ```

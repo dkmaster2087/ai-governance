@@ -1,7 +1,7 @@
 /**
- * Aegis Shadow AI Guard: service worker.
+ * Probaline Shadow AI Guard: service worker.
  * Records visits to AI tools (domain only), blocks the tools the company decided to block, and reports to
- * the Aegis gateway. Settings come from Chrome policy (IT), then the gateway, then the popup (testing only).
+ * the Probaline gateway. Settings come from Chrome policy (IT), then the gateway, then the popup (testing only).
  */
 import {
   BATCH, MAX_QUEUE, blockingRules, effectiveConfig, isManaged, pruneSeen, sighting,
@@ -84,7 +84,7 @@ async function syncConfig() {
     await chrome.storage.local.set({ remote, lastSync: s.lastSync });
     await applyRules();
   } catch (err) {
-    console.warn('[Aegis] Settings sync failed; keeping the last ones', err.message);
+    console.warn('[Probaline] Settings sync failed; keeping the last ones', err.message);
   }
 }
 
@@ -99,7 +99,7 @@ async function report() {
     s.lastReport = new Date().toISOString();
     await chrome.storage.local.set({ queue: s.queue, lastReport: s.lastReport });
   } catch (err) {
-    console.warn('[Aegis] Report failed; will retry', err.message);
+    console.warn('[Probaline] Report failed; will retry', err.message);
   }
 }
 

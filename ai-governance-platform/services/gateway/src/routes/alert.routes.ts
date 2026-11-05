@@ -52,7 +52,7 @@ export async function alertRoutes(app: FastifyInstance) {
     const body = request.body as any;
     const event = await alerting.trigger(request.tenantId, body.type || 'budget_threshold', {
       title: body.title || 'Test Alert',
-      message: body.message || 'This is a test alert from Aegis AI',
+      message: body.message || 'This is a test alert from Probaline',
       severity: body.severity || 'info',
       metadata: { test: true },
     });

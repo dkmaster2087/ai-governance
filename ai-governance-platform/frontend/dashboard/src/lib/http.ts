@@ -27,7 +27,7 @@ export function sessionTenantId(): string {
 }
 
 /** Fired when the backend rejects our credentials, so the app can send the user back to sign-in. */
-export const UNAUTHORIZED_EVENT = 'aegis:unauthorized';
+export const UNAUTHORIZED_EVENT = 'probaline:unauthorized';
 
 /**
  * An axios client that attaches the signed-in user's credentials to every request.

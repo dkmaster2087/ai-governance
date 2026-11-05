@@ -4,10 +4,10 @@ import { requireAccess, requireTenantParam, PLATFORM_ADMIN, TENANT_ADMIN, TENANT
 import { ApiKey, hashApiKey } from '../repositories/api-key.repository';
 import { getSecurityConfig } from '../config/security';
 
-const ACME_KEY = 'aegis_acme_chat';
-const ACME_INGEST_KEY = 'aegis_acme_ingest';
-const REVOKED_KEY = 'aegis_acme_revoked';
-const EXPIRED_KEY = 'aegis_acme_expired';
+const ACME_KEY = 'pbl_acme_chat';
+const ACME_INGEST_KEY = 'pbl_acme_ingest';
+const REVOKED_KEY = 'pbl_acme_revoked';
+const EXPIRED_KEY = 'pbl_acme_expired';
 
 function key(raw: string, overrides: Partial<ApiKey> = {}): ApiKey {
   return {
@@ -33,7 +33,7 @@ const USERS: Record<string, UserTokenClaims> = {
   'no.role.jwt': { sub: 'u5', 'custom:tenantId': 'tenant_acme' },
 };
 
-const SUSPENDED_KEY = 'aegis_gone_chat';
+const SUSPENDED_KEY = 'pbl_gone_chat';
 KEYS.set(hashApiKey(SUSPENDED_KEY), key(SUSPENDED_KEY, { tenantId: 'tenant_gone' }));
 USERS['gone.admin.jwt'] = { sub: 'u6', 'custom:tenantId': 'tenant_gone', 'custom:role': 'tenant_admin' };
 
@@ -84,7 +84,7 @@ describe('gateway auth', () => {
     });
 
     it('rejects unknown keys (no dev fall-through)', async () => {
-      const res = await app.inject({ method: 'POST', url: '/v1/chat/completions', headers: bearer('aegis_made_up', { 'x-tenant-id': 'tenant_acme' }) });
+      const res = await app.inject({ method: 'POST', url: '/v1/chat/completions', headers: bearer('pbl_made_up', { 'x-tenant-id': 'tenant_acme' }) });
       expect(res.statusCode).toBe(401);
       expect(res.json().code).toBe('INVALID_KEY');
     });
@@ -106,7 +106,7 @@ describe('gateway auth', () => {
     });
 
     it('stops accepting a cached key as soon as it is revoked', async () => {
-      const raw = 'aegis_acme_soon_revoked';
+      const raw = 'pbl_acme_soon_revoked';
       KEYS.set(hashApiKey(raw), key(raw));
       expect((await app.inject({ method: 'POST', url: '/v1/chat/completions', headers: bearer(raw) })).statusCode).toBe(200);
       KEYS.set(hashApiKey(raw), key(raw, { status: 'revoked' }));
@@ -188,16 +188,16 @@ describe('gateway auth', () => {
   });
 
   describe('proxy mode', () => {
-    it('authenticates with x-aegis-key and leaves Authorization for the provider', async () => {
+    it('authenticates with x-probaline-key and leaves Authorization for the provider', async () => {
       const res = await app.inject({
         method: 'POST', url: '/v1/proxy/openai/v1/chat/completions',
-        headers: { 'x-aegis-key': ACME_KEY, authorization: 'Bearer sk-provider-key' },
+        headers: { 'x-probaline-key': ACME_KEY, authorization: 'Bearer sk-provider-key' },
       });
       expect(res.statusCode).toBe(200);
       expect(res.json()).toEqual({ tenantId: 'tenant_acme', forwardedAuth: 'Bearer sk-provider-key' });
     });
 
-    it('rejects proxy calls without an Aegis key', async () => {
+    it('rejects proxy calls without a Probaline key', async () => {
       const res = await app.inject({
         method: 'POST', url: '/v1/proxy/openai/v1/chat/completions',
         headers: { authorization: `Bearer ${ACME_KEY}` },

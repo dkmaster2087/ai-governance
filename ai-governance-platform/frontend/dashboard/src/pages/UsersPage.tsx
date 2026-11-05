@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { useAuth, getTenantUsers, registerTenantAccount, deleteUserAccount, usersManagedExternally, UserRole, AuthUser } from '../lib/auth';
-import { Button, Note, Panel, SectionLabel } from '../components/aegis/primitives';
+import { Button, Note, Panel, SectionLabel } from '../components/kit/primitives';
 
 const field = 'w-full min-h-[42px] px-3 border border-line-strong rounded-lg bg-white';
 

@@ -139,4 +139,4 @@ jobs:
 
       # Build only, to prove each Dockerfile works; pushing happens in deploy.yml.
       - name: Build image
-        run: docker build -f ${{ matrix.dockerfile }} -t aegis-${{ matrix.name }}:ci ${{ matrix.context }}
+        run: docker build -f ${{ matrix.dockerfile }} -t probaline-${{ matrix.name }}:ci ${{ matrix.context }}

@@ -1,6 +1,6 @@
 AWSTemplateFormatVersion: '2010-09-09'
 Description: >-
-  Aegis collector (AWS). Reads the log buckets you name, keeps only lines that match known AI services as daily
+  Probaline collector (AWS). Reads the log buckets you name, keeps only lines that match known AI services as daily
   counts, and builds an AI usage report in a results bucket in this account. Read-only on your logs; sends
   nothing out of this account.
 
@@ -18,7 +18,7 @@ Parameters:
     Type: String
     Default: ''
     Description: >-
-      Callers to leave out of the report, comma separated, e.g. role:aegis-gateway-task for the Aegis gateway itself.
+      Callers to leave out of the report, comma separated, e.g. role:probaline-gateway-task for the Probaline gateway itself.
   Company:
     Type: String
     Default: ''
@@ -30,10 +30,10 @@ Parameters:
     MaxValue: 90
   CodeBucket:
     Type: String
-    Description: Bucket holding the collector code (aegis-collector-aws.zip).
+    Description: Bucket holding the collector code (probaline-collector-aws.zip).
   CodeKey:
     Type: String
-    Default: aegis-collector-aws.zip
+    Default: probaline-collector-aws.zip
 
 Conditions:
   HasKms: !Not [!Equals [!Join ['', !Ref LogKmsKeyArns], '']]
@@ -122,7 +122,7 @@ Resources:
     DependsOn: CollectorLogs
     Properties:
       FunctionName: !Sub '${AWS::StackName}-collector'
-      Description: Aegis collector. Reads log files, keeps AI matches as daily counts, builds the report.
+      Description: Probaline collector. Reads log files, keeps AI matches as daily counts, builds the report.
       Runtime: nodejs20.x
       Handler: index.handler
       Architectures: [arm64]

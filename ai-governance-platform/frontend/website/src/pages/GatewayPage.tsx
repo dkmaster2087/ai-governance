@@ -66,7 +66,7 @@ export function GatewayPage() {
         title="The home screen is your traffic, drawn as it flows."
         sample={
           <Panel className="p-6">
-            <p className="m-0 text-[22px] leading-snug font-bold tracking-[-0.015em]">In the last 7 days, Aegis stopped <span className="text-stop">17</span> risky AI requests and cleaned 31 more before they left Demo Corp.</p>
+            <p className="m-0 text-[22px] leading-snug font-bold tracking-[-0.015em]">In the last 7 days, Probaline stopped <span className="text-stop">17</span> risky AI requests and cleaned 31 more before they left Demo Corp.</p>
           </Panel>
         }
       >

@@ -5,7 +5,7 @@ const logger = createLogger('reporting-agent:core');
 
 export interface ReportingConfig {
   licenseKey: string;
-  saasEndpoint: string;       // e.g., https://platform.aegis-ai.com/api/v1/reporting
+  saasEndpoint: string;       // e.g., https://platform.probaline.com/api/v1/reporting
   tenantId: string;
   reportingInterval: number;  // seconds between reports (default 300 = 5 min)
   enabled: boolean;

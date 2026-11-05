@@ -53,9 +53,9 @@ describe('aggregation and privacy', () => {
     expect(new Set([p.code('ACME\\Jane.Doe'), p.code('jane.doe'), p.code('jane.doe@acme.com')]).size).toBe(1);
   });
 
-  it('leaves out callers the customer lists, such as the Aegis gateway itself', () => {
-    const agg = new Aggregator({ pseudonyms: new Pseudonymizer(KEY), ignore: ['role:aegis-gateway-task'] });
-    agg.add({ time: '2026-10-20T10:00:00Z', service: 'aws-bedrock', who: { type: 'role', value: 'aegis-gateway-task' }, source: 'aws_cloudtrail' });
+  it('leaves out callers the customer lists, such as the Probaline gateway itself', () => {
+    const agg = new Aggregator({ pseudonyms: new Pseudonymizer(KEY), ignore: ['role:probaline-gateway-task'] });
+    agg.add({ time: '2026-10-20T10:00:00Z', service: 'aws-bedrock', who: { type: 'role', value: 'probaline-gateway-task' }, source: 'aws_cloudtrail' });
     expect(agg.sightings()).toEqual([]);
   });
 
@@ -138,7 +138,7 @@ describe('findings and recommendations', () => {
 
   it('recommends routing direct callers first, then the cloud AI service, then blocking risky tools', () => {
     expect(f.recommendations.map((r) => r.priority)).toEqual(['high', 'high', 'medium', 'medium']);
-    expect(f.recommendations[0].title).toBe('Route 2 servers and apps that call model APIs directly through Aegis');
+    expect(f.recommendations[0].title).toBe('Route 2 servers and apps that call model APIs directly through Probaline');
     expect(f.recommendations[0].action).toContain('Routing all 2 puts all direct model-API traffic under policy.');
     expect(f.recommendations[1].title).toBe('Put Amazon Bedrock behind the gateway');
     expect(f.recommendations[2].items[0]).toMatch(/^DeepSeek API/);
@@ -162,7 +162,7 @@ describe('findings and recommendations', () => {
 
 describe('end to end on files', () => {
   it('collects twice without double counting, keeps names private, and builds the report', async () => {
-    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aegis-collector-'));
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'probaline-collector-'));
     const store = new FileStore(dir);
     const lines = [dns('api.openai.com.', '2026-10-28T10:00:00Z'), dns('api.openai.com.', '2026-10-28T11:00:00Z'), dns('www.google.com.', '2026-10-28T11:00:00Z')].join('\n');
     await processInput(store, 'file-1', parseResolverDns(lines));

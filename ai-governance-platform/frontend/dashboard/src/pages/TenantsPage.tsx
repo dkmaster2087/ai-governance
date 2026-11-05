@@ -3,8 +3,8 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ago, fetchPlatformUsage, listTenants, Tenant } from '../lib/platform-api';
 import { usersManagedExternally } from '../lib/auth';
-import { Button, ButtonLink, Note, Panel, SectionLabel, formatCount } from '../components/aegis/primitives';
-import { PLAN_LABEL, RUNS_LABEL, StatusPill, TenantForm } from '../components/aegis/platform';
+import { Button, ButtonLink, Note, Panel, SectionLabel, formatCount } from '../components/kit/primitives';
+import { PLAN_LABEL, RUNS_LABEL, StatusPill, TenantForm } from '../components/kit/platform';
 
 /** What to do after a tenant exists: give their admin a way in, and a license. */
 export function NextSteps({ tenant, onClose }: { tenant: Tenant; onClose: () => void }) {

@@ -34,7 +34,7 @@ const chatTools = [
 const noise = ['s3.us-east-1.amazonaws.com', 'sts.amazonaws.com', 'registry.npmjs.org', 'api.github.com', 'www.google.com'];
 const roles = [
   { identity: { type: 'AssumedRole', arn: `arn:aws:sts::${ACCOUNT}:assumed-role/claims-summarizer/i-0a1b2c3d4e5f60007`, sessionContext: { sessionIssuer: { userName: 'claims-summarizer', type: 'Role' } } }, perDay: 80 },
-  { identity: { type: 'AssumedRole', arn: `arn:aws:sts::${ACCOUNT}:assumed-role/aegis-gateway-task/abc`, sessionContext: { sessionIssuer: { userName: 'aegis-gateway-task', type: 'Role' } } }, perDay: 200 },
+  { identity: { type: 'AssumedRole', arn: `arn:aws:sts::${ACCOUNT}:assumed-role/probaline-gateway-task/abc`, sessionContext: { sessionIssuer: { userName: 'probaline-gateway-task', type: 'Role' } } }, perDay: 200 },
   { identity: { type: 'AssumedRole', arn: `arn:aws:sts::${ACCOUNT}:assumed-role/AWSReservedSSO_DataScience_1a2b/priya.raman@acme.example`, sessionContext: { sessionIssuer: { userName: 'AWSReservedSSO_DataScience_1a2b', type: 'Role' } } }, perDay: 15 },
   { identity: { type: 'IAMUser', userName: 'legacy-batch-user', arn: `arn:aws:iam::${ACCOUNT}:user/legacy-batch-user` }, perDay: 5 },
 ];

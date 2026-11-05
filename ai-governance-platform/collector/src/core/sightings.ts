@@ -71,7 +71,7 @@ function kindFor(service: AiService): Kind {
 
 export interface AggregatorOptions {
   pseudonyms: Pseudonymizer;
-  /** Actors to skip, as `type:value` (e.g. `role:aegis-gateway-task`): Aegis itself and other known-good callers. */
+  /** Actors to skip, as `type:value` (e.g. `role:probaline-gateway-task`): Probaline itself and other known-good callers. */
   ignore?: string[];
 }
 

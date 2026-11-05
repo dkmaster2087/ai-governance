@@ -4,7 +4,7 @@ export function AboutPage() {
   return (
     <Container>
       <PageHeader eyebrow="About" title="We build the control point for AI at work.">
-        People will use AI with or without permission. Aegis gives security teams one place where every AI request is checked, every
+        People will use AI with or without permission. Probaline gives security teams one place where every AI request is checked, every
         decision is recorded, and the rules are written in plain language.
       </PageHeader>
       <div className="pb-16 max-w-[760px] flex flex-col gap-4 text-[17px] leading-relaxed">

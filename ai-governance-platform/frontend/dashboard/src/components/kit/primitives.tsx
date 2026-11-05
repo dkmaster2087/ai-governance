@@ -1,5 +1,5 @@
 /**
- * Core building blocks for the Aegis UI (direction I): light, ink navy, red only for "stopped".
+ * Core building blocks for the Probaline UI (direction I): light, ink navy, red only for "stopped".
  * Keep pages composed from these so the look stays consistent.
  */
 import { ButtonHTMLAttributes, ReactNode } from 'react';

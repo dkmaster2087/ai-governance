@@ -1,7 +1,7 @@
 import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { fetchHealth } from '../lib/platform-api';
-import { Button, Panel, SectionLabel } from '../components/aegis/primitives';
+import { Button, Panel, SectionLabel } from '../components/kit/primitives';
 
 const NAMES: Record<string, { label: string; role: string }> = {
   dynamodb: { label: 'Database (DynamoDB)', role: 'Tenants, keys, rules and evidence' },

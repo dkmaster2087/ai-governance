@@ -27,11 +27,11 @@ const baseModel = {
 describe('ProviderKeyStore', () => {
   it('stores keys per tenant and model, and caches reads', async () => {
     const backend = fakeBackend();
-    const store = new ProviderKeyStore(backend, 60_000, 'aegis/test/provider-keys');
+    const store = new ProviderKeyStore(backend, 60_000, 'probaline/test/provider-keys');
     const arn = await store.save('tenant_acme', 'm1', 'sk-secret');
-    expect(arn).toBe('arn:aegis/test/provider-keys/tenant_acme/m1');
+    expect(arn).toBe('arn:probaline/test/provider-keys/tenant_acme/m1');
 
-    const fresh = new ProviderKeyStore(backend, 60_000, 'aegis/test/provider-keys');
+    const fresh = new ProviderKeyStore(backend, 60_000, 'probaline/test/provider-keys');
     expect(await fresh.resolve({ apiKeySecretArn: arn })).toBe('sk-secret');
     expect(await fresh.resolve({ apiKeySecretArn: arn })).toBe('sk-secret');
     expect(backend.gets).toBe(1);

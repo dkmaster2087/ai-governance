@@ -25,7 +25,7 @@ async function appAs(role: string, home = 'tenant_acme') {
 }
 
 const license = (over: object = {}) => ({
-  tenantId: 'tenant_acme', keyId: 'lic1', keyHash: 'secret-hash', keyPrefix: 'aegis_acme_ab...', name: 'License',
+  tenantId: 'tenant_acme', keyId: 'lic1', keyHash: 'secret-hash', keyPrefix: 'pbl_acme_ab...', name: 'License',
   scopes: ['reporting:ingest'], status: 'active', rateLimit: 60, createdAt: '2026-10-01T00:00:00Z', expiresAt: '2099-01-01T00:00:00Z',
   createdBy: 'p', license: { plan: 'enterprise', type: 'onprem', maxUsers: 200, reportingConfig: { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: false } },
   ...over,
@@ -59,7 +59,7 @@ describe('licenses', () => {
       method: 'POST', url: '/v1/tenants/tenant_acme/licenses', payload: { plan: 'starter', type: 'cloud', maxUsers: 10, validityDays: 30 },
     });
     expect(res.statusCode).toBe(201);
-    expect(res.json().licenseKey).toMatch(/^aegis_acme_/);
+    expect(res.json().licenseKey).toMatch(/^pbl_acme_/);
     expect(keys.create.mock.calls[0][0]).toMatchObject({ scopes: ['reporting:ingest'], license: { plan: 'starter', type: 'cloud', maxUsers: 10 } });
   });
 

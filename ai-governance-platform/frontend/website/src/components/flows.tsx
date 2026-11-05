@@ -58,7 +58,7 @@ export function CollectorFlow() {
     <figure className="m-0">
       <div className="overflow-x-auto">
         <svg viewBox="0 0 1000 560" className="w-full min-w-[760px] h-auto" role="img"
-          aria-label="Log lines from AWS (DNS, firewall, CloudTrail) and from the data centre (firewalls, proxies, DNS servers) flow into the Aegis collector inside your environment. It drops everything that isn't an AI service and passes AI matches on as daily counts to results in your own storage, which build the assessment report. Nothing goes to Aegis unless you share it.">
+          aria-label="Log lines from AWS (DNS, firewall, CloudTrail) and from the data centre (firewalls, proxies, DNS servers) flow into the Probaline collector inside your environment. It drops everything that isn't an AI service and passes AI matches on as daily counts to results in your own storage, which build the assessment report. Nothing goes to Probaline unless you share it.">
           <defs>
             {SOURCES.map((s, i) => {
               const sy = s.y + 29;
@@ -92,7 +92,7 @@ export function CollectorFlow() {
 
           {/* Collector */}
           <rect x="440" y={COLLECTOR_Y - 66} width="200" height="132" rx="14" fill={INK} />
-          <Label x={540} y={COLLECTOR_Y - 32} anchor="middle" fill="#fff" size={16} weight={700}>Aegis collector</Label>
+          <Label x={540} y={COLLECTOR_Y - 32} anchor="middle" fill="#fff" size={16} weight={700}>Probaline collector</Label>
           <Label x={540} y={COLLECTOR_Y - 10} anchor="middle" fill="#D5DCE8" size={12} weight={400}>read-only</Label>
           <Label x={540} y={COLLECTOR_Y + 14} anchor="middle" fill="#D5DCE8" size={12} weight={400}>keeps AI matches only</Label>
           <Label x={540} y={COLLECTOR_Y + 32} anchor="middle" fill="#D5DCE8" size={12} weight={400}>people become codes</Label>
@@ -106,12 +106,12 @@ export function CollectorFlow() {
           <Label x={768} y={316}>Assessment report</Label>
           <Label x={768} y={335} size={12} weight={400} fill={MUTED}>your team reads it first</Label>
 
-          {/* Outside: Aegis, only on the customer's say-so */}
+          {/* Outside: Probaline, only on the customer's say-so */}
           <path d="M866 350 L866 486" fill="none" stroke={GREY} strokeWidth="2" strokeDasharray="5 6" />
           <Label x={878} y={412} size={12} weight={400} fill={MUTED}>only if you</Label>
           <Label x={878} y={428} size={12} weight={400} fill={MUTED}>choose to share</Label>
           <rect x="752" y="486" width="228" height="52" rx="10" fill="#fff" stroke={GREY} strokeDasharray="5 5" />
-          <Label x={866} y={517} anchor="middle" fill={MUTED}>Aegis</Label>
+          <Label x={866} y={517} anchor="middle" fill={MUTED}>Probaline</Label>
 
           {/* Moving log lines: grey ones stop at the collector; ink ones are AI matches and go through. */}
           {SOURCES.map((_, i) => (
@@ -151,7 +151,7 @@ export function GatewayFlow() {
     <figure className="m-0">
       <div className="overflow-x-auto">
         <svg viewBox="0 0 1040 400" className="w-full min-w-[760px] h-auto" role="img"
-          aria-label="Requests from apps and IDEs enter the Aegis gateway and pass three checks in order. Requests that break a policy rule, or contain a secret such as an API key or private key, are stopped and never reach a provider. Requests with personal data have it removed and are then delivered. Everything else is delivered to AI providers such as Amazon Bedrock, OpenAI and Anthropic.">
+          aria-label="Requests from apps and IDEs enter the Probaline gateway and pass three checks in order. Requests that break a policy rule, or contain a secret such as an API key or private key, are stopped and never reach a provider. Requests with personal data have it removed and are then delivered. Everything else is delivered to AI providers such as Amazon Bedrock, OpenAI and Anthropic.">
           <defs>
             {APPS.map((a, i) => {
               const ay = a.y + 26;
@@ -179,7 +179,7 @@ export function GatewayFlow() {
 
           {/* The gateway */}
           <rect x="370" y={LANE_Y - 92} width="460" height="184" rx="16" fill="#F6F7F9" stroke={INK} strokeWidth="2" />
-          <Label x={386} y={LANE_Y - 70} size={12} weight={700} fill={MUTED}>AEGIS GATEWAY</Label>
+          <Label x={386} y={LANE_Y - 70} size={12} weight={700} fill={MUTED}>PROBALINE GATEWAY</Label>
           <line x1="370" y1={LANE_Y} x2="830" y2={LANE_Y} stroke={LINE} strokeWidth="2" />
           {checks.map((c) => (
             <g key={c.name}>

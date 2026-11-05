@@ -2,8 +2,8 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { Days, fetchPlatformUsage, listTenants, money } from '../lib/platform-api';
-import { Note, Panel, SectionLabel, Segmented, formatCount } from '../components/aegis/primitives';
-import { DayBars } from '../components/aegis/platform';
+import { Note, Panel, SectionLabel, Segmented, formatCount } from '../components/kit/primitives';
+import { DayBars } from '../components/kit/platform';
 
 const PERIODS: Array<{ value: '7' | '30' | '90'; label: string }> = [
   { value: '7', label: '7 days' }, { value: '30', label: '30 days' }, { value: '90', label: '90 days' },

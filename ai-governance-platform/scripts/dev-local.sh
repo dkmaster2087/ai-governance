@@ -30,7 +30,7 @@ case "${1:-start}" in
   start)
     if ! docker ps --format '{{.Names}}' | grep -q '^ai-gov-localstack$'; then
       echo "Starting LocalStack..."
-      (cd "$ROOT" && docker compose -p aegis up -d localstack)
+      (cd "$ROOT" && docker compose -p probaline up -d localstack)
       until docker logs ai-gov-localstack 2>&1 | grep -q "LocalStack init complete"; do sleep 1; done
     fi
     echo "Building shared packages..."

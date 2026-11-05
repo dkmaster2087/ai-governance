@@ -10,7 +10,7 @@ interface ThemeContextValue {
 
 const ThemeContext = createContext<ThemeContextValue | null>(null);
 // v2: the redesign starts everyone on light; older stored 'dark' choices are ignored.
-const STORAGE_KEY = 'aegis_theme_v2';
+const STORAGE_KEY = 'probaline_theme_v2';
 
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [theme, setTheme] = useState<Theme>(() => {

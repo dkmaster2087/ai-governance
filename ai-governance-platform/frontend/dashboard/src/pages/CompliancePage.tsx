@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { assessFramework, disableFramework, enableFramework, fetchComplianceStatus } from '../lib/compliance-api';
 import { errorMessage } from '../lib/rules-api';
-import { Button, Note, Panel, Switch } from '../components/aegis/primitives';
+import { Button, Note, Panel, Switch } from '../components/kit/primitives';
 
 interface Control { controlId: string; title: string; severity: string; automatable: boolean }
 interface Pack {

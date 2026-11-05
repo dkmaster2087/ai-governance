@@ -3,11 +3,11 @@ import { MemoryRouter } from 'react-router-dom';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
 
-const createKey = vi.fn(async (..._args: unknown[]) => ({ keyId: 'k2', key: 'aegis_demo_secretvalue' }));
+const createKey = vi.fn(async (..._args: unknown[]) => ({ keyId: 'k2', key: 'pbl_demo_secretvalue' }));
 vi.mock('../lib/api-keys-api', () => ({
   listKeys: vi.fn(async () => [
-    { keyId: 'k1', keyPrefix: 'aegis_demo_ab...', name: 'support-bot', scopes: ['chat', 'models'], status: 'active', createdAt: '2026-10-01', createdBy: 'u' },
-    { keyId: 'k0', keyPrefix: 'aegis_demo_cd...', name: 'old-app', scopes: ['chat'], status: 'revoked', createdAt: '2026-09-01', createdBy: 'u' },
+    { keyId: 'k1', keyPrefix: 'pbl_demo_ab...', name: 'support-bot', scopes: ['chat', 'models'], status: 'active', createdAt: '2026-10-01', createdBy: 'u' },
+    { keyId: 'k0', keyPrefix: 'pbl_demo_cd...', name: 'old-app', scopes: ['chat'], status: 'revoked', createdAt: '2026-09-01', createdBy: 'u' },
   ]),
   createKey: (...a: unknown[]) => createKey(...a),
   revokeKey: vi.fn(), rotateKey: vi.fn(), deleteKey: vi.fn(),
@@ -32,7 +32,7 @@ describe('API keys page', () => {
     fireEvent.click(await screen.findByRole('button', { name: 'Create a key' }));
     fireEvent.change(screen.getByLabelText('Name'), { target: { value: 'billing-api' } });
     fireEvent.click(screen.getByRole('button', { name: 'Create key' }));
-    expect(await screen.findByText('aegis_demo_secretvalue')).toBeInTheDocument();
+    expect(await screen.findByText('pbl_demo_secretvalue')).toBeInTheDocument();
     await waitFor(() => expect(createKey.mock.calls[0][0]).toEqual({ name: 'billing-api', scopes: ['chat', 'models'] }));
   });
 });

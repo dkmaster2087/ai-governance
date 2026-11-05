@@ -18,7 +18,7 @@ describe('website', () => {
 
   it('has a logo that links home and a sticky navigation bar', () => {
     at('/pricing');
-    const logo = screen.getAllByRole('link', { name: 'Aegis home' })[0];
+    const logo = screen.getAllByRole('link', { name: 'Probaline home' })[0];
     expect(logo).toHaveAttribute('href', '/');
     expect(logo.closest('header')).toHaveClass('sticky');
   });
@@ -54,7 +54,7 @@ describe('website', () => {
     for (const coming of ['Microsoft Azure', 'Google Cloud', 'Zscaler', 'Netskope', 'Microsoft 365']) {
       expect(within(tile(coming)).getByText('Coming')).toBeInTheDocument();
     }
-    expect(screen.getByRole('img', { name: /Nothing goes to Aegis unless you share it/ })).toBeInTheDocument();
+    expect(screen.getByRole('img', { name: /Nothing goes to Probaline unless you share it/ })).toBeInTheDocument();
   });
 
   it('only advertises the three compliance packs that exist', () => {

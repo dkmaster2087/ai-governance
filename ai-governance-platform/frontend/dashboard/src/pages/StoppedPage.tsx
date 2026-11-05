@@ -3,7 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { fetchStopped, RangeKey, RANGE_LABELS, StoppedSummary } from '../lib/gateway-api';
-import { ArrowLink, ButtonLink, Note, Panel, Segmented, formatCount } from '../components/aegis/primitives';
+import { ArrowLink, ButtonLink, Note, Panel, Segmented, formatCount } from '../components/kit/primitives';
 
 const RANGE_OPTIONS = (Object.keys(RANGE_LABELS) as RangeKey[]).map((value) => ({ value, label: RANGE_LABELS[value].button }));
 

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../lib/auth';
 import { fetchCostDailyBreakdown, fetchCostSummary } from '../lib/api';
-import { Note, Panel, SectionLabel, Segmented } from '../components/aegis/primitives';
+import { Note, Panel, SectionLabel, Segmented } from '../components/kit/primitives';
 
 type Period = '7d' | '30d' | '90d';
 const PERIODS: Array<{ value: Period; label: string }> = [

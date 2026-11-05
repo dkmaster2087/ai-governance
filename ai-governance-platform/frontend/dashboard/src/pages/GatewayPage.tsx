@@ -3,8 +3,8 @@ import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { fetchGatewaySummary, GatewaySummary, RangeKey, RANGE_LABELS } from '../lib/gateway-api';
-import { Pipeline } from '../components/aegis/Pipeline';
-import { ArrowLink, ButtonLink, Note, Panel, SectionLabel, Segmented, formatCount } from '../components/aegis/primitives';
+import { Pipeline } from '../components/kit/Pipeline';
+import { ArrowLink, ButtonLink, Note, Panel, SectionLabel, Segmented, formatCount } from '../components/kit/primitives';
 
 const RANGE_OPTIONS = (Object.keys(RANGE_LABELS) as RangeKey[]).map((value) => ({ value, label: RANGE_LABELS[value].button }));
 
@@ -23,7 +23,7 @@ function Headline({ summary, range, tenantName }: { summary: GatewaySummary; ran
   }
   return (
     <>
-      {when}, Aegis stopped <span className="text-stop">{formatCount(summary.stopped)}</span> risky AI{' '}
+      {when}, Probaline stopped <span className="text-stop">{formatCount(summary.stopped)}</span> risky AI{' '}
       {summary.stopped === 1 ? 'request' : 'requests'}
       {summary.cleaned > 0 && <> and cleaned {formatCount(summary.cleaned)} more</>} before they left {tenantName}.
     </>
@@ -64,7 +64,7 @@ function decisionsFrom(summary: GatewaySummary): Decision[] {
       emphasis: 'around',
       tail: 'the gateway.',
       red: true,
-      detail: `${formatCount(summary.shadowAi.visits)} visits to AI tools that don’t pass through Aegis, seen by the browser extension.`,
+      detail: `${formatCount(summary.shadowAi.visits)} visits to AI tools that don’t pass through Probaline, seen by the browser extension.`,
       primary: { label: 'Review shadow AI', to: '/shadow-ai' },
     });
   }
@@ -139,7 +139,7 @@ export function GatewayPage() {
             <Panel className="px-7 py-6" aria-label="Get started">
               <SectionLabel>Connect your first app</SectionLabel>
               <p className="m-0 mt-3 max-w-[720px] text-[15px]">
-                Point an app at the gateway’s OpenAI-compatible endpoint with an Aegis API key, and its requests will appear here
+                Point an app at the gateway’s OpenAI-compatible endpoint with a Probaline API key, and its requests will appear here
                 as they pass through the checks.
               </p>
               {isAdmin && (

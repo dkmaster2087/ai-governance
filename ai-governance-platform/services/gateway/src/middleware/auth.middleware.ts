@@ -103,9 +103,9 @@ export function createAuthPlugin(deps: AuthDeps) {
       if (request.method === 'OPTIONS') return;
 
       // In proxy mode the client's Authorization header carries its own provider key and is forwarded
-      // untouched, so the Aegis credential travels in x-aegis-key (injected by the corporate proxy).
+      // untouched, so the Probaline credential travels in x-probaline-key (injected by the corporate proxy).
       const isProxyRoute = request.url.startsWith(PROXY_PREFIX);
-      const authHeader = isProxyRoute ? header(request, 'x-aegis-key') : header(request, 'authorization');
+      const authHeader = isProxyRoute ? header(request, 'x-probaline-key') : header(request, 'authorization');
       if (!authHeader) return deny(reply, 401, 'MISSING_AUTH', 'Unauthorized');
       const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
       if (!token) return deny(reply, 401, 'MISSING_AUTH', 'Unauthorized');

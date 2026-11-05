@@ -2,8 +2,8 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { ago, fetchPlatformUsage, listTenants, Tenant, TenantUsage } from '../lib/platform-api';
 import { fetchAllLicenses, formatDate, License } from '../lib/license-api';
-import { ArrowLink, Note, Panel, SectionLabel, formatCount } from '../components/aegis/primitives';
-import { DayBars, PLAN_LABEL, RUNS_LABEL, StatusPill } from '../components/aegis/platform';
+import { ArrowLink, Note, Panel, SectionLabel, formatCount } from '../components/kit/primitives';
+import { DayBars, PLAN_LABEL, RUNS_LABEL, StatusPill } from '../components/kit/platform';
 
 const DAY = 86_400_000;
 

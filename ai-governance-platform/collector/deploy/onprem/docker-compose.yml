@@ -1,8 +1,8 @@
 # Example: run the on-premises collector on any Linux host with Docker.
 # Point firewalls and proxies at this host's port 514 (UDP or TCP), and/or mount log folders under /logs.
 services:
-  aegis-collector:
-    image: aegis-collector:latest
+  probaline-collector:
+    image: probaline-collector:latest
     restart: unless-stopped
     ports:
       - "514:5514/udp"
@@ -10,12 +10,12 @@ services:
     environment:
       COMPANY: "Acme"
       WATCH_DIR: /logs
-      # Leave out the Aegis gateway and other known callers, comma separated, e.g. ip:10.0.0.10
+      # Leave out the Probaline gateway and other known callers, comma separated, e.g. ip:10.0.0.10
       IGNORE: ""
     volumes:
-      - aegis-data:/data
+      - probaline-data:/data
       # Read-only: DNS server and proxy log folders to follow.
       - /var/log/named:/logs/bind:ro
       - /var/log/squid:/logs/squid:ro
 volumes:
-  aegis-data:
+  probaline-data:

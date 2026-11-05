@@ -16,7 +16,7 @@ export function SecurityPage() {
   return (
     <Container>
       <PageHeader eyebrow="Security" title="A security product should be boring to attack.">
-        How Aegis protects the prompts that pass through it and the people who use it.
+        How Probaline protects the prompts that pass through it and the people who use it.
       </PageHeader>
       <div className="grid gap-x-12 gap-y-10 pb-16" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
         {ITEMS.map((i) => (

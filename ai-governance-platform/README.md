@@ -1,6 +1,6 @@
-# Aegis — the AI gateway for security teams
+# Probaline — the AI gateway for security teams
 
-Every AI request a company makes passes through one gateway. Aegis checks each prompt before it leaves:
+Every AI request a company makes passes through one gateway. Probaline checks each prompt before it leaves:
 it stops confidential material, removes personal data, shows AI use that goes around it, and keeps evidence
 for every decision.
 

@@ -1,4 +1,4 @@
-# Aegis Shadow AI Guard (Chrome extension, beta)
+# Probaline Shadow AI Guard (Chrome extension, beta)
 
 Tells the company which AI tools are opened in its browsers, blocks the ones it decided to block, and points
 people to the approved ones. Decisions are made on the dashboard's Shadow AI page.
@@ -16,8 +16,8 @@ Force-install it with Google Admin, Intune or Jamf and set these managed values 
 
 | Key | Value |
 |---|---|
-| `gatewayUrl` | The Aegis gateway, e.g. `https://gateway.example.com` |
-| `apiKey` | An Aegis API key with only the `shadow_ai:ingest` permission. The tenant comes from the key. |
+| `gatewayUrl` | The Probaline gateway, e.g. `https://gateway.example.com` |
+| `apiKey` | A Probaline API key with only the `shadow_ai:ingest` permission. The tenant comes from the key. |
 | `identifyUsers` | `true` to report the profile's work email; otherwise a random ID per browser |
 
 Policy values can't be changed by employees. Everything else (watch list, monitor or block for undecided tools,

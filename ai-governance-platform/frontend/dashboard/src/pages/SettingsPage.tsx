@@ -3,7 +3,7 @@ import { Link } from 'react-router-dom';
 import { useQuery } from '@tanstack/react-query';
 import { useAuth } from '../lib/auth';
 import { fetchMyTenant } from '../lib/tenant-api';
-import { Panel, SectionLabel } from '../components/aegis/primitives';
+import { Panel, SectionLabel } from '../components/kit/primitives';
 
 const gatewayUrl = import.meta.env.VITE_GATEWAY_PUBLIC_URL || `${window.location.origin}/api`;
 

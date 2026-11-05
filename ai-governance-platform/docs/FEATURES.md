@@ -1,6 +1,6 @@
-# Aegis — what it does
+# Probaline — what it does
 
-Aegis is a gateway between a company and AI providers. Every request passes the same checks, in the same
+Probaline is a gateway between a company and AI providers. Every request passes the same checks, in the same
 order, and every decision is recorded. This document describes what exists today; planned work is marked.
 
 ## The checks
@@ -22,11 +22,11 @@ to let requests through instead; those are flagged in their evidence record.
 
 ## How traffic arrives
 
-- **Apps:** OpenAI-compatible `POST /v1/chat/completions` with an Aegis API key. Providers: Amazon Bedrock and
+- **Apps:** OpenAI-compatible `POST /v1/chat/completions` with a Probaline API key. Providers: Amazon Bedrock and
   OpenAI-compatible APIs. `stream: true` returns OpenAI-format server-sent events; personal data in the answer is
   masked as it streams, and the case file is written when the stream ends (also if the app disconnects).
 - **IDEs (beta):** the corporate proxy sends provider calls to `/v1/proxy/{openai|anthropic|cohere|mistral}/…`
-  with an `X-Aegis-Key` header; the developer's own provider key passes through untouched.
+  with an `X-Probaline-Key` header; the developer's own provider key passes through untouched.
 - **Browsers (beta):** the Shadow AI Guard extension, deployed through Chrome policy (`gatewayUrl`, `apiKey`,
   optional `identifyUsers`), records which AI tools are opened (domain only, once per tool per ten minutes),
   blocks the ones the tenant blocked, and shows a block page with the tenant's message and approved tools.
@@ -48,7 +48,7 @@ to let requests through instead; those are flagged in their evidence record.
 
 Spend, License and Settings use the same design.
 
-### Platform admin (running Aegis for many customers)
+### Platform admin (running Probaline for many customers)
 
 | Page | What it shows |
 |---|---|

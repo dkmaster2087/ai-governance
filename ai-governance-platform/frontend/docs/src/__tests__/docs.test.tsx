@@ -21,6 +21,6 @@ describe('docs site', () => {
 
   it('documents the collectors', () => {
     at('/docs/collectors');
-    expect(screen.getByText(/Nothing is sent to Aegis/)).toBeInTheDocument();
+    expect(screen.getByText(/Nothing is sent to Probaline/)).toBeInTheDocument();
   });
 });

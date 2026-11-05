@@ -1,13 +1,13 @@
-# Aegis collector
+# Probaline collector
 
 Finds AI usage in logs a company already has and builds an AI usage assessment report, inside the company's
-own environment. It is separate from the Aegis gateway and needs nothing else installed. Plan and roadmap:
+own environment. It is separate from the Probaline gateway and needs nothing else installed. Plan and roadmap:
 [docs/ASSESSMENT.md](../docs/ASSESSMENT.md).
 
 **Built:** the shared core; the AWS collector (Route 53 Resolver DNS query logs, Network Firewall logs,
 CloudTrail for Amazon Bedrock and SageMaker); the on-premises collector (syslog from Palo Alto, Fortinet and any
 CEF source such as Check Point; Squid, BIND and Windows DNS log files). **Not built yet:** Zscaler/Netskope,
-Azure, Google Cloud, work apps, and sending results to an Aegis instance (`aegis` output).
+Azure, Google Cloud, work apps, and sending results to a Probaline instance (`probaline` output).
 
 ## What it keeps
 
@@ -38,11 +38,11 @@ private/report-with-names-*.html a copy with real names, only if built with --re
 function when a new log file lands, and a daily schedule that rebuilds the report. The function can read the
 log buckets you name and write only to its own bucket. It sends nothing out of the account.
 
-1. Build the code package: `npm run bundle:lambda -w collector` → `collector/aegis-collector-aws.zip`, and
+1. Build the code package: `npm run bundle:lambda -w collector` → `collector/probaline-collector-aws.zip`, and
    upload it to a bucket in the account.
 2. Turn on **Send notifications to Amazon EventBridge** for each log bucket.
-3. Deploy the template with the log bucket names, the code location, and in `Ignore` the Aegis gateway's own
-   role (for example `role:aegis-gateway-task`) so Aegis doesn't report on itself.
+3. Deploy the template with the log bucket names, the code location, and in `Ignore` the Probaline gateway's own
+   role (for example `role:probaline-gateway-task`) so Probaline doesn't report on itself.
 4. Read the logs already there: run the `Backfill` command from the stack outputs. It is safe to run again.
 5. The report is at `reports/latest.html` in the results bucket and is rebuilt daily.
 
@@ -58,7 +58,7 @@ Notes:
 One container receives syslog and follows log files. Build it and run it on any Linux host with Docker:
 
 ```bash
-docker build -f collector/deploy/onprem/Dockerfile -t aegis-collector collector
+docker build -f collector/deploy/onprem/Dockerfile -t probaline-collector collector
 docker compose -f collector/deploy/onprem/docker-compose.yml up -d
 ```
 

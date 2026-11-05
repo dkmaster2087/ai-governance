@@ -60,7 +60,7 @@ export class ProviderKeyStore {
   constructor(
     private backend: SecretBackend = new SecretsManagerBackend(),
     private cacheTtlMs = 5 * 60_000,
-    private prefix = process.env.PROVIDER_KEYS_SECRET_PREFIX || `aegis/${process.env.STAGE || 'dev'}/provider-keys`,
+    private prefix = process.env.PROVIDER_KEYS_SECRET_PREFIX || `probaline/${process.env.STAGE || 'dev'}/provider-keys`,
   ) {}
 
   secretName(tenantId: string, modelConfigId: string): string {

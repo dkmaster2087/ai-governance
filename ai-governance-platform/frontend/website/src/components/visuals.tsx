@@ -123,8 +123,8 @@ export function DeploymentPicture({ ours, theirs }: { ours: string[]; theirs: st
     </div>
   );
   return (
-    <div className="grid grid-cols-2 gap-2" aria-label={`Aegis runs: ${ours.join(', ') || 'nothing'}. You run: ${theirs.join(', ') || 'nothing'}.`}>
-      {zone('Aegis runs', ours, true)}
+    <div className="grid grid-cols-2 gap-2" aria-label={`Probaline runs: ${ours.join(', ') || 'nothing'}. You run: ${theirs.join(', ') || 'nothing'}.`}>
+      {zone('Probaline runs', ours, true)}
       {zone('You run', theirs, false)}
     </div>
   );

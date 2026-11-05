@@ -1,6 +1,6 @@
 import { render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
-import { Pipeline } from '../components/aegis/Pipeline';
+import { Pipeline } from '../components/kit/Pipeline';
 import type { GatewaySummary } from '../lib/gateway-api';
 
 const summary: GatewaySummary = {

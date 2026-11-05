@@ -18,7 +18,7 @@ export const PHASES = [
     n: 2,
     name: 'Protect',
     title: 'Route AI traffic through a gateway you control.',
-    body: 'Apps, developers’ IDEs and browsers reach AI through Aegis. Every request is checked before it leaves: confidential material and secrets are stopped, personal data is removed, and each decision is kept as evidence.',
+    body: 'Apps, developers’ IDEs and browsers reach AI through Probaline. Every request is checked before it leaves: confidential material and secrets are stopped, personal data is removed, and each decision is kept as evidence.',
     points: ['One address change per app', 'Stops, masks and records in real time', 'Streaming answers supported'],
     to: '/gateway',
     link: 'What the gateway does',
@@ -28,7 +28,7 @@ export const PHASES = [
     n: 3,
     name: 'Enforce and prove',
     title: 'Close the other paths, and show it’s working.',
-    body: 'Aegis writes the cloud and firewall rules that block AI services except through the gateway, and keeps measuring the share of AI traffic that goes through it, so you can show your board the number.',
+    body: 'Probaline writes the cloud and firewall rules that block AI services except through the gateway, and keeps measuring the share of AI traffic that goes through it, so you can show your board the number.',
     points: ['Rules start in report-only mode', 'Every path still open, with its fix', 'A trend from day one'],
     to: '/how-it-works#enforce',
     link: 'How enforcement works',
@@ -61,7 +61,7 @@ export function PhaseCards({ compact = false }: { compact?: boolean }) {
 /** A trimmed copy of the assessment report, with made-up numbers. */
 export function SampleReport({ className }: { className?: string }) {
   const recs = [
-    { pri: 'Do first', red: true, text: 'Route 6 servers that call model APIs directly through Aegis', detail: 'One address change per app puts all direct model-API traffic under policy.' },
+    { pri: 'Do first', red: true, text: 'Route 6 servers that call model APIs directly through Probaline', detail: 'One address change per app puts all direct model-API traffic under policy.' },
     { pri: 'Do first', red: true, text: 'Put Amazon Bedrock behind the gateway', detail: '3 identities call it directly, with no policy on their prompts.' },
     { pri: 'Next', red: false, text: 'Block 4 AI services with no business data terms on record', detail: 'DeepSeek, Grok, Otter.ai, DeepSeek API.' },
   ];

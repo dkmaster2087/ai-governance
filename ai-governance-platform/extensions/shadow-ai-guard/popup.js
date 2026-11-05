@@ -11,7 +11,7 @@ async function render() {
   const s = await chrome.runtime.sendMessage({ type: 'STATUS' });
   $('mode').textContent = s.mode === 'block' ? 'Blocking unapproved tools' : 'Watching';
   $('summary').textContent = !s.configured
-    ? 'Not connected to your company’s Aegis yet.'
+    ? 'Not connected to your company’s Probaline yet.'
     : s.mode === 'block'
       ? 'AI tools your company hasn’t approved are blocked in this browser.'
       : 'This browser tells your company which AI tools are opened. It doesn’t see what you type.';

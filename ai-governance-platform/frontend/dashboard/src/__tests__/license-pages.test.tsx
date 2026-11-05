@@ -5,7 +5,7 @@ import { vi } from 'vitest';
 import type { License } from '../lib/license-api';
 
 const license: License = {
-  licenseId: 'lic1', keyPrefix: 'aegis_acme_ab...', tenantId: 't', tenantName: 'Acme', status: 'active', issuedAt: '2026-10-01T00:00:00Z',
+  licenseId: 'lic1', keyPrefix: 'pbl_acme_ab...', tenantId: 't', tenantName: 'Acme', status: 'active', issuedAt: '2026-10-01T00:00:00Z',
   expiresAt: '2027-10-01T00:00:00Z', plan: 'enterprise', type: 'onprem', maxUsers: 200,
   reportingConfig: { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: false },
 };
@@ -28,7 +28,7 @@ describe('Tenant license page', () => {
     mine = license;
     renderPage();
     expect(await screen.findByText('enterprise plan')).toBeInTheDocument();
-    expect(screen.getByText('aegis_acme_ab...')).toBeInTheDocument();
+    expect(screen.getByText('pbl_acme_ab...')).toBeInTheDocument();
     expect(screen.getByText('In your own AWS account')).toBeInTheDocument();
   });
 

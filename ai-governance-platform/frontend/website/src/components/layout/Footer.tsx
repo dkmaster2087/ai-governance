@@ -22,7 +22,7 @@ export function Footer() {
           </nav>
         ))}
       </div>
-      <div className="max-w-[1200px] mx-auto px-5 sm:px-10 pb-8 text-xs text-ink-muted">© {new Date().getFullYear()} Aegis</div>
+      <div className="max-w-[1200px] mx-auto px-5 sm:px-10 pb-8 text-xs text-ink-muted">© {new Date().getFullYear()} Probaline</div>
     </footer>
   );
 }

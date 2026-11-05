@@ -7,7 +7,7 @@ import {
   PROVIDER_LABEL, removeModel, saveModel, testModel,
 } from '../lib/models-api';
 import { errorMessage } from '../lib/rules-api';
-import { Button, Note, Panel, SectionLabel, Segmented, Switch } from '../components/aegis/primitives';
+import { Button, Note, Panel, SectionLabel, Segmented, Switch } from '../components/kit/primitives';
 
 const field = 'w-full min-h-[42px] px-3 border border-line-strong rounded-lg bg-white';
 const price = (n: number) => (n ? `$${n}` : '—');

@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { ApiKeySummary, createKey, deleteKey, listKeys, revokeKey, rotateKey, Scope } from '../lib/api-keys-api';
 import { errorMessage } from '../lib/rules-api';
-import { Button, Note, Panel, SectionLabel } from '../components/aegis/primitives';
+import { Button, Note, Panel, SectionLabel } from '../components/kit/primitives';
 
 const SCOPES: Array<{ value: Scope; label: string; hint: string }> = [
   { value: 'chat', label: 'Send AI requests', hint: 'For apps and the IDE proxy' },

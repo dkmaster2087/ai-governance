@@ -4,7 +4,7 @@ import { GatewayService } from '../services/gateway.service';
 import { requireAccess } from '../auth/guards';
 import { NormalizedAIResponse } from '@ai-governance/types';
 
-/** The OpenAI chat.completion shape, so apps can use the OpenAI SDKs unchanged. `id` is the Aegis request ID. */
+/** The OpenAI chat.completion shape, so apps can use the OpenAI SDKs unchanged. `id` is the Probaline request ID. */
 export function toOpenAIResponse(r: NormalizedAIResponse) {
   return {
     id: r.requestId,
@@ -68,7 +68,7 @@ export async function aiRoutes(app: FastifyInstance) {
       'cache-control': 'no-cache',
       connection: 'keep-alive',
       'x-accel-buffering': 'no',
-      'x-aegis-request-id': requestId,
+      'x-probaline-request-id': requestId,
     });
     const base = { id: requestId, object: 'chat.completion.chunk', created: Math.floor(Date.now() / 1000), model: body.model };
     const send = (data: unknown) => res.write(`data: ${JSON.stringify(data)}\n\n`);

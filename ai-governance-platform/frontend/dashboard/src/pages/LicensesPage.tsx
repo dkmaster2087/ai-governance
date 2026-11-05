@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import { fetchTenants } from '../lib/tenant-api';
 import { fetchAllLicenses, formatDate, issueLicense, License, revokeLicense } from '../lib/license-api';
 import { errorMessage } from '../lib/rules-api';
-import { Button, Note, Panel, SectionLabel } from '../components/aegis/primitives';
+import { Button, Note, Panel, SectionLabel } from '../components/kit/primitives';
 
 const field = 'min-h-[42px] px-3 border border-line-strong rounded-lg bg-white';
 

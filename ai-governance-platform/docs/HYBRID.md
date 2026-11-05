@@ -4,7 +4,7 @@ Status: plan, not built. Written 2026-10-29.
 
 ## The decision
 
-Aegis keeps two deployment modes on the website today: **Hosted by us** and **In your AWS account**. This plan
+Probaline keeps two deployment modes on the website today: **Hosted by us** and **In your AWS account**. This plan
 adds a third, and it is the one most security buyers will want:
 
 - **We run the control plane:** dashboard, rule authoring, compliance packs, licenses, tenant management.

@@ -14,11 +14,11 @@ const LINKS = [
 
 export function Logo() {
   return (
-    <Link to="/" aria-label="Aegis home" className="flex items-center gap-2.5 min-h-[44px] font-extrabold text-[17px] tracking-[0.06em] uppercase text-ink no-underline">
+    <Link to="/" aria-label="Probaline home" className="flex items-center gap-2.5 min-h-[44px] font-extrabold text-[17px] tracking-[0.06em] uppercase text-ink no-underline">
       <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinejoin="round" aria-hidden="true">
         <path d="M12 3l7 3v5c0 4.5-3 8.2-7 10-4-1.8-7-5.5-7-10V6l7-3z" />
       </svg>
-      Aegis
+      Probaline
     </Link>
   );
 }

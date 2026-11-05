@@ -6,12 +6,12 @@ import { FileStore } from './core/store';
 import { AwsSource, detectSource, parse } from './aws/parsers';
 import { parseOnpremText } from './onprem/parsers';
 
-const USAGE = `Aegis collector: finds AI usage in your logs. Everything stays in --out.
+const USAGE = `Probaline collector: finds AI usage in your logs. Everything stays in --out.
 
-  aegis-collector collect --out <dir> [--source auto|aws_dns|aws_firewall|aws_cloudtrail|onprem] [--ignore role:aegis-gateway,…] <files or folders…>
+  probaline-collector collect --out <dir> [--source auto|aws_dns|aws_firewall|aws_cloudtrail|onprem] [--ignore role:probaline-gateway,…] <files or folders…>
       AWS logs are recognized by name or content; anything else is read line by line as on-premises logs
       (Palo Alto, Fortinet, CEF, Squid, BIND, Windows DNS).
-  aegis-collector report  --out <dir> [--days 30 | --from YYYY-MM-DD --to YYYY-MM-DD] [--company "Acme"] [--reveal-names]
+  probaline-collector report  --out <dir> [--days 30 | --from YYYY-MM-DD --to YYYY-MM-DD] [--company "Acme"] [--reveal-names]
 `;
 
 function args(argv: string[]) {

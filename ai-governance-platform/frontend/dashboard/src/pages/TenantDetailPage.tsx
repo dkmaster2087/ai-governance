@@ -4,8 +4,8 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { activateTenant, ago, fetchPlatformUsage, fetchTenantSetup, getTenant, money, suspendTenant } from '../lib/platform-api';
 import { fetchTenantLicenses, formatDate } from '../lib/license-api';
 import { errorMessage } from '../lib/rules-api';
-import { ArrowLink, Button, Note, Panel, SectionLabel, formatCount } from '../components/aegis/primitives';
-import { DayBars, PLAN_LABEL, RUNS_LABEL, StatusPill, TenantForm } from '../components/aegis/platform';
+import { ArrowLink, Button, Note, Panel, SectionLabel, formatCount } from '../components/kit/primitives';
+import { DayBars, PLAN_LABEL, RUNS_LABEL, StatusPill, TenantForm } from '../components/kit/platform';
 
 function Fact({ label, children }: { label: string; children: React.ReactNode }) {
   return (

@@ -13,7 +13,7 @@ const fortinet = (host: string, ip = '10.2.0.8') => `<189>date=${day} time=10:20
 const squid = (host: string, ip = '10.4.0.7') => `1793356800.123 245 ${ip} TCP_TUNNEL/200 6234 CONNECT ${host}:443 - HIER_DIRECT/1.2.3.4 -`;
 
 async function setup(watch = false) {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'aegis-onprem-'));
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'probaline-onprem-'));
   const logs = path.join(dir, 'logs');
   await fs.mkdir(logs);
   const c = new OnpremCollector({ dataDir: path.join(dir, 'data'), udpPort: 0, tcpPort: 0, watchDir: watch ? logs : undefined, pollSeconds: 3600, flushSeconds: 3600, log: () => {} });

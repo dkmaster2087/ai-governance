@@ -10,13 +10,13 @@ describe('Shell', () => {
   it('logo links home for tenants', () => {
     role = 'tenant_admin';
     render(<MemoryRouter initialEntries={['/rules']}><Shell><div /></Shell></MemoryRouter>);
-    expect(screen.getByRole('link', { name: 'Aegis home' })).toHaveAttribute('href', '/gateway');
+    expect(screen.getByRole('link', { name: 'Probaline home' })).toHaveAttribute('href', '/gateway');
   });
 
   it('logo links to the platform dashboard for platform admins', () => {
     role = 'platform_admin';
     render(<MemoryRouter><Shell><div /></Shell></MemoryRouter>);
-    expect(screen.getByRole('link', { name: 'Aegis home' })).toHaveAttribute('href', '/overview');
+    expect(screen.getByRole('link', { name: 'Probaline home' })).toHaveAttribute('href', '/overview');
   });
 
   it('shows the redesigned navigation', () => {

@@ -45,7 +45,7 @@ interface AuthContextValue {
 }
 
 const ROLES: UserRole[] = ['platform_admin', 'tenant_admin', 'tenant_auditor', 'tenant_user'];
-const STORAGE_KEY = 'aegis_auth_user';
+const STORAGE_KEY = 'probaline_auth_user';
 
 /** Users live in the identity provider, not in this app, unless we're on local demo accounts. */
 export const usersManagedExternally = !DEV_AUTH;
@@ -100,7 +100,7 @@ function userFromSession(session: CognitoUserSession): AuthUser | null {
     email: claims.email ?? '',
     role,
     tenantId,
-    tenantName: role === 'platform_admin' ? 'Aegis AI Platform' : tenantId,
+    tenantName: role === 'platform_admin' ? 'Probaline Platform' : tenantId,
   };
 }
 

@@ -62,7 +62,7 @@ export async function evidenceRoutes(app: FastifyInstance) {
     const doc = { exportedAt: new Date().toISOString(), exportedBy: request.userId, tenantId: request.tenantId, record };
     return reply
       .header('content-type', 'application/json; charset=utf-8')
-      .header('content-disposition', `attachment; filename="aegis-evidence-${requestId.replace(/[^a-zA-Z0-9-]/g, '')}.json"`)
+      .header('content-disposition', `attachment; filename="probaline-evidence-${requestId.replace(/[^a-zA-Z0-9-]/g, '')}.json"`)
       .send(JSON.stringify(doc, null, 2));
   });
 }

@@ -57,7 +57,7 @@ export async function downloadEvidence(requestId: string): Promise<void> {
   const url = URL.createObjectURL(res.data);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `aegis-evidence-${requestId}.json`;
+  a.download = `probaline-evidence-${requestId}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }

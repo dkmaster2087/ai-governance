@@ -1,5 +1,5 @@
 /**
- * Aegis Shadow AI Guard: the decisions, kept free of Chrome APIs so they can be tested in Node.
+ * Probaline Shadow AI Guard: the decisions, kept free of Chrome APIs so they can be tested in Node.
  * Used by background.js (the service worker) and by the tests in tests/.
  */
 

@@ -3,7 +3,7 @@ import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { fetchMyLicense, formatDate, REPORTING_LABELS, ReportingConfig, setReporting } from '../lib/license-api';
 import { errorMessage } from '../lib/rules-api';
-import { Note, Panel, SectionLabel, Switch } from '../components/aegis/primitives';
+import { Note, Panel, SectionLabel, Switch } from '../components/kit/primitives';
 
 /** A tenant's view of its own license. The key itself is shown only once, when the platform issues it. */
 export function TenantLicensePage() {
@@ -17,7 +17,7 @@ export function TenantLicensePage() {
   if (!license) {
     return (
       <Panel className="px-6 max-w-[900px]">
-        <Note title="No license has been issued for your company yet.">Your provider issues licenses. Ask them for one if you run Aegis in your own AWS account.</Note>
+        <Note title="No license has been issued for your company yet.">Your provider issues licenses. Ask them for one if you run Probaline in your own AWS account.</Note>
       </Panel>
     );
   }

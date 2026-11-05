@@ -7,7 +7,7 @@ import type { AuthUser, UserRole } from './auth';
 const BUILTIN_ACCOUNTS: Record<string, { password: string; user: AuthUser }> = {
   'admin@platform.com': {
     password: 'admin123',
-    user: { userId: 'user_platform_admin', name: 'Platform Admin', email: 'admin@platform.com', role: 'platform_admin', tenantId: 'tenant_platform', tenantName: 'Aegis AI Platform' },
+    user: { userId: 'user_platform_admin', name: 'Platform Admin', email: 'admin@platform.com', role: 'platform_admin', tenantId: 'tenant_platform', tenantName: 'Probaline Platform' },
   },
   'admin@democorp.com': {
     password: 'demo123',
@@ -19,7 +19,7 @@ const BUILTIN_ACCOUNTS: Record<string, { password: string; user: AuthUser }> = {
   },
 };
 
-const DYNAMIC_ACCOUNTS_KEY = 'aegis_dynamic_accounts';
+const DYNAMIC_ACCOUNTS_KEY = 'probaline_dynamic_accounts';
 
 export function getAllAccounts(): Record<string, { password: string; user: AuthUser }> {
   return { ...BUILTIN_ACCOUNTS, ...getDynamicAccounts() };

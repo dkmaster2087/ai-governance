@@ -80,7 +80,7 @@ export async function proxyRoutes(app: FastifyInstance) {
    * Example: POST /v1/proxy/openai/v1/chat/completions
    * 
    * The client sends the exact same request they'd send to the AI provider,
-   * but through Aegis. Aegis inspects, governs, logs, and forwards.
+   * but through Probaline. Probaline inspects, governs, logs, and forwards.
    * The client's own Authorization header is forwarded to the provider.
    */
   app.all('/proxy/:provider/*', { preHandler: requireAccess({ scopes: ['chat'] }) }, async (request, reply) => {
@@ -194,7 +194,7 @@ export async function proxyRoutes(app: FastifyInstance) {
         'content-type': String(upstream.headers['content-type'] ?? 'text/event-stream'),
         'cache-control': 'no-cache',
         'x-accel-buffering': 'no',
-        'x-aegis-request-id': requestId,
+        'x-probaline-request-id': requestId,
       });
       const usage = { input: 0, output: 0 };
       let pending = '';
@@ -269,7 +269,7 @@ export async function proxyRoutes(app: FastifyInstance) {
       // --- 5. Return provider response to client ---
       return reply
         .status(providerResponse.status)
-        .headers({ 'x-aegis-request-id': requestId, 'x-aegis-latency-ms': String(Date.now() - startTime) })
+        .headers({ 'x-probaline-request-id': requestId, 'x-probaline-latency-ms': String(Date.now() - startTime) })
         .send(providerResponse.data);
 
     } catch (err: any) {

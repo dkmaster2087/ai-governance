@@ -1,8 +1,8 @@
 {
   "type": "object",
   "properties": {
-    "gatewayUrl": { "title": "Aegis gateway address", "description": "For example https://gateway.example.com", "type": "string" },
-    "apiKey": { "title": "Aegis API key with the shadow_ai:ingest permission", "type": "string" },
+    "gatewayUrl": { "title": "Probaline gateway address", "description": "For example https://gateway.example.com", "type": "string" },
+    "apiKey": { "title": "Probaline API key with the shadow_ai:ingest permission", "type": "string" },
     "identifyUsers": { "title": "Report the work email the Chrome profile is signed in with (otherwise a random ID per browser)", "type": "boolean" }
   }
 }

@@ -5,9 +5,9 @@ Status: phases 0–2 built (the shared core, the AWS collector and the on-premis
 
 ## The idea
 
-Before a customer installs Aegis, we show them how AI is already used across their environment: which AI
+Before a customer installs Probaline, we show them how AI is already used across their environment: which AI
 services, from which servers, apps and people, how often, and how much of it goes around any control. Then we
-recommend which of that traffic should go through Aegis so policies can be enforced.
+recommend which of that traffic should go through Probaline so policies can be enforced.
 
 This is how we get in the door. A read-only assessment is easy for a CISO to approve, produces a report they
 can't get elsewhere, and ends in a concrete proposal. After they buy, the same collectors keep running as
@@ -15,7 +15,7 @@ continuous shadow-AI monitoring.
 
 ## Decisions
 
-1. **Collectors are a separate, small product.** They are not part of any Aegis installation, and an
+1. **Collectors are a separate, small product.** They are not part of any Probaline installation, and an
    assessment needs nothing else installed: no gateway, no dashboard, no database.
 2. **Raw logs never leave the customer's environment.** Collectors read logs where they already are, keep only
    lines that match known AI services, and turn them into counts.
@@ -34,13 +34,13 @@ continuous shadow-AI monitoring.
 | Gateway, policy engine, data protection | Our AWS | Customer | Customer (their AWS today; on-premises and Kubernetes planned) |
 | Dashboard, rules, licenses | Our AWS | Our AWS | Customer |
 | Prompts and evidence | Our AWS | Customer | Customer |
-| Collectors send results to | Our cloud | Customer's data plane, which reports counts to us | The customer's own Aegis |
+| Collectors send results to | Our cloud | Customer's data plane, which reports counts to us | The customer's own Probaline |
 | Status | Available | Planned ([HYBRID.md](HYBRID.md)) | Available on AWS |
 
 The collector is the same in every column. Only its **output** setting changes:
 
 - `local`: write results and the report to storage in the customer's environment. Used for assessments.
-- `aegis`: send results to an Aegis instance: ours, a hybrid data plane, or a self-hosted install.
+- `probaline`: send results to a Probaline instance: ours, a hybrid data plane, or a self-hosted install.
 
 Moving from an assessment to a paying customer means changing that one setting, not reinstalling anything.
 
@@ -59,7 +59,7 @@ third value; `onprem` should be renamed `self_hosted` when that happens.
    team reads it first.
 5. **Review together.** They share the report with us, screen-share it, or send us only the summary. Their
    choice; we never receive anything automatically in local mode.
-6. **Remove or keep.** Delete the collectors, or switch their output to `aegis` once Aegis is installed.
+6. **Remove or keep.** Delete the collectors, or switch their output to `probaline` once Probaline is installed.
 
 ### What stays private, even in the report
 
@@ -125,9 +125,9 @@ template.
 | Google Cloud | Terraform module: one Cloud Run job | Logs Viewer on the chosen projects |
 | On-premises | One container image (Docker or Kubernetes), signed | A syslog port and/or read access to log files |
 
-All collectors share one TypeScript core, the same language as the rest of Aegis. The core stores results
+All collectors share one TypeScript core, the same language as the rest of Probaline. The core stores results
 through a small interface (a folder, or S3 today), so Azure Blob and Google Cloud Storage are small additions. Each template takes the same
-settings: sources, output (`local` or `aegis`), and for `aegis` the address and a key with a new
+settings: sources, output (`local` or `probaline`), and for `probaline` the address and a key with a new
 `discovery:ingest` permission.
 
 ## The report
@@ -136,7 +136,7 @@ settings: sources, output (`local` or `aegis`), and for `aegis` the address and 
    business data terms."
 2. **By service:** volume, trend, kind, and whether it is approved, unknown or risky.
 3. **Apps and servers calling AI directly:** each with the services it calls and how often. These are the
-   easiest to route through Aegis.
+   easiest to route through Probaline.
 4. **People in browsers:** which tools, how many people, which departments (if the logs carry them).
 5. **Cloud AI services used directly:** Bedrock, Azure OpenAI, Vertex AI calls that no gateway sees.
 6. **Coverage:** which sources were read, for how long, and what they can't see (for example, encrypted DNS
@@ -149,13 +149,13 @@ Each finding maps to one concrete action:
 
 | Finding | Recommendation | Effort for them |
 |---|---|---|
-| A server or app calls a model API directly | Route it through Aegis: change its base address to the gateway | One configuration change per app |
+| A server or app calls a model API directly | Route it through Probaline: change its base address to the gateway | One configuration change per app |
 | Bedrock, Azure OpenAI or Vertex AI called directly | Put it behind the gateway; restrict direct access with cloud permissions | Small, per account |
 | People use unapproved chat tools | Approve one tool, block or steer away from the rest with the extension | Policy decision plus extension rollout |
 | AI tools with no business data terms | Block them | Extension or security gateway rule |
 | Copilot or Gemini inside work apps | Usually approved already; confirm data settings in the vendor's admin console | Review |
 
-The report estimates coverage: "Routing these 12 apps through Aegis puts 78% of AI API traffic under policy."
+The report estimates coverage: "Routing these 12 apps through Probaline puts 78% of AI API traffic under policy."
 
 ## Not in scope
 

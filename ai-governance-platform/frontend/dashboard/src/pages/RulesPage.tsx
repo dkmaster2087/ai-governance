@@ -6,7 +6,7 @@ import {
   addRule, changeRule, deleteRule, EditableType, errorMessage, fetchRules, isEditableType, RuleView, ruleValues, SecretsAction, setFailMode,
   setSecretsAction,
 } from '../lib/rules-api';
-import { Button, Note, Panel, SectionLabel, Segmented, Switch, formatCount } from '../components/aegis/primitives';
+import { Button, Note, Panel, SectionLabel, Segmented, Switch, formatCount } from '../components/kit/primitives';
 
 const FRAMEWORK_LABEL: Record<string, string> = { soc2: 'SOC 2', hipaa: 'HIPAA', 'eu-ai-act': 'EU AI Act' };
 

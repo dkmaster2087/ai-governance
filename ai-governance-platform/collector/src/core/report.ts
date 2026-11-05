@@ -123,7 +123,7 @@ ${f.recommendations.length ? f.recommendations.map(rec).join('') : '<p class="mu
   ]))}</div>
 
 <footer>
-  <p>Built in your environment by the Aegis collector. Only log lines that matched a known AI service were kept, as daily counts; no prompt content, page address or raw log line is in this report.
+  <p>Built in your environment by the Probaline collector. Only log lines that matched a known AI service were kept, as daily counts; no prompt content, page address or raw log line is in this report.
   ${opts.names ? 'Names are shown because this copy was built with your private name lookup. Don’t share this copy.' : 'People are shown as codes; your team can reveal names with the private lookup kept next to the collector’s results.'}</p>
   <p>AI service catalog ${esc(f.catalogVersion)}. Generated ${esc(new Date(f.generatedAt).toUTCString())}.</p>
 </footer>

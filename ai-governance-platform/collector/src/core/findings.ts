@@ -69,7 +69,7 @@ export interface Findings {
   cloudAi: CallerFinding[];
   browser: Array<{ service: string; people: number; machines: number; count: number }>;
   sources: Array<{ source: string; label: string; firstDay: string; lastDay: string; days: number; count: number; limits?: string }>;
-  /** Share of direct model-API traffic covered by routing the top callers through Aegis. */
+  /** Share of direct model-API traffic covered by routing the top callers through Probaline. */
   coverage: { callers: number; share: number } | null;
   recommendations: Recommendation[];
 }
@@ -170,9 +170,9 @@ export function recommend(f: Findings): Recommendation[] {
     const top = f.directApi.slice(0, TOP_CALLERS);
     out.push({
       priority: 'high',
-      title: `Route ${plural(f.directApi.length, 'server or app', 'servers and apps')} that call model APIs directly through Aegis`,
+      title: `Route ${plural(f.directApi.length, 'server or app', 'servers and apps')} that call model APIs directly through Probaline`,
       why: 'Their prompts reach AI providers with no check for personal data, secrets or company rules, and no record of what was sent.',
-      action: `Change each app’s AI base address to the Aegis gateway and give it an Aegis API key. It is usually one setting per app.${!f.coverage ? '' : f.coverage.callers >= f.directApi.length ? ` Routing all ${f.directApi.length} puts all direct model-API traffic under policy.` : ` Routing the top ${f.coverage.callers} alone puts ${pct(f.coverage.share)} of direct model-API traffic under policy.`}`,
+      action: `Change each app’s AI base address to the Probaline gateway and give it a Probaline API key. It is usually one setting per app.${!f.coverage ? '' : f.coverage.callers >= f.directApi.length ? ` Routing all ${f.directApi.length} puts all direct model-API traffic under policy.` : ` Routing the top ${f.coverage.callers} alone puts ${pct(f.coverage.share)} of direct model-API traffic under policy.`}`,
       items: top.map((c) => `${c.who}: ${c.services.join(', ')}`),
     });
   }
@@ -182,8 +182,8 @@ export function recommend(f: Findings): Recommendation[] {
     out.push({
       priority: 'high',
       title: `Put ${names.join(' and ')} behind the gateway`,
-      why: `${plural(f.cloudAi.length, 'identity', 'identities')} call the cloud provider’s AI service directly, so no Aegis policy applies to those prompts.`,
-      action: 'Point these workloads at the Aegis gateway, then limit direct model access in cloud permissions to the gateway’s own role.',
+      why: `${plural(f.cloudAi.length, 'identity', 'identities')} call the cloud provider’s AI service directly, so no Probaline policy applies to those prompts.`,
+      action: 'Point these workloads at the Probaline gateway, then limit direct model access in cloud permissions to the gateway’s own role.',
       items: f.cloudAi.slice(0, TOP_CALLERS).map((c) => `${c.who}: ${c.services.join(', ')}`),
     });
   }
@@ -205,7 +205,7 @@ export function recommend(f: Findings): Recommendation[] {
       priority: 'medium',
       title: `Approve one chat assistant; ${chats.length} are in use`,
       why: 'People are spread across several consumer AI tools, each with its own data handling and no shared policy.',
-      action: 'Pick one with business terms (or an internal assistant behind Aegis), approve it, and steer people to it with the browser extension’s block page.',
+      action: 'Pick one with business terms (or an internal assistant behind Probaline), approve it, and steer people to it with the browser extension’s block page.',
       items: chats.map((s) => s.name),
     });
   }

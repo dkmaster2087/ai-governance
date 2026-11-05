@@ -12,7 +12,7 @@ export interface ApiKey {
   tenantId: string;
   keyId: string;
   keyHash: string;        // SHA-256 hash of the full key (we never store the raw key)
-  keyPrefix: string;      // First 8 chars for display (e.g., "aegis_dk...")
+  keyPrefix: string;      // First 8 chars for display (e.g., "pbl_dk...")
   name: string;           // Human-readable label
   scopes: string[];       // e.g., ['chat', 'models', 'audit']
   status: 'active' | 'revoked' | 'expired';
@@ -33,11 +33,11 @@ export interface LicenseInfo {
   reportingConfig: { usageMetrics: boolean; costData: boolean; complianceStatus: boolean; auditLogs: boolean };
 }
 
-/** Generate a secure API key: aegis_<tenantShort>_<random32hex> */
+/** Generate a secure API key: pbl_<tenantShort>_<random32hex> */
 export function generateApiKey(tenantId: string): { raw: string; hash: string; prefix: string; keyId: string } {
   const tenantShort = tenantId.replace('tenant_', '').slice(0, 6);
   const random = randomBytes(24).toString('hex');
-  const raw = `aegis_${tenantShort}_${random}`;
+  const raw = `pbl_${tenantShort}_${random}`;
   const hash = createHash('sha256').update(raw).digest('hex');
   const prefix = raw.slice(0, 16) + '...';
   const keyId = `key_${randomBytes(8).toString('hex')}`;
