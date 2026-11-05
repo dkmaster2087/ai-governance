@@ -258,14 +258,21 @@ client = OpenAI(
           ['Netskope transaction logs', 'Log streaming to a folder the container watches, or to an S3 bucket the AWS collector reads; CSV with a header row or W3C with #Fields, plain or .gz', <><C>cs-host</C> or <C>cs-uri</C>, <C>cs-username</C>, <C>c-ip</C>, <C>date</C> + <C>time</C>, <C>cs-bytes</C></>],
         ]} />
         <P>A file’s header row is remembered while the file is followed, including after a restart. Zscaler or Netskope lines sent as CEF are labelled with their product in the report.</P>
+        <H2>Azure and Google Cloud (beta)</H2>
+        <P>A scheduled container job runs in the customer’s own cloud, reads the logs where the cloud already stores them, and writes the report to a private container or bucket of theirs. It signs in with its own managed identity or service account, read-only on the logs. Neither has run in a real subscription or project yet.</P>
+        <Table head={['Cloud', 'Logs read', 'Deploy']} rows={[
+          ['Microsoft Azure', 'Azure Firewall application rule and DNS proxy logs; DNS security policy logs; Azure OpenAI / AI Foundry request logs (model calls by person, app or IP). Turn on diagnostic settings to a storage account.', <><C>collector/deploy/azure/collector.bicep</C>: a Container Apps job</>],
+          ['Google Cloud', 'Cloud DNS query logs (by VM); Secure Web Proxy logs; Data Access audit logs for Vertex AI and the Gemini API (model calls by service account or person). Sink them to a Cloud Storage bucket.', <><C>collector/deploy/gcp/deploy.sh</C>: a Cloud Run job, hourly, with optional sinks</>],
+        ]} />
+        <P>Exported files can also be read by the command-line tool or the on-premises container, with no cloud job at all.</P>
         <H2>Try it with sample data</H2>
         <Code>{`node collector/scripts/sample-sse-logs.mjs files ./sample-sse 14
 node collector/dist/cli.js collect --out ./results ./sample-sse
 node collector/dist/cli.js report --out ./results --company "Acme"
 # open results/reports/latest.html`}</Code>
-        <P>The same works with <C>sample-aws-logs.mjs</C> and <C>sample-onprem-logs.mjs</C>. All sample data is made up.</P>
+        <P>The same works with <C>sample-aws-logs.mjs</C>, <C>sample-onprem-logs.mjs</C> and <C>sample-cloud-logs.mjs</C> (Azure and Google Cloud). All sample data is made up.</P>
         <H2>Not built yet</H2>
-        <P>Azure, Google Cloud, Microsoft 365, Google Workspace and Okta/Entra sources, and sending results to a Probaline install. See <C>docs/ASSESSMENT.md</C> in the repository.</P>
+        <P>Microsoft 365, Google Workspace and Okta/Entra sources, and sending results to a Probaline install. See <C>docs/ASSESSMENT.md</C> in the repository.</P>
       </>
     ),
   },

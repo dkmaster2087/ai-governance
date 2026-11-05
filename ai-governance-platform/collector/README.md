@@ -8,7 +8,7 @@ own environment. It is separate from the Probaline gateway and needs nothing els
 CloudTrail for Amazon Bedrock and SageMaker); the on-premises collector (syslog from Palo Alto, Fortinet and any
 CEF or LEEF source such as Check Point; Squid, BIND and Windows DNS log files); Zscaler and Netskope (beta:
 tested on made-up logs in their documented formats, not yet on a customer's). **Not built yet:** Azure, Google
-Cloud, work apps, and sending results to a Probaline instance (`probaline` output).
+Cloud (beta, below), work apps, and sending results to a Probaline instance (`probaline` output).
 
 ## What it keeps
 
@@ -112,6 +112,50 @@ Use TCP for Zscaler NSS: a busy feed over UDP drops lines. Files with a header r
 and the header is remembered while a file is followed, including across restarts. Zscaler and Netskope lines
 sent as CEF are labelled with their product in the report.
 
+## Azure and Google Cloud (beta)
+
+The parsers read the records each cloud exports, wherever they end up: in the cloud's own storage (read by the
+in-cloud job below), copied to a folder (the CLI or the on-premises container), or relayed over syslog.
+
+| Cloud | Logs | Turn on |
+|---|---|---|
+| Azure | Azure Firewall application rule and DNS proxy logs (resource-specific `AZFW…` or legacy) | Diagnostic setting on the firewall → storage account |
+| Azure | DNS security policy query logs | Diagnostic setting → storage account |
+| Azure | Azure OpenAI / AI Foundry request logs (`RequestResponse`): model calls by person (Entra sign-in), app ID, or IP | Diagnostic setting on each Azure OpenAI / AI Services resource |
+| Google Cloud | Cloud DNS query logs (by VM) | DNS logging on the network's DNS policy; sink to Cloud Storage |
+| Google Cloud | Secure Web Proxy logs | Sink to Cloud Storage |
+| Google Cloud | Data Access audit logs for Vertex AI and the Gemini API: model calls by service account or person | Turn on Data Access logs for `aiplatform.googleapis.com` and `generativelanguage.googleapis.com`; sink to Cloud Storage |
+
+### In-cloud job
+
+`probaline-collector cloud-job` (same container image) reads new or changed log files from the cloud's
+storage, keeps AI matches, and rebuilds the report in a results container or bucket of the customer's. It signs
+in with the platform's workload identity, so there are no keys. Re-reading a file (Azure appends to the hour's
+file) replaces its results.
+
+- **Azure:** `deploy/azure/collector.bicep` creates a scheduled Container Apps job with a managed identity
+  (Storage Blob Data Reader on the log account, Contributor on a new private results account).
+  `az deployment group create -g <rg> -f collector/deploy/azure/collector.bicep -p logStorageAccountName=<account> image=<image>`
+- **Google Cloud:** `deploy/gcp/deploy.sh` creates a service account, a private results bucket, the Cloud Run
+  job and an hourly Cloud Scheduler trigger; `CREATE_SINKS=1` also creates the three log sinks.
+
+Settings: `CLOUD` (`azure` or `gcp`); Azure `LOG_ACCOUNT_URL`, `LOG_CONTAINERS`, `RESULTS_ACCOUNT_URL`,
+`RESULTS_CONTAINER`; Google Cloud `LOG_BUCKETS`, `RESULTS_BUCKET`; common `LOG_PREFIXES`, `IGNORE`,
+`REPORT_DAYS`, `COMPANY`, `MAX_FILES`.
+
+**Status:** the parsers follow the documented formats and the job is tested against local stand-ins (Azurite
+for Blob Storage, fake-gcs-server for Cloud Storage). Neither has run in a real Azure subscription or Google
+Cloud project yet, and the Bicep template hasn't been compiled or deployed (the Bicep tools don't run on the
+machine this was built on). Treat the deployment files as a starting point.
+
+Testing against the stand-ins:
+
+```bash
+docker run -d -p 10000:10000 mcr.microsoft.com/azure-storage/azurite:3.33.0 azurite-blob --blobHost 0.0.0.0
+docker run -d -p 4443:4443 fsouza/fake-gcs-server:1.52.2 -scheme http -port 4443
+AZURITE_CONNECTION_STRING="<Azurite's documented development connection string>" GCS_TEST_ENDPOINT=http://localhost:4443 npx jest cloud-job
+```
+
 ## Demo data
 
 ```bash
@@ -119,13 +163,15 @@ node collector/scripts/sample-aws-logs.mjs ./sample-logs 21
 node collector/scripts/sample-onprem-logs.mjs files ./sample-onprem 14
 node collector/scripts/sample-onprem-logs.mjs send localhost 5514
 node collector/scripts/sample-sse-logs.mjs files ./sample-sse 14
+node collector/scripts/sample-cloud-logs.mjs ./sample-cloud 7
 ```
 
-Made-up AWS logs in the layout AWS uses; on-premises log files; on-premises syslog sent over UDP; or Zscaler
-and Netskope logs in their feed formats.
+Made-up AWS logs in the layout AWS uses; on-premises log files; on-premises syslog sent over UDP; Zscaler
+and Netskope logs in their feed formats; or Azure and Google Cloud logs laid out as each cloud writes them.
 
 ## Tests
 
-`npm test -w collector`: the catalog, AWS, on-premises, Zscaler and Netskope parsers, privacy (pseudonyms, no raw lines, ignored
+`npm test -w collector`: the catalog, AWS, on-premises, Zscaler, Netskope, Azure and Google Cloud parsers, the
+in-cloud job, privacy (pseudonyms, no raw lines, ignored
 callers), findings, recommendations, report escaping, repeat-safe processing, and the on-premises server over
 real UDP and TCP sockets and growing, rotated and compressed files.

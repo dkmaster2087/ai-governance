@@ -1,12 +1,13 @@
 import { Actor, Observation } from '../core/sightings';
 import { HeaderTable, parseSseMessage, SseSource } from '../sse/parsers';
+import { CloudSource, parseAzureDocument, parseCloudLine } from '../cloud';
 
 /**
  * On-premises log lines: syslog from firewalls and proxies, and DNS / proxy log files. Each line is
  * recognized by its shape, so one syslog port can take several products at once.
  */
 
-export type OnpremSource = 'syslog_paloalto' | 'syslog_fortinet' | 'syslog_cef' | 'squid' | 'bind_dns' | 'windows_dns' | SseSource;
+export type OnpremSource = 'syslog_paloalto' | 'syslog_fortinet' | 'syslog_cef' | 'squid' | 'bind_dns' | 'windows_dns' | SseSource | CloudSource;
 
 const MONTHS: Record<string, number> = { Jan: 0, Feb: 1, Mar: 2, Apr: 3, May: 4, Jun: 5, Jul: 6, Aug: 7, Sep: 8, Oct: 9, Nov: 10, Dec: 11 };
 
@@ -175,6 +176,9 @@ export function parseOnpremLine(line: string, receivedAt = new Date()): Observat
   const frame = unwrapSyslog(line, receivedAt);
   const fallback = frame.time ?? receivedAt;
   const msg = frame.msg;
+  // Azure and Google Cloud records (from exported files or an event hub / Pub/Sub relay).
+  const cloud = parseCloudLine(msg);
+  if (cloud !== undefined) return cloud;
   return parseSseMessage(msg, fallback)
     ?? cef(msg, fallback)
     ?? fortinet(msg, fallback)
@@ -202,6 +206,9 @@ export class LineReader {
 }
 
 export function* parseOnpremText(text: string, receivedAt = new Date()): Generator<Observation> {
+  // Azure's older files are one JSON document, possibly spread over many lines.
+  const azureDoc = parseAzureDocument(text);
+  if (azureDoc) { yield* azureDoc; return; }
   const reader = new LineReader();
   for (const line of text.split(/\r?\n/)) {
     const o = reader.read(line, receivedAt);

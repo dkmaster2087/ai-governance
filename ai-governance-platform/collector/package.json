@@ -3,7 +3,9 @@
   "version": "0.1.0",
   "description": "Probaline collector: finds AI usage in a customer's own logs and builds an assessment report locally. Read-only; installed on its own.",
   "private": true,
-  "bin": { "probaline-collector": "dist/cli.js" },
+  "bin": {
+    "probaline-collector": "dist/cli.js"
+  },
   "scripts": {
     "build": "tsc",
     "bundle:lambda": "esbuild src/aws/lambda.ts --bundle --platform=node --target=node20 --outfile=dist-lambda/index.js && cd dist-lambda && rm -f ../probaline-collector-aws.zip && zip -q ../probaline-collector-aws.zip index.js",
@@ -11,13 +13,16 @@
     "clean": "rm -rf dist dist-lambda probaline-collector-aws.zip"
   },
   "dependencies": {
-    "@aws-sdk/client-s3": "^3.0.0"
+    "@aws-sdk/client-s3": "^3.0.0",
+    "@azure/identity": "^4.14.1",
+    "@azure/storage-blob": "^12.34.0",
+    "@google-cloud/storage": "^7.22.0"
   },
   "devDependencies": {
-    "typescript": "^5.4.0",
+    "@types/jest": "^29.0.0",
     "@types/node": "^20.0.0",
     "jest": "^29.0.0",
     "ts-jest": "^29.0.0",
-    "@types/jest": "^29.0.0"
+    "typescript": "^5.4.0"
   }
 }

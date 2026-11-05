@@ -44,9 +44,9 @@ function SourceBox({ y, title, sub }: { y: number; title: string; sub: string })
 }
 
 const SOURCES = [
-  { y: 66, title: 'Route 53 DNS query logs', sub: 'which servers look up AI' },
-  { y: 134, title: 'Network Firewall logs', sub: 'outgoing connections by name' },
-  { y: 202, title: 'CloudTrail', sub: 'Bedrock and SageMaker calls' },
+  { y: 66, title: 'AWS', sub: 'DNS, firewall, Bedrock calls' },
+  { y: 134, title: 'Microsoft Azure', sub: 'Firewall, DNS, Azure OpenAI calls' },
+  { y: 202, title: 'Google Cloud', sub: 'DNS, web proxy, Vertex AI calls' },
   { y: 318, title: 'Firewalls and proxies', sub: 'Palo Alto, Fortinet, Check Point…' },
   { y: 386, title: 'DNS servers', sub: 'BIND, Windows DNS' },
   { y: 454, title: 'Zscaler, Netskope', sub: 'laptops, in the office or not' },
@@ -59,7 +59,7 @@ export function CollectorFlow() {
     <figure className="m-0">
       <div className="overflow-x-auto">
         <svg viewBox="0 0 1000 628" className="w-full min-w-[760px] h-auto" role="img"
-          aria-label="Log lines from AWS (DNS, firewall, CloudTrail), from the data centre (firewalls, proxies, DNS servers) and from Zscaler or Netskope (laptops wherever they are) flow into the Probaline collector inside your environment. It drops everything that isn't an AI service and passes AI matches on as daily counts to results in your own storage, which build the assessment report. Nothing goes to Probaline unless you share it.">
+          aria-label="Log lines from cloud accounts (AWS, Microsoft Azure and Google Cloud: DNS, firewalls and AI model calls), from the data centre (firewalls, proxies, DNS servers) and from Zscaler or Netskope (laptops wherever they are) flow into the Probaline collector inside your environment. It drops everything that isn't an AI service and passes AI matches on as daily counts to results in your own storage, which build the assessment report. Nothing goes to Probaline unless you share it.">
           <defs>
             {SOURCES.map((s, i) => {
               const sy = s.y + 29;
@@ -79,7 +79,7 @@ export function CollectorFlow() {
           {/* The customer's environment */}
           <rect x="8" y="8" width="984" height="520" rx="16" fill="#F6F7F9" stroke={INK} strokeWidth="2" />
           <Label x={28} y={34} size={12} weight={700} fill={MUTED}>YOUR ENVIRONMENT</Label>
-          <Label x={28} y={58} size={11} weight={600} fill={MUTED}>AWS ACCOUNT</Label>
+          <Label x={28} y={58} size={11} weight={600} fill={MUTED}>CLOUD ACCOUNTS</Label>
           <Label x={28} y={310} size={11} weight={600} fill={MUTED}>NETWORK AND SECURITY TOOLS</Label>
 
           {SOURCES.map((s) => <SourceBox key={s.title} {...s} />)}

@@ -10,8 +10,12 @@ const USAGE = `Probaline collector: finds AI usage in your logs. Everything stay
 
   probaline-collector collect --out <dir> [--source auto|aws_dns|aws_firewall|aws_cloudtrail|onprem] [--ignore role:probaline-gateway,…] <files or folders…>
       AWS logs are recognized by name or content; anything else is read line by line as on-premises logs
-      (Palo Alto, Fortinet, CEF, Squid, BIND, Windows DNS).
+      (Palo Alto, Fortinet, CEF, LEEF, Squid, BIND, Windows DNS, Zscaler, Netskope) or Azure and Google Cloud
+      exported log records.
   probaline-collector report  --out <dir> [--days 30 | --from YYYY-MM-DD --to YYYY-MM-DD] [--company "Acme"] [--reveal-names]
+  probaline-collector cloud-job
+      One run of the in-cloud collector (Azure Container Apps job or Cloud Run job), configured by
+      environment variables: see collector/README.md.
 `;
 
 function args(argv: string[]) {
@@ -42,6 +46,11 @@ async function files(inputs: string[]): Promise<string[]> {
 async function main() {
   const [cmd, ...argv] = process.argv.slice(2);
   const { flags, rest } = args(argv);
+  if (cmd === 'cloud-job') {
+    const { runCloudJob } = await import('./bucket/run-job');
+    await runCloudJob();
+    return;
+  }
   const out = typeof flags.out === 'string' ? flags.out : '';
   if (!cmd || !out || flags.help) { process.stdout.write(USAGE); process.exit(cmd ? 1 : 0); }
   const store = new FileStore(out);

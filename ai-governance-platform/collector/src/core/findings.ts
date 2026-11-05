@@ -14,6 +14,12 @@ export const SOURCE_LABELS: Record<string, string> = {
   zscaler: 'Zscaler Internet Access web logs',
   netskope: 'Netskope events',
   syslog_leef: 'Security device logs (LEEF)',
+  azure_firewall: 'Azure Firewall application rule logs',
+  azure_dns: 'Azure DNS query logs',
+  azure_openai: 'Azure OpenAI / AI Foundry request logs',
+  gcp_dns: 'Google Cloud DNS query logs',
+  gcp_web_proxy: 'Google Cloud Secure Web Proxy logs',
+  gcp_audit: 'Google Cloud audit logs (Vertex AI, Gemini API)',
 };
 
 /** What each source can't see, said plainly in the report. */
@@ -30,6 +36,12 @@ const SOURCE_LIMITS: Record<string, string> = {
   zscaler: 'Shows web traffic sent through Zscaler, in the office and away from it; traffic set to bypass Zscaler isn’t seen.',
   netskope: 'Shows traffic sent through Netskope, in the office and away from it; traffic set to bypass Netskope isn’t seen.',
   syslog_leef: 'Shows what the sending device logged with a destination name.',
+  azure_firewall: 'Shows outgoing connections the firewall’s application rules handled; traffic that doesn’t pass the firewall isn’t seen.',
+  azure_dns: 'Shows lookups through the firewall’s DNS proxy or a DNS security policy; resources using other resolvers aren’t seen.',
+  azure_openai: 'Shows model calls to Azure OpenAI and AI Foundry resources with diagnostic logs turned on; key-based calls are identified by IP address only.',
+  gcp_dns: 'Shows lookups from VMs in networks with Cloud DNS logging turned on.',
+  gcp_web_proxy: 'Shows web traffic sent through Secure Web Proxy only.',
+  gcp_audit: 'Shows model calls only where Data Access audit logs are turned on for Vertex AI and the Gemini API.',
 };
 
 export const isPerson = (who: string) => who.startsWith('user-');

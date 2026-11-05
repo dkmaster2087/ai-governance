@@ -40,8 +40,8 @@ export interface Source { name: string; icon: IconName; kind: string; sees: stri
 
 export const SOURCES: Source[] = [
   { name: 'AWS', icon: 'cloud', kind: 'Cloud', sees: 'DNS, firewall, Bedrock calls', status: 'Available' },
-  { name: 'Microsoft Azure', icon: 'cloud', kind: 'Cloud', sees: 'DNS, firewall, Azure OpenAI', status: 'Coming' },
-  { name: 'Google Cloud', icon: 'cloud', kind: 'Cloud', sees: 'DNS, firewall, Vertex AI', status: 'Coming' },
+  { name: 'Microsoft Azure', icon: 'cloud', kind: 'Cloud', sees: 'DNS, firewall, Azure OpenAI', status: 'Beta' },
+  { name: 'Google Cloud', icon: 'cloud', kind: 'Cloud', sees: 'DNS, web proxy, Vertex AI', status: 'Beta' },
   { name: 'Palo Alto Networks', icon: 'firewall', kind: 'Firewall', sees: 'URL filtering', status: 'Available' },
   { name: 'Fortinet FortiGate', icon: 'firewall', kind: 'Firewall', sees: 'Web filter, DNS', status: 'Available' },
   { name: 'Check Point', icon: 'firewall', kind: 'Firewall', sees: 'URL filtering (CEF)', status: 'Available' },
