@@ -337,6 +337,24 @@ node collector/dist/cli.js report --out ./results --company "Acme"
     ),
   },
   {
+    slug: 'license',
+    title: 'Your license',
+    summary: 'Adding a license key, what happens when one ends, and the 30 days to renew.',
+    body: (
+      <>
+        <P>Your provider issues a license key for your company and sends it to you. An administrator adds it on the <strong>License</strong> page; it takes effect at once. A key issued for another company is refused.</P>
+        <H2>When a license ends</H2>
+        <Table head={['When', 'What happens']} rows={[
+          ['30 days before it expires', 'Everyone sees a notice on every page, with the date.'],
+          ['It expires, is revoked, or is removed', 'Everything keeps working for 30 days. The notice says when AI requests will stop.'],
+          ['30 days later', 'AI requests through Probaline stop (apps, IDEs, MCP tools, the browser extension) with the error LICENSE_ENDED. You can still sign in, read your evidence and add a new key.'],
+          ['A new key is added', 'Everything works again at once.'],
+        ]} />
+        <P>Administrators can remove a license from the License page. Without another license, the same 30 days start.</P>
+      </>
+    ),
+  },
+  {
     slug: 'api',
     title: 'API reference',
     summary: 'Endpoints, headers and errors.',
@@ -368,6 +386,8 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           ['403', <C>FORBIDDEN</C>, 'The key lacks the needed permission'],
           ['429', '—', 'Rate limit reached; retry after the stated time'],
           ['503', <C>GOVERNANCE_UNAVAILABLE</C>, 'A check couldn’t run and your company blocks in that case'],
+          ['403', <C>LICENSE_ENDED</C>, 'Your company’s license ended more than 30 days ago; an administrator enters a new key on the License page'],
+          ['503', <C>ANALYTICS_UNAVAILABLE</C>, 'Reports can’t be built right now; AI requests are not affected'],
           ['503', <C>SERVER_PAUSED</C>, 'The MCP server is paused by your administrator'],
           ['404', <C>NOT_FOUND</C>, 'No such MCP server, or it isn’t published yet'],
           ['401', <C>INVALID_TOKEN</C>, 'An MCP sign-in token that is expired or for another server; the agent signs in again'],

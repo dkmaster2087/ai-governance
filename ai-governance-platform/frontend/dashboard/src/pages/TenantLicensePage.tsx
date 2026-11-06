@@ -1,49 +1,95 @@
+import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
-import { fetchMyLicense, formatDate, REPORTING_LABELS, ReportingConfig, setReporting } from '../lib/license-api';
+import {
+  activateLicense, fetchLicenseOverview, formatDate, License, removeLicense, REPORTING_LABELS, ReportingConfig, setReporting, statusMessage,
+} from '../lib/license-api';
 import { errorMessage } from '../lib/rules-api';
-import { Note, Panel, SectionLabel, Switch } from '../components/kit/primitives';
+import { Button, Note, Panel, SectionLabel, Switch } from '../components/kit/primitives';
 
-/** A tenant's view of its own license. The key itself is shown only once, when the platform issues it. */
+/** What a company sees of its own licenses: an ended license is "Expired", whatever ended it. */
+const companyLabel = (l: License) => (l.status === 'active' ? 'Active' : l.status === 'removed' ? 'Removed' : 'Expired');
+
+function EnterKey({ onDone }: { onDone: () => void }) {
+  const [key, setKey] = useState('');
+  const enter = useMutation({ mutationFn: () => activateLicense(key.trim()), onSuccess: () => { setKey(''); onDone(); } });
+  return (
+    <Panel aria-label="Enter a license key" className="px-7 py-6 flex flex-col gap-3">
+      <SectionLabel>Enter a license key</SectionLabel>
+      <p className="m-0 text-ink-muted">Paste the key your provider sent. It takes effect at once.</p>
+      <form className="flex flex-wrap gap-2 items-start" onSubmit={(e) => { e.preventDefault(); if (key.trim()) enter.mutate(); }}>
+        <input
+          aria-label="License key" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" spellCheck={false}
+          placeholder="pbl_…" className="flex-1 min-w-[240px] min-h-[42px] px-3 border border-line-strong rounded-lg bg-white font-mono text-[13px]"
+        />
+        <Button type="submit" disabled={!key.trim() || enter.isPending}>{enter.isPending ? 'Checking…' : 'Add license'}</Button>
+      </form>
+      {enter.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(enter.error)}</p>}
+      {enter.isSuccess && <p role="status" className="m-0 font-semibold">License added: {enter.data.license.plan} plan, valid until {formatDate(enter.data.license.expiresAt)}.</p>}
+    </Panel>
+  );
+}
+
+function LicenseCard({ l, canRemove, onRemoved }: { l: License; canRemove: boolean; onRemoved: () => void }) {
+  const remove = useMutation({ mutationFn: () => removeLicense(l.licenseId), onSuccess: onRemoved });
+  return (
+    <Panel as="article" aria-label={`${l.plan} license`} className="px-7 py-6 flex flex-col gap-5">
+      <div className="flex flex-wrap items-center gap-3">
+        <h2 className="m-0 text-[22px] font-bold capitalize">{l.plan} plan</h2>
+        <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full', l.status === 'active' ? 'bg-ink-tint text-ink' : 'bg-stop-soft text-stop-text')}>{companyLabel(l)}</span>
+        {canRemove && l.status === 'active' && (
+          <Button variant="ghost" className="ml-auto" disabled={remove.isPending}
+            onClick={() => { if (window.confirm('Remove this license from your company? Without another license, AI requests stop after the grace period.')) remove.mutate(); }}>
+            Remove
+          </Button>
+        )}
+      </div>
+      <dl className="m-0 grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
+        <div><dt className="text-xs text-ink-muted">Runs</dt><dd className="m-0 mt-0.5 font-semibold">{l.type === 'onprem' ? 'In your own AWS account' : 'Hosted'}</dd></div>
+        <div><dt className="text-xs text-ink-muted">Users included</dt><dd className="m-0 mt-0.5 font-semibold">{l.maxUsers.toLocaleString()}</dd></div>
+        <div><dt className="text-xs text-ink-muted">Added</dt><dd className="m-0 mt-0.5 font-semibold">{formatDate(l.activatedAt ?? l.issuedAt)}</dd></div>
+        <div><dt className="text-xs text-ink-muted">{l.status === 'active' ? 'Valid until' : 'Ended'}</dt>
+          <dd className="m-0 mt-0.5 font-semibold">{formatDate(l.status === 'active' ? l.expiresAt : l.revokedAt ?? l.removedAt ?? l.expiresAt)}</dd></div>
+        <div><dt className="text-xs text-ink-muted">Key</dt><dd className="m-0 mt-0.5 font-mono text-xs">{l.keyPrefix}</dd></div>
+      </dl>
+      {remove.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(remove.error)}</p>}
+    </Panel>
+  );
+}
+
+/** A company's licenses, and where to enter a new key. Keys themselves are never shown again. */
 export function TenantLicensePage() {
   const { user, isAdmin } = useAuth();
   const qc = useQueryClient();
-  const { data: license, isLoading, isError, refetch } = useQuery({ queryKey: ['my-license', user?.tenantId], queryFn: fetchMyLicense });
-  const save = useMutation({ mutationFn: setReporting, onSuccess: () => qc.invalidateQueries({ queryKey: ['my-license'] }) });
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['license-overview', user?.tenantId], queryFn: fetchLicenseOverview });
+  const refresh = () => { qc.invalidateQueries({ queryKey: ['license-overview'] }); qc.invalidateQueries({ queryKey: ['license-status'] }); };
+  const save = useMutation({ mutationFn: setReporting, onSuccess: refresh });
 
   if (isLoading) return <Panel className="px-6 py-5 max-w-[900px]"><p className="m-0 text-ink-muted">Loading…</p></Panel>;
-  if (isError) return <Panel className="px-6 max-w-[900px]"><Note title="Couldn’t load your license."><button type="button" className="underline font-semibold" onClick={() => refetch()}>Try again</button></Note></Panel>;
-  if (!license) {
-    return (
-      <Panel className="px-6 max-w-[900px]">
-        <Note title="No license has been issued for your company yet.">Your provider issues licenses. Ask them for one if you run Probaline in your own AWS account.</Note>
-      </Panel>
-    );
-  }
+  if (isError || !data) return <Panel className="px-6 max-w-[900px]"><Note title="Couldn’t load your license."><button type="button" className="underline font-semibold" onClick={() => refetch()}>Try again</button></Note></Panel>;
 
-  const toggle = (key: keyof ReportingConfig, value: boolean) => save.mutate({ ...license.reportingConfig, [key]: value });
+  const message = statusMessage(data.status, isAdmin);
+  const active = data.licenses.filter((l) => l.status === 'active');
+  const ended = data.licenses.filter((l) => l.status !== 'active');
+  const reporting = active.find((l) => l.type === 'onprem');
+  const toggle = (key: keyof ReportingConfig, value: boolean) => reporting && save.mutate({ ...reporting.reportingConfig, [key]: value });
 
   return (
     <div className="flex flex-col gap-6 max-w-[900px]">
-      <Panel className="px-7 py-6 flex flex-col gap-5">
-        <div className="flex flex-wrap items-center gap-3">
-          <h2 className="m-0 text-[24px] font-bold capitalize">{license.plan} plan</h2>
-          <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full', license.status === 'active' ? 'bg-ink-tint text-ink' : 'bg-stop-soft text-stop-text')}>
-            {license.status === 'active' ? 'Active' : license.status === 'expired' ? 'Expired' : 'Revoked'}
-          </span>
-        </div>
-        <dl className="m-0 grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-          <div><dt className="text-xs text-ink-muted">Runs</dt><dd className="m-0 mt-0.5 font-semibold">{license.type === 'onprem' ? 'In your own AWS account' : 'Hosted'}</dd></div>
-          <div><dt className="text-xs text-ink-muted">Users included</dt><dd className="m-0 mt-0.5 font-semibold">{license.maxUsers.toLocaleString()}</dd></div>
-          <div><dt className="text-xs text-ink-muted">Issued</dt><dd className="m-0 mt-0.5 font-semibold">{formatDate(license.issuedAt)}</dd></div>
-          <div><dt className="text-xs text-ink-muted">Valid until</dt><dd className="m-0 mt-0.5 font-semibold">{formatDate(license.expiresAt)}</dd></div>
-          <div><dt className="text-xs text-ink-muted">Key</dt><dd className="m-0 mt-0.5 font-mono text-xs">{license.keyPrefix}</dd></div>
-          <div><dt className="text-xs text-ink-muted">Last report</dt><dd className="m-0 mt-0.5 font-semibold">{formatDate(license.lastUsedAt)}</dd></div>
-        </dl>
-      </Panel>
+      <div>
+        <p className={clsx('m-0 text-[26px] leading-[1.2] font-bold tracking-[-0.02em]', message?.tone === 'stop' && 'text-stop-text')}>
+          {message ? message.title : `Your license is active${data.status.endsAt ? ` until ${formatDate(data.status.endsAt)}` : ''}.`}
+        </p>
+        {message && <p className="m-0 mt-1.5 text-ink-muted text-[15px]">{message.detail}</p>}
+      </div>
 
-      {license.type === 'onprem' && (
+      {isAdmin && <EnterKey onDone={refresh} />}
+      {!isAdmin && data.status.state !== 'active' && <Panel className="px-6"><Note title="Only an administrator can enter a license key." /></Panel>}
+
+      {active.map((l) => <LicenseCard key={l.licenseId} l={l} canRemove={isAdmin} onRemoved={refresh} />)}
+
+      {reporting && (
         <Panel className="px-7 py-6 flex flex-col gap-3">
           <SectionLabel>What your on-prem agent sends us</SectionLabel>
           <p className="m-0 text-ink-muted">Prompts never leave your account. Choose which summaries the reporting agent may send back.</p>
@@ -51,11 +97,25 @@ export function TenantLicensePage() {
             <div key={key} className="flex items-center justify-between gap-4 py-2 border-b border-line-subtle last:border-b-0">
               <span className="font-medium">{REPORTING_LABELS[key]}</span>
               {isAdmin
-                ? <Switch checked={license.reportingConfig[key]} label={REPORTING_LABELS[key]} disabled={save.isPending} onChange={(v) => toggle(key, v)} />
-                : <span className="text-sm text-ink-muted">{license.reportingConfig[key] ? 'Sent' : 'Not sent'}</span>}
+                ? <Switch checked={reporting.reportingConfig[key]} label={REPORTING_LABELS[key]} disabled={save.isPending} onChange={(v) => toggle(key, v)} />
+                : <span className="text-sm text-ink-muted">{reporting.reportingConfig[key] ? 'Sent' : 'Not sent'}</span>}
             </div>
           ))}
           {save.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(save.error)}</p>}
+        </Panel>
+      )}
+
+      {ended.length > 0 && (
+        <Panel aria-label="Earlier licenses" className="px-7 py-5">
+          <SectionLabel className="mb-2">Earlier licenses</SectionLabel>
+          <ul className="m-0 p-0 list-none">
+            {ended.map((l) => (
+              <li key={l.licenseId} className="py-2.5 border-b border-line-subtle last:border-b-0 flex flex-wrap justify-between gap-x-4 gap-y-0.5">
+                <span><span className="font-semibold capitalize">{l.plan} plan</span> <span className="font-mono text-xs text-ink-muted">{l.keyPrefix}</span></span>
+                <span className="text-sm text-ink-muted">{companyLabel(l)} · ended {formatDate(l.revokedAt ?? l.removedAt ?? l.expiresAt)}</span>
+              </li>
+            ))}
+          </ul>
         </Panel>
       )}
     </div>

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { fetchTenants } from '../lib/tenant-api';
-import { fetchAllLicenses, formatDate, issueLicense, License, revokeLicense } from '../lib/license-api';
+import { fetchAllLicenses, formatDate, issueLicense, License, revokeLicense, STATUS_LABEL } from '../lib/license-api';
 import { errorMessage } from '../lib/rules-api';
 import { Button, Note, Panel, SectionLabel } from '../components/kit/primitives';
 
@@ -23,7 +23,11 @@ export function LicensesPage() {
     mutationFn: () => issueLicense(form.tenantId, form),
     onSuccess: (r) => { setNewKey({ key: r.licenseKey, tenantName: r.tenantName }); setCopied(false); setIssuing(false); refresh(); },
   });
-  const revoke = useMutation({ mutationFn: (l: License) => revokeLicense(l.tenantId, l.licenseId), onSuccess: refresh });
+  const [revoking, setRevoking] = useState<string | null>(null);
+  const revoke = useMutation({
+    mutationFn: ({ l, graceDays }: { l: License; graceDays: number }) => revokeLicense(l.tenantId, l.licenseId, graceDays),
+    onSuccess: () => { setRevoking(null); refresh(); },
+  });
 
   const active = licenses?.filter((l) => l.status === 'active').length ?? 0;
 
@@ -37,6 +41,7 @@ export function LicensesPage() {
       {newKey && (
         <Panel className="px-6 py-5 border-2 border-ink flex flex-col gap-3">
           <p className="m-0 font-semibold">License key for {newKey.tenantName}. Copy it now; it won’t be shown again.</p>
+          <p className="m-0 text-sm text-ink-muted">Send it to {newKey.tenantName}. It counts once one of their admins enters it on their License page.</p>
           <code className="block bg-canvas border border-line-subtle rounded-lg px-3.5 py-3 font-mono text-[13px] [overflow-wrap:anywhere]">{newKey.key}</code>
           <div className="flex gap-2">
             <Button onClick={async () => { try { await navigator.clipboard.writeText(newKey.key); setCopied(true); } catch { /* unavailable */ } }}>{copied ? 'Copied' : 'Copy key'}</Button>
@@ -103,8 +108,20 @@ export function LicensesPage() {
                   <td className="px-4 py-3">{l.maxUsers > 0 ? l.maxUsers.toLocaleString() : "—"}</td>
                   <td className="px-4 py-3">{formatDate(l.expiresAt)}</td>
                   <td className="px-4 py-3">{formatDate(l.lastUsedAt)}</td>
-                  <td className="px-4 py-3"><span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full', l.status === 'active' ? 'bg-ink-tint text-ink' : 'bg-line-subtle text-ink-soft')}>{l.status}</span></td>
-                  <td className="px-4 py-3 text-right">{l.status === 'active' && <Button variant="secondary" disabled={revoke.isPending} onClick={() => revoke.mutate(l)}>Revoke</Button>}</td>
+                  <td className="px-4 py-3">
+                    <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap', l.status === 'active' ? 'bg-ink-tint text-ink' : 'bg-line-subtle text-ink-soft')}>{STATUS_LABEL[l.status]}</span>
+                    {l.status === 'revoked' && l.graceUntil && Date.parse(l.graceUntil) > Date.now() && <div className="text-xs text-ink-muted mt-1">Works until {formatDate(l.graceUntil)}</div>}
+                  </td>
+                  <td className="px-4 py-3 text-right">
+                    {(l.status === 'active' || l.status === 'pending') && revoking !== l.licenseId && <Button variant="secondary" onClick={() => setRevoking(l.licenseId)}>Revoke</Button>}
+                    {revoking === l.licenseId && (
+                      <div className="flex flex-col items-end gap-1.5" role="group" aria-label={`Revoke ${l.tenantName}'s license`}>
+                        <Button disabled={revoke.isPending} onClick={() => revoke.mutate({ l, graceDays: 30 })}>Revoke, 30 days to renew</Button>
+                        <Button variant="secondary" disabled={revoke.isPending} onClick={() => { if (window.confirm(`Stop ${l.tenantName}'s AI requests now?`)) revoke.mutate({ l, graceDays: 0 }); }}>Revoke and stop now</Button>
+                        <button type="button" className="text-sm underline text-ink-muted" onClick={() => setRevoking(null)}>Cancel</button>
+                      </div>
+                    )}
+                  </td>
                 </tr>
               ))}
             </tbody>

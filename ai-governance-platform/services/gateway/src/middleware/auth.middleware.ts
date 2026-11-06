@@ -6,6 +6,7 @@ import { ApiKey, ApiKeyRepository, hashApiKey } from '../repositories/api-key.re
 import { getSecurityConfig } from '../config/security';
 import { Principal, isUserRole } from '../auth/principal';
 import { tenantSettings } from '../services/tenant-settings.service';
+import { LicenseStatus, licenseState } from '../services/license-state';
 
 const logger = createLogger('gateway:auth');
 
@@ -52,6 +53,8 @@ export interface AuthDeps {
   keys: ApiKeyLookup;
   /** Tenant status lookup; suspended tenants are refused. */
   tenantStatus?: (tenantId: string) => Promise<string | null>;
+  /** License state; once a company's grace period is over, its AI traffic is refused. */
+  licenseStatus?: (tenantId: string) => Promise<LicenseStatus | null>;
   userTokens?: UserTokenVerifier;
   devAuth: boolean;
   keyCacheTtlMs: number;
@@ -210,6 +213,15 @@ export function createAuthPlugin(deps: AuthDeps) {
         return deny(reply, 403, 'TENANT_SUSPENDED', 'This tenant is suspended');
       }
     });
+
+    // A lapsed license stops AI traffic (keys: apps, IDEs, agents, the browser extension). People can still sign
+    // in to the dashboard to renew and to read their evidence.
+    app.addHook('preHandler', async (request, reply) => {
+      const p = request.principal;
+      if (!p || p.kind !== 'api_key' || !deps.licenseStatus) return;
+      const status = await deps.licenseStatus(request.tenantId);
+      if (status?.state === 'lapsed') return reply.status(403).send(licenseEnded(status));
+    });
   });
 }
 
@@ -230,8 +242,18 @@ function defaultDeps(): AuthDeps {
     keys: new ApiKeyRepository(),
     userTokens,
     tenantStatus: (tenantId) => tenants.getStatus(tenantId),
+    licenseStatus: (tenantId) => licenseState().get(tenantId),
     devAuth: config.devAuth,
     keyCacheTtlMs: config.keyCacheTtlMs,
+  };
+}
+
+/** What a refused request says when the company's license has lapsed. */
+export function licenseEnded(status: LicenseStatus) {
+  const when = status.graceUntil ? ` on ${status.graceUntil.slice(0, 10)}` : '';
+  return {
+    error: `Your company’s Probaline license has ended, and AI requests stopped${when}. Ask your administrator to renew it.`,
+    code: 'LICENSE_ENDED',
   };
 }
 

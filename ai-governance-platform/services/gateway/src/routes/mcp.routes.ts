@@ -17,6 +17,8 @@ import { mcpStore } from '../mcp/store';
 import { BackendAuth, DEFAULT_ACCESS, DEFAULT_APPROVALS, DEFAULT_LIMITS, McpApi, McpServer, McpTool, withDefaults } from '../mcp/types';
 import { credentialsInUse, liveConfig, publishVersion, restoreVersion } from '../mcp/versions';
 import { personFromToken } from './mcp-oauth.routes';
+import { licenseState } from '../services/license-state';
+import { licenseEnded } from '../middleware/auth.middleware';
 
 const logger = createLogger('gateway:mcp-routes');
 const MAX_TOOLS_PER_API = 300;
@@ -337,6 +339,8 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
     } else if (!p && auth.startsWith('Bearer ')) {
       who = await personFromToken(auth.slice(7).trim(), base, tenantId, serverId);
       if (who && (await tenantSettings().getStatus(tenantId)) === 'suspended') return bad(reply, 'TENANT_SUSPENDED', 'This tenant is suspended', 403);
+      const license = who ? await licenseState().get(tenantId) : null;
+      if (license?.state === 'lapsed') return reply.status(403).send(licenseEnded(license));
     } else if (p) {
       return bad(reply, 'FORBIDDEN', 'Use a Probaline API key with the mcp permission, or sign in', 403);
     }

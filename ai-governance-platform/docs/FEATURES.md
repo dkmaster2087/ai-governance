@@ -55,7 +55,7 @@ Spend, License and Settings use the same design.
 | Platform | Requests across tenants, what needs attention (suspended, open fail mode, licenses expiring or missing, no traffic) |
 | Tenants | Every tenant with 30-day traffic; add one, then the Cognito command for its admin |
 | Tenant | Traffic, setup (fail mode, rules, models, frameworks), licenses; edit, suspend, reactivate |
-| Licenses | Issue and revoke license keys |
+| Licenses | Issue license keys, and revoke them with 30 days to renew or at once |
 | Usage | Requests, stops and estimated spend per tenant and model, 7/30/90 days |
 | Health | The gateway's own check of its database, policy engine and data protection |
 
@@ -83,6 +83,20 @@ enforce (for example "log every request") are listed separately on the Rules pag
 
 API key permissions: `chat`, `models`, `shadow_ai:ingest`, `mcp`. On-prem license keys (`reporting:ingest`) are issued
 by platform admins only.
+
+## Licenses
+
+- The platform admin issues a license key for one company and sends it to them. It counts once one of the
+  company's admins enters it on their **License** page; a key issued for another company is refused. Admins
+  can also remove a license from their company.
+- Everyone at the company sees a banner on every page when something needs doing: 30 days before the license
+  expires, and once it has ended (expired, revoked or removed), with the date AI requests will stop.
+- After a license ends, everything keeps working for 30 days. Then AI requests stop: apps, IDE proxy traffic,
+  MCP tool calls and the browser extension get `403 LICENSE_ENDED` with a plain message. People can still sign
+  in to the dashboard, enter a new key (which takes effect at once) and read their evidence.
+- The platform admin can revoke with the 30 days, or stop at once. Companies that never entered a license get
+  the same 30 days: new companies from creation, existing ones from when licensing started being enforced.
+- Settings: `LICENSE_GRACE_DAYS` and `LICENSE_WARN_DAYS` (both 30). The platform's own tenant needs no license.
 
 ## Deployment
 

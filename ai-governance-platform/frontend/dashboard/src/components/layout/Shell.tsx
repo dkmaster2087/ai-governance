@@ -1,4 +1,6 @@
-import { useEffect, useRef } from 'react';
+import { useEffect, useRef, useState } from 'react';
+import { useQuery } from '@tanstack/react-query';
+import { fetchLicenseStatus, statusMessage } from '../../lib/license-api';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { PlumbMark } from '../kit/PlumbMark';
@@ -74,6 +76,28 @@ const linkClass = ({ isActive }: { isActive: boolean }) =>
     'flex items-center min-h-[44px] no-underline',
     isActive ? 'font-semibold text-ink shadow-[inset_0_-2px_0_#14213D]' : 'text-ink-muted hover:text-ink'
   );
+
+/** The company's license, on every page, whenever something needs doing about it. */
+function LicenseBanner({ canEnterKey }: { canEnterKey: boolean }) {
+  const { data } = useQuery({ queryKey: ['license-status'], queryFn: fetchLicenseStatus, staleTime: 60_000, refetchInterval: 5 * 60_000, retry: false });
+  const [hidden, setHidden] = useState(() => { try { return sessionStorage.getItem('probaline:license-banner') === 'hidden'; } catch { return false; } });
+  const message = data ? statusMessage(data, canEnterKey) : null;
+  // Only the "expires soon" notice can be put away (for this session); the others stay until fixed.
+  if (!message || (data?.state === 'expiring' && hidden)) return null;
+  return (
+    <div role={message.tone === 'stop' ? 'alert' : 'status'} aria-label="License"
+      className={clsx('px-5 sm:px-10 py-3 border-b flex flex-wrap items-center gap-x-4 gap-y-2', message.tone === 'stop' ? 'bg-stop-soft border-stop text-stop-text' : 'bg-[#FFF7E0] border-[#E9D18A] text-ink')}>
+      <div className="flex-1 min-w-[240px]">
+        <p className="m-0 font-semibold">{message.title}</p>
+        <p className="m-0 text-sm">{message.detail}</p>
+      </div>
+      {canEnterKey && <Link to="/license" className="font-semibold underline whitespace-nowrap">Enter a license key</Link>}
+      {data?.state === 'expiring' && (
+        <button type="button" className="text-sm underline" onClick={() => { setHidden(true); try { sessionStorage.setItem('probaline:license-banner', 'hidden'); } catch { /* unavailable */ } }}>Hide for now</button>
+      )}
+    </div>
+  );
+}
 
 export function Shell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
@@ -163,6 +187,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
         </details>
       </header>
 
+      {user && user.role !== 'platform_admin' && <LicenseBanner canEnterKey={user.role === 'tenant_admin'} />}
       <main className="px-5 sm:px-10 pt-8 pb-14">
         {!REDESIGNED.has(location.pathname) && !location.pathname.startsWith("/tenants/") && !location.pathname.startsWith("/mcp/") && current && (
           <h1 className="m-0 mb-6 text-[28px] font-bold tracking-[-0.02em]">{current.label}</h1>

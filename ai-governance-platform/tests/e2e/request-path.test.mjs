@@ -750,6 +750,43 @@ describe('streaming', () => {
   });
 });
 
+describe('licenses', () => {
+  const issue = async (tenantId) => (await call('POST', `/v1/tenants/${tenantId}/licenses`, { headers: platform, body: { plan: 'professional', type: 'cloud', maxUsers: 50, validityDays: 365 } })).body;
+  const enter = (tenantId, licenseKey) => call('POST', '/v1/license/activate', { headers: adminOf(tenantId), body: { licenseKey } });
+
+  test('a company enters its key; when the license ends AI requests stop, and a new key starts them again', async () => {
+    const first = await issue(B);
+    assert.equal(first.status, 'pending', JSON.stringify(first));
+    assert.equal((await enter(A, first.licenseKey)).body.code, 'LICENSE_FOR_ANOTHER_COMPANY');
+    const entered = await enter(B, first.licenseKey);
+    assert.equal(entered.status, 200, JSON.stringify(entered.body));
+    assert.equal(entered.body.status.state, 'active');
+    assert.equal((await chat(keyB, `hello ${marker()}`)).status, 200);
+
+    // Revoked with 30 days to renew: still working, and the company is told.
+    await call('POST', `/v1/tenants/${B}/licenses/${first.licenseId}/revoke`, { headers: platform, body: {} });
+    const grace = await call('GET', '/v1/license/status', { headers: adminOf(B) });
+    assert.deepEqual([grace.body.state, grace.body.reason, grace.body.daysLeft], ['grace', 'revoked', 30]);
+    assert.equal((await chat(keyB, `hello ${marker()}`)).status, 200);
+
+    // A second license, revoked with no grace: AI requests stop, the dashboard still answers.
+    const second = await issue(B);
+    await enter(B, second.licenseKey);
+    await call('POST', `/v1/tenants/${B}/licenses/${second.licenseId}/revoke`, { headers: platform, body: { graceDays: 0 } });
+    assert.equal((await call('GET', '/v1/license/status', { headers: adminOf(B) })).body.state, 'grace', 'the first revocation still gives grace');
+    await call('POST', `/v1/tenants/${B}/licenses/${first.licenseId}/revoke`, { headers: platform, body: { graceDays: 0 } });
+    assert.equal((await call('GET', '/v1/license/status', { headers: adminOf(B) })).body.state, 'lapsed');
+    const stopped = await chat(keyB, `hello ${marker()}`);
+    assert.equal(stopped.status, 403);
+    assert.equal(stopped.body.code, 'LICENSE_ENDED');
+    assert.equal((await call('GET', '/v1/evidence', { headers: adminOf(B) })).status, 200, 'evidence stays readable');
+
+    const third = await issue(B);
+    await enter(B, third.licenseKey);
+    assert.equal((await chat(keyB, `hello ${marker()}`)).status, 200);
+  });
+});
+
 describe('when the checks are down', () => {
   before(async () => {
     await setFailMode(A, 'closed');
