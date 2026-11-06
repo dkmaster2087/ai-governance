@@ -37,3 +37,8 @@ export async function assessFramework(framework: string) {
   const { data } = await complianceApi.post(`/assess/${getTenantId()}/${framework}`);
   return data;
 }
+
+export async function syncFramework(framework: string) {
+  const { data } = await complianceApi.post(`/sync/${getTenantId()}/${framework}`);
+  return data;
+}

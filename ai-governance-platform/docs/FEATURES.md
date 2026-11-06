@@ -43,7 +43,7 @@ to let requests through instead; those are flagged in their evidence record.
 | API keys | Keys with scoped permissions and optional expiry; create, replace, revoke |
 
 | Models & keys | Models apps can reach (Amazon Bedrock or OpenAI), provider keys, prices for Spend; test a model |
-| Compliance | SOC 2, HIPAA, EU AI Act on/off, controls in place, which need a manual review |
+| Compliance | SOC 2, HIPAA, EU AI Act on/off; every control as enforced by a rule, built into Probaline, needing your action, or not covered yet |
 | Users | Roles, and how to add people in Cognito (local demo accounts in development) |
 
 Spend, License and Settings use the same design.
@@ -61,8 +61,28 @@ Spend, License and Settings use the same design.
 
 ## Compliance packs
 
-SOC 2, HIPAA and the EU AI Act. Enabling a pack creates a linked policy. Pack controls the gateway doesn't
-enforce (for example "log every request") are listed separately on the Rules page.
+SOC 2, HIPAA and the EU AI Act. Turning one on creates its rules in a linked policy. Every control says how it
+is met, worked out live from what is switched on, never from stored counts:
+
+| State | Meaning | Examples |
+|---|---|---|
+| Enforced by a rule | A rule checks every request, and it and its policy are on | HIPAA health-data blocking, SOC 2 approved models, rate limits |
+| Built into Probaline | Done for every company | Case file for every request, sign-in and keys, HTTPS to providers, evidence kept long enough |
+| Needs your action | Something only the company can do | List the models covered by your BAA, raise evidence retention to 6 years (HIPAA), human oversight procedures |
+| Not covered yet | Probaline doesn't do it | Clinical accuracy of answers, marking AI-generated content (Art. 50), alerts for unusual usage |
+
+The rules:
+
+- **HIPAA:** stops protected health information: health details (diagnoses, ICD-10 codes, medications and
+  doses, lab results, conditions) together with an identifier (record number, labelled date of birth, SSN,
+  member or policy ID, email, phone, a patient's name). Health details alone, and ordinary names, places and
+  dates, are let through. Only models listed as covered by a BAA may be used (the list starts empty).
+- **SOC 2:** only models added on the Models page; personal data flagged (and removed by data protection);
+  per-company rate limits (600 a minute, 100,000 a day by default, counted across all instances).
+- **EU AI Act:** personal data flagged; credentials and requests for attack help flagged (not stopped); rate limits.
+- Rules run in priority order across all of a company's policies. Model rules never apply to MCP tool calls.
+- Companies that turned a framework on before these rules existed see **Update rules** on the Compliance page;
+  it keeps lists they filled in (allowed models, keywords) and their own rules, and removes rules nothing checked.
 
 ## What is recorded
 

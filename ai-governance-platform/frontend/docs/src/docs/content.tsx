@@ -143,7 +143,8 @@ client = OpenAI(
         <H2>Flag-only rules</H2>
         <P>Rules from compliance frameworks may <em>flag</em> a request instead of stopping it. The Rules page says so on each one, with how often it fired.</P>
         <H2>Controls the gateway doesn’t check</H2>
-        <P>Some framework controls, such as “log every request”, describe practices rather than checks. They’re listed separately, so the rules list never looks more protective than it is.</P>
+        <P>On the Compliance page, every control says how it is covered: <strong>enforced by a rule</strong>, <strong>built into Probaline</strong> (such as a case file for every request), <strong>needs your action</strong> (such as listing the models covered by your BAA), or <strong>not covered yet</strong>. It’s worked out each time from what is switched on, so it never claims more than is true.</P>
+        <P>HIPAA stops protected health information: health details together with who they’re about (a record number, labelled date of birth, member ID, contact details or a patient’s name). Health details on their own, and ordinary names, places and dates, aren’t stopped.</P>
         <H2>If a check can’t run</H2>
         <P>By default the request is <strong>blocked</strong>. Choose “Let it through, flagged” on the Rules page to send it anyway; each one is marked in its evidence record.</P>
       </>

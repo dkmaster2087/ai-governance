@@ -79,8 +79,17 @@ function sentence(rule: RuleView): { lead: string; terms: string; tail: string }
     case 'data_classification':
       return { lead: flag ? 'Flag prompts matching' : 'Stop prompts matching', terms: v.join(', '), tail: '.' };
     case 'model_restriction':
+      if (rule.config.onlyConfiguredModels) return { lead: flag ? 'Flag models not added on' : 'Only allow the models added on', terms: 'the Models page', tail: '.' };
+      if (!v.length) return { lead: rule.description, terms: '', tail: ' No models listed yet, so nothing is stopped: add them with Edit.' };
       return { lead: flag ? 'Flag models other than' : 'Only allow these models:', terms: v.join(', '), tail: '.' };
+    case 'rate_limit': {
+      const perMinute = Number(rule.config.requestsPerMinute) || 0;
+      const perDay = Number(rule.config.requestsPerDay) || 0;
+      const limits = [perMinute ? `${perMinute.toLocaleString()} a minute` : '', perDay ? `${perDay.toLocaleString()} a day` : ''].filter(Boolean);
+      return { lead: 'Stop requests over', terms: limits.join(' or '), tail: ' for your company.' };
+    }
     case 'pii_detection':
+      if (rule.config.phi) return { lead: flag ? 'Flag' : 'Stop', terms: 'protected health information', tail: ': health details together with who they’re about (record number, date of birth, member ID, contact details or a patient’s name).' };
       return {
         lead: flag ? 'Flag prompts containing' : 'Stop prompts containing',
         terms: v.length ? list(v.map((t) => PII_LABEL[t] ?? t)) : 'emails, phone numbers, SSNs or card numbers',
@@ -204,7 +213,7 @@ function RuleCard({ rule, canEdit, piiTypes }: { rule: RuleView; canEdit: boolea
             </span>
             <span className="flex items-center gap-2">
               {framework && <span className="text-xs px-2 py-0.5 border border-line-strong rounded-full text-ink-soft">{framework}</span>}
-              {canEdit && isEditableType(rule.type) && (
+              {canEdit && isEditableType(rule.type) && !rule.config.phi && !rule.config.onlyConfiguredModels && (
                 <button type="button" onClick={() => setEditing(true)} className="min-h-[32px] px-2 font-semibold hover:text-stop">Edit</button>
               )}
               {canEdit && !rule.framework && (

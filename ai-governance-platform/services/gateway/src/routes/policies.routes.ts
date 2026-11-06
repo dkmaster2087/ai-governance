@@ -72,7 +72,7 @@ export async function policiesRoutes(app: FastifyInstance) {
   app.get('/compliance/status/:tenantId', { preHandler: [requireAccess(TENANT_READ), requireTenantParam] }, async (request) =>
     engine.compliance('get', `/status/${encodeURIComponent((request.params as { tenantId: string }).tenantId)}`));
 
-  const change = (method: 'post' | 'delete', action: 'enable' | 'disable' | 'assess') =>
+  const change = (method: 'post' | 'delete', action: 'enable' | 'disable' | 'assess' | 'sync') =>
     async (request: { params: unknown; userId: string }, reply: { status: (n: number) => { send: (b: unknown) => unknown } }) => {
       const { tenantId, framework } = request.params as { tenantId: string; framework: string };
       if (!FRAMEWORK.test(framework)) return reply.status(404).send({ error: 'Unknown framework', code: 'NOT_FOUND' });
@@ -81,4 +81,6 @@ export async function policiesRoutes(app: FastifyInstance) {
   app.post('/compliance/enable/:tenantId/:framework', { preHandler: [requireAccess(TENANT_ADMIN), requireTenantParam] }, change('post', 'enable') as never);
   app.delete('/compliance/disable/:tenantId/:framework', { preHandler: [requireAccess(TENANT_ADMIN), requireTenantParam] }, change('delete', 'disable') as never);
   app.post('/compliance/assess/:tenantId/:framework', { preHandler: [requireAccess(TENANT_READ), requireTenantParam] }, change('post', 'assess') as never);
+  /** Bring a framework's rules up to the current definitions (keeps what the company filled in). */
+  app.post('/compliance/sync/:tenantId/:framework', { preHandler: [requireAccess(TENANT_ADMIN), requireTenantParam] }, change('post', 'sync') as never);
 }

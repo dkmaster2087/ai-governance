@@ -21,7 +21,9 @@ const PEOPLE = {
   max: { sub: 'dev-max', email: 'max@democorp.com', name: 'Max Weber', groups: ['Sales'] },
 };
 const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
-const jwk = { ...publicKey.export({ format: 'jwk' }), kid: 'dev-1', use: 'sig', alg: 'RS256' };
+// A new key each start gets a new key ID, as real providers do, so clients fetch it instead of reusing a cached one.
+const KID = createHash('sha256').update(publicKey.export({ format: 'jwk' }).n).digest('base64url').slice(0, 16);
+const jwk = { ...publicKey.export({ format: 'jwk' }), kid: KID, use: 'sig', alg: 'RS256' };
 const codes = new Map();
 const refresh = new Map();
 const disabled = new Set();
@@ -29,7 +31,7 @@ const disabled = new Set();
 const b64 = (v) => Buffer.from(v).toString('base64url');
 function idToken(p, nonce) {
   const now = Math.floor(Date.now() / 1000);
-  const input = `${b64(JSON.stringify({ alg: 'RS256', kid: 'dev-1', typ: 'JWT' }))}.${b64(JSON.stringify({ iss: issuer, aud: CLIENT_ID, sub: p.sub, email: p.email, name: p.name, groups: p.groups, ...(nonce ? { nonce } : {}), iat: now, exp: now + 600 }))}`;
+  const input = `${b64(JSON.stringify({ alg: 'RS256', kid: KID, typ: 'JWT' }))}.${b64(JSON.stringify({ iss: issuer, aud: CLIENT_ID, sub: p.sub, email: p.email, name: p.name, groups: p.groups, ...(nonce ? { nonce } : {}), iat: now, exp: now + 600 }))}`;
   return `${input}.${b64(sign('sha256', Buffer.from(input), privateKey))}`;
 }
 const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));

@@ -13,6 +13,33 @@ export interface ComplianceControl {
   policyRuleType: string;
   automatable: boolean;
   mappedRuleIds: string[];
+  /** How the control is met, so the dashboard never claims more than is true. */
+  coverage?: ControlCoverage;
+}
+
+/**
+ * - rules: met when every listed rule exists, is on, and its policy is on (and an allowlist isn't empty)
+ * - platform: Probaline does it for every company (audit records, sign-in, encryption in transit)
+ * - retention: met when the company keeps evidence at least this long
+ * - action: the company has to do something outside Probaline (contracts, procedures)
+ * - gap: Probaline doesn't cover it yet
+ */
+export type ControlCoverage =
+  | { kind: 'rules'; rules: string[]; note: string }
+  | { kind: 'platform'; note: string }
+  | { kind: 'retention'; minDays: number; note: string }
+  | { kind: 'action'; note: string }
+  | { kind: 'gap'; note: string };
+
+/** A control's state for one company, worked out on every check. */
+export type ControlState = 'enforced' | 'platform' | 'needs_action' | 'gap';
+
+export interface ControlAssessment {
+  controlId: string;
+  state: ControlState;
+  /** Counted as in place: enforced, or provided by the platform. */
+  met: boolean;
+  note: string;
 }
 
 export interface CompliancePack {

@@ -87,9 +87,12 @@ export class ServicesStack extends cdk.Stack {
       port: 3001,
       cpu: 512,
       memory: 1024,
-      environment: commonEnv,
+      // Rules check approved models and company settings, and count requests for rate limits.
+      environment: { ...commonEnv, TENANTS_TABLE: tenantsTable.tableName, MODELS_TABLE: modelsTable.tableName, COMPLIANCE_TABLE: complianceTable.tableName },
     });
-    policiesTable.grantReadData(policyEngineService.taskDefinition.taskRole);
+    policiesTable.grantReadWriteData(policyEngineService.taskDefinition.taskRole);
+    for (const t of [tenantsTable, modelsTable]) t.grantReadData(policyEngineService.taskDefinition.taskRole);
+    for (const t of [metricsTable, complianceTable]) t.grantReadWriteData(policyEngineService.taskDefinition.taskRole);
 
     // --- Data Protection Service ---
     const dataProtectionService = this.createService({

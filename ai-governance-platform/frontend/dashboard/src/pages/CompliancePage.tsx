@@ -2,15 +2,28 @@ import { useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
-import { assessFramework, disableFramework, enableFramework, fetchComplianceStatus } from '../lib/compliance-api';
+import { assessFramework, disableFramework, enableFramework, fetchComplianceStatus, syncFramework } from '../lib/compliance-api';
 import { errorMessage } from '../lib/rules-api';
 import { Button, Note, Panel, Switch } from '../components/kit/primitives';
 
-interface Control { controlId: string; title: string; severity: string; automatable: boolean }
+type ControlState = 'enforced' | 'platform' | 'needs_action' | 'gap';
+interface Control { controlId: string; title: string; severity: string; description: string }
+interface Assessment { controlId: string; state: ControlState; met: boolean; note: string }
 interface Pack {
   framework: string; name: string; version: string; description: string;
-  status: 'enabled' | 'partial' | 'disabled'; passedControls: number; totalControls: number; controls: Control[];
+  status: 'enabled' | 'partial' | 'disabled'; passedControls: number; totalControls: number;
+  /** Each control; with its state and note when the framework is on. */
+  controls: Array<Control & Partial<Assessment>>;
+  rulesOutdated?: boolean;
 }
+
+/** What each state means, in words a reviewer can repeat. */
+const STATE: Record<ControlState, { label: string; tone: string }> = {
+  enforced: { label: 'Enforced by a rule', tone: 'bg-ink-tint text-ink' },
+  platform: { label: 'Built into Probaline', tone: 'bg-ink-tint text-ink' },
+  needs_action: { label: 'Needs your action', tone: 'bg-[#FFF7E0] text-[#7A5A12]' },
+  gap: { label: 'Not covered yet', tone: 'bg-line-subtle text-ink-soft' },
+};
 
 const listJoin = (names: string[]) =>
   names.length <= 1 ? names.join('') : `${names.slice(0, -1).join(', ')} and ${names[names.length - 1]}`;
@@ -21,7 +34,6 @@ const shortName = (name: string) => name.replace(/\s*\(.*\)\s*$/, '');
 function headline(packs: Pack[]) {
   const on = packs.filter((p) => p.status !== 'disabled').map((p) => shortName(p.name));
   if (on.length === 0) return 'No compliance frameworks are on.';
-  if (on.length === packs.length) return `${listJoin(on)} ${on.length === 1 ? 'is' : 'are all'} on.`;
   return `${listJoin(on)} ${on.length === 1 ? 'is' : 'are'} on.`;
 }
 
@@ -33,12 +45,14 @@ function FrameworkPanel({ pack }: { pack: Pack }) {
   const enable = useMutation({ mutationFn: () => enableFramework(pack.framework), onSuccess: refresh });
   const disable = useMutation({ mutationFn: () => disableFramework(pack.framework), onSuccess: () => { setConfirmOff(false); refresh(); } });
   const assess = useMutation({ mutationFn: () => assessFramework(pack.framework), onSuccess: refresh });
+  const sync = useMutation({ mutationFn: () => syncFramework(pack.framework), onSuccess: refresh });
 
   const on = pack.status !== 'disabled';
   const busy = enable.isPending || disable.isPending;
   const pct = pack.totalControls ? Math.round((pack.passedControls / pack.totalControls) * 100) : 0;
-  const manual = pack.controls.filter((c) => !c.automatable).length;
-  const failure = enable.error ?? disable.error ?? assess.error;
+  const controls = pack.controls;
+  const count = (s: ControlState) => controls.filter((c) => c.state === s).length;
+  const failure = enable.error ?? disable.error ?? assess.error ?? sync.error;
 
   return (
     <Panel aria-label={pack.name} className="px-6 py-5 flex flex-col gap-3">
@@ -62,10 +76,21 @@ function FrameworkPanel({ pack }: { pack: Pack }) {
         </div>
       )}
 
+      {on && pack.rulesOutdated && (
+        <div role="status" className="flex flex-wrap items-center gap-3 rounded-lg border border-[#E9D18A] bg-[#FFF7E0] px-4 py-3">
+          <span className="text-sm flex-1 min-w-[220px]"><strong>Updated rules are available.</strong> They fix how this framework’s checks work. Lists you filled in (such as allowed models) and your own rules are kept.</span>
+          <Button onClick={() => sync.mutate()} disabled={sync.isPending}>{sync.isPending ? 'Updating…' : 'Update rules'}</Button>
+        </div>
+      )}
+
       {on && (
         <div className="flex flex-col gap-1.5">
           <div className="flex flex-wrap justify-between gap-2 text-sm">
-            <span><strong>{pack.passedControls} of {pack.totalControls}</strong> controls in place{pack.status === 'partial' ? ' so far' : ''}</span>
+            <span>
+              <strong>{pack.passedControls} of {pack.totalControls}</strong> controls in place
+              {count('needs_action') > 0 && <> · <strong>{count('needs_action')}</strong> need your action</>}
+              {count('gap') > 0 && <> · {count('gap')} not covered yet</>}
+            </span>
             <button type="button" className="text-ink-muted hover:text-ink underline disabled:opacity-50" disabled={assess.isPending} onClick={() => assess.mutate()}>
               {assess.isPending ? 'Checking…' : 'Check again'}
             </button>
@@ -78,22 +103,24 @@ function FrameworkPanel({ pack }: { pack: Pack }) {
 
       <div>
         <button type="button" aria-expanded={open} onClick={() => setOpen(!open)} className="min-h-[36px] font-semibold text-ink hover:text-stop">
-          {open ? 'Hide controls' : `Show ${pack.controls.length} controls`}{manual > 0 && !open ? <span className="font-normal text-ink-muted"> · {manual} need a manual review</span> : null}
+          {open ? 'Hide controls' : `Show ${controls.length} controls`}
         </button>
         {open && (
           <ul className="m-0 mt-2 p-0 list-none border-t border-line-subtle">
-            {pack.controls.map((c) => (
-              <li key={c.controlId} className="grid grid-cols-[minmax(0,1fr)_auto] gap-x-4 py-2.5 border-b border-line-subtle last:border-b-0">
-                <div className="min-w-0">
-                  <span className="font-mono text-xs text-ink-muted mr-2">{c.controlId}</span>
-                  <span>{c.title}</span>
-                </div>
-                <div className="text-right text-xs">
-                  <div className={clsx('font-semibold capitalize', c.severity === 'critical' ? 'text-stop-text' : 'text-ink')}>{c.severity}</div>
-                  <div className="text-ink-muted">{c.automatable ? 'Checked on each request' : 'Manual review'}</div>
-                </div>
-              </li>
-            ))}
+            {controls.map((c) => {
+              const st = on && c.state ? STATE[c.state] : null;
+              return (
+                <li key={c.controlId} className="py-3 border-b border-line-subtle last:border-b-0 flex flex-col gap-1">
+                  <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+                    <span className="font-mono text-xs text-ink-muted">{c.controlId}</span>
+                    <span className="font-semibold">{c.title}</span>
+                    <span className={clsx('text-xs font-semibold capitalize', c.severity === 'critical' ? 'text-stop-text' : 'text-ink-muted')}>{c.severity}</span>
+                    {st && <span className={clsx('ml-auto text-xs font-semibold px-2 py-0.5 rounded-full', st.tone)}>{st.label}</span>}
+                  </div>
+                  <p className="m-0 text-sm text-ink-muted">{on && c.note ? c.note : c.description}</p>
+                </li>
+              );
+            })}
           </ul>
         )}
       </div>
@@ -101,7 +128,7 @@ function FrameworkPanel({ pack }: { pack: Pack }) {
   );
 }
 
-/** Compliance frameworks: turning one on adds its rules; controls show what's covered and what needs people. */
+/** Compliance frameworks: turning one on adds its rules; each control says honestly how it is covered. */
 export function CompliancePage() {
   const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['compliance-status'], queryFn: fetchComplianceStatus });
   const packs = (Array.isArray(data) ? data : []) as Pack[];
@@ -111,7 +138,7 @@ export function CompliancePage() {
       <div>
         <p className="m-0 text-[30px] leading-[1.15] font-bold tracking-[-0.02em]">{data ? headline(packs) : ' '}</p>
         <p className="m-0 mt-1.5 text-ink-muted text-[15px]">
-          Turning a framework on adds its rules to <Link to="/rules" className="font-semibold text-ink">Rules</Link>. Controls marked manual review need evidence from your team.
+          Turning a framework on adds its rules to <Link to="/rules" className="font-semibold text-ink">Rules</Link>. Each control says whether a rule enforces it, Probaline provides it, or it needs something from your team.
         </p>
       </div>
       {isError && <Panel className="px-6"><Note title="Couldn’t load compliance frameworks."><button type="button" className="underline font-semibold" onClick={() => refetch()}>Try again</button></Note></Panel>}

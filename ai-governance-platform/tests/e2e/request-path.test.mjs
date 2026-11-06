@@ -750,40 +750,75 @@ describe('streaming', () => {
   });
 });
 
+describe('compliance frameworks', () => {
+  const comp = (method, action, fw) => call(method, `/v1/compliance/${action}/${A}/${fw}`, { headers: adminOf(A) });
+
+  test('HIPAA stops identifiable health information, lets ordinary work through, and reports controls honestly', async () => {
+    const on = await comp('POST', 'enable', 'hipaa');
+    assert.ok(on.status === 200 || on.status === 201, JSON.stringify(on.body));
+    try {
+      const phi = await chat(keyA, `Summarize the chart for MRN 00123456 ${marker()}: diagnosed with hypertension, on lisinopril 10mg.`);
+      assert.equal(phi.status, 403, JSON.stringify(phi.body));
+      const record = await caseFile(A, idOf(phi) ?? phi.body.requestId);
+      assert.equal((await chat(keyA, `Agenda for the New York planning meeting on 11/20/2026 ${marker()}`)).status, 200);
+      assert.equal((await chat(keyA, `Patient has type 2 diabetes and takes metformin 500mg; suggest a diet plan ${marker()}`)).status, 200, 'health details without an identifier are not PHI');
+
+      const status = (await call('GET', `/v1/compliance/status/${A}`, { headers: adminOf(A) })).body.find((p) => p.framework === 'hipaa');
+      const byId = Object.fromEntries(status.controls.map((c) => [c.controlId, c.state]));
+      assert.equal(byId['HIPAA-164.312-A1'], 'enforced');
+      assert.equal(byId['HIPAA-164.312-E1'], 'needs_action', 'the BAA model list is empty until the company fills it in');
+      assert.equal(byId['HIPAA-164.312-C1'], 'gap');
+      assert.ok(status.passedControls < status.totalControls);
+      // The dashboard's "Check again" and "Update rules" go through the gateway to the engine.
+      assert.equal((await comp('POST', 'assess', 'hipaa')).status, 200);
+      const synced = await comp('POST', 'sync', 'hipaa');
+      assert.equal(synced.status, 200, JSON.stringify(synced.body));
+      assert.equal(synced.body.rulesOutdated, false);
+      assert.ok(record.status === 200 || record.status === 404);
+    } finally {
+      await comp('DELETE', 'disable', 'hipaa');
+    }
+  });
+});
+
 describe('licenses', () => {
   const issue = async (tenantId) => (await call('POST', `/v1/tenants/${tenantId}/licenses`, { headers: platform, body: { plan: 'professional', type: 'cloud', maxUsers: 50, validityDays: 365 } })).body;
   const enter = (tenantId, licenseKey) => call('POST', '/v1/license/activate', { headers: adminOf(tenantId), body: { licenseKey } });
 
   test('a company enters its key; when the license ends AI requests stop, and a new key starts them again', async () => {
-    const first = await issue(B);
+    // A company of its own each run: licenses from earlier runs would otherwise still be in their grace period.
+    const L = await ensureTenant(`E2E licenses ${marker()}`, 'e2e-licenses@example.com');
+    await ensureModel(L);
+    const keyL = (await newKey(L)).key;
+    const first = await issue(L);
     assert.equal(first.status, 'pending', JSON.stringify(first));
     assert.equal((await enter(A, first.licenseKey)).body.code, 'LICENSE_FOR_ANOTHER_COMPANY');
-    const entered = await enter(B, first.licenseKey);
+    const entered = await enter(L, first.licenseKey);
     assert.equal(entered.status, 200, JSON.stringify(entered.body));
     assert.equal(entered.body.status.state, 'active');
-    assert.equal((await chat(keyB, `hello ${marker()}`)).status, 200);
+    assert.equal((await chat(keyL, `hello ${marker()}`)).status, 200);
 
     // Revoked with 30 days to renew: still working, and the company is told.
-    await call('POST', `/v1/tenants/${B}/licenses/${first.licenseId}/revoke`, { headers: platform, body: {} });
-    const grace = await call('GET', '/v1/license/status', { headers: adminOf(B) });
+    await call('POST', `/v1/tenants/${L}/licenses/${first.licenseId}/revoke`, { headers: platform, body: {} });
+    const grace = await call('GET', '/v1/license/status', { headers: adminOf(L) });
     assert.deepEqual([grace.body.state, grace.body.reason, grace.body.daysLeft], ['grace', 'revoked', 30]);
-    assert.equal((await chat(keyB, `hello ${marker()}`)).status, 200);
+    assert.equal((await chat(keyL, `hello ${marker()}`)).status, 200);
 
     // A second license, revoked with no grace: AI requests stop, the dashboard still answers.
-    const second = await issue(B);
-    await enter(B, second.licenseKey);
-    await call('POST', `/v1/tenants/${B}/licenses/${second.licenseId}/revoke`, { headers: platform, body: { graceDays: 0 } });
-    assert.equal((await call('GET', '/v1/license/status', { headers: adminOf(B) })).body.state, 'grace', 'the first revocation still gives grace');
-    await call('POST', `/v1/tenants/${B}/licenses/${first.licenseId}/revoke`, { headers: platform, body: { graceDays: 0 } });
-    assert.equal((await call('GET', '/v1/license/status', { headers: adminOf(B) })).body.state, 'lapsed');
-    const stopped = await chat(keyB, `hello ${marker()}`);
+    const second = await issue(L);
+    await enter(L, second.licenseKey);
+    await call('POST', `/v1/tenants/${L}/licenses/${second.licenseId}/revoke`, { headers: platform, body: { graceDays: 0 } });
+    assert.equal((await call('GET', '/v1/license/status', { headers: adminOf(L) })).body.state, 'grace', 'the first revocation still gives grace');
+    await call('POST', `/v1/tenants/${L}/licenses/${first.licenseId}/revoke`, { headers: platform, body: { graceDays: 0 } });
+    assert.equal((await call('GET', '/v1/license/status', { headers: adminOf(L) })).body.state, 'lapsed');
+    const stopped = await chat(keyL, `hello ${marker()}`);
     assert.equal(stopped.status, 403);
     assert.equal(stopped.body.code, 'LICENSE_ENDED');
-    assert.equal((await call('GET', '/v1/evidence', { headers: adminOf(B) })).status, 200, 'evidence stays readable');
+    assert.equal((await call('GET', '/v1/evidence', { headers: adminOf(L) })).status, 200, 'evidence stays readable');
 
-    const third = await issue(B);
-    await enter(B, third.licenseKey);
-    assert.equal((await chat(keyB, `hello ${marker()}`)).status, 200);
+    const third = await issue(L);
+    await enter(L, third.licenseKey);
+    assert.equal((await chat(keyL, `hello ${marker()}`)).status, 200);
   });
 });
 

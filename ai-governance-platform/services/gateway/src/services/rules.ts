@@ -2,7 +2,7 @@ import { randomBytes } from 'crypto';
 import { Policy, PolicyRule, PolicyRuleType } from '@ai-governance/types';
 
 /** Rule types the gateway actually evaluates on each request. */
-export const ENFORCEABLE_TYPES: PolicyRuleType[] = ['keyword_block', 'model_restriction', 'data_classification', 'pii_detection'];
+export const ENFORCEABLE_TYPES: PolicyRuleType[] = ['keyword_block', 'model_restriction', 'data_classification', 'pii_detection', 'rate_limit'];
 
 /**
  * - stops: evaluated on every request and blocks on a match.

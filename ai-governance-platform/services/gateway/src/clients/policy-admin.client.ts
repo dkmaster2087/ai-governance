@@ -15,6 +15,8 @@ export class PolicyAdminClient {
       const problems = e.response.data?.problems;
       throw new AppError('INVALID_RULES', problems?.length ? problems.join('; ') : e.response.data?.error ?? 'Invalid rule', 400);
     }
+    // Any other refusal is a bug between the two services, not the engine being down: say so in the log.
+    if (e.response && e.response.status < 500) throw new AppError('POLICY_ENGINE_REFUSED', `The policy engine refused the request (${e.response.status})`, 502);
     throw new AppError('POLICY_ENGINE_UNAVAILABLE', 'Policy engine unavailable', 503);
   }
 
@@ -52,7 +54,8 @@ export class PolicyAdminClient {
   /** Compliance calls, always under the given tenant. */
   async compliance(method: 'get' | 'post' | 'delete', path: string, body?: unknown): Promise<unknown> {
     try {
-      const { data } = await axios.request({ method, url: `${this.baseUrl}/v1/compliance${path}`, data: body, timeout: 10000 });
+      // A POST always carries a JSON body: without one, the engine refuses it as an unknown content type.
+      const { data } = await axios.request({ method, url: `${this.baseUrl}/v1/compliance${path}`, data: body ?? (method === 'post' ? {} : undefined), timeout: 10000 });
       return data;
     } catch (err) {
       const e = err as { response?: { status?: number; data?: { error?: string } } };

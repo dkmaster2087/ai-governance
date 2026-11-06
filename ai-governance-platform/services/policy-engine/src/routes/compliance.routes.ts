@@ -25,24 +25,27 @@ export async function complianceRoutes(app: FastifyInstance) {
     return service.getPack(framework);
   });
 
-  // Get tenant's enabled frameworks and their status
+  // Each framework, whether it's on, and (when on) every control as it stands right now.
   app.get('/status/:tenantId', async (request) => {
     const { tenantId } = request.params as { tenantId: string };
     const states = await service.getTenantComplianceStates(tenantId);
-    const allPacks = service.getAllPacks();
-
-    // Merge pack definitions with tenant state
-    return allPacks.map((pack) => {
+    return Promise.all(service.getAllPacks().map(async (pack) => {
       const state = states.find((s) => s.framework === pack.framework);
+      if (!state) return { ...pack, status: 'disabled', passedControls: 0, totalControls: pack.controls.length };
+      const a = await service.assess(tenantId, pack.framework);
+      const byId = new Map(a.controls.map((c) => [c.controlId, c]));
+      // Each control with its definition and how it stands now.
       return {
-        ...pack,
-        status: state?.status ?? 'disabled',
-        enabledAt: state?.enabledAt,
-        passedControls: state?.passedControls ?? 0,
-        totalControls: pack.controls.length,
-        lastAssessedAt: state?.lastAssessedAt,
+        ...pack, ...a, enabledAt: state.enabledAt, lastAssessedAt: new Date().toISOString(),
+        controls: pack.controls.map((c) => ({ ...c, ...byId.get(c.controlId) })),
       };
-    });
+    }));
+  });
+
+  // Bring a framework's rules up to date (keeps what the company filled in, such as allowed models)
+  app.post('/sync/:tenantId/:framework', async (request) => {
+    const { tenantId, framework } = request.params as { tenantId: string; framework: ComplianceFramework };
+    return service.syncFramework(tenantId, framework);
   });
 
   // Enable a framework for a tenant

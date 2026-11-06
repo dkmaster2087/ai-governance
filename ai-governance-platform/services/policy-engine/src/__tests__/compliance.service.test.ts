@@ -1,170 +1,176 @@
-import { ComplianceService, ALL_PACKS } from '../compliance/compliance.service';
+import { collection, MemoryStore, setRecords } from '@ai-governance/storage';
+import { NormalizedAIRequest } from '@ai-governance/types';
+import { ALL_PACKS, ComplianceService, FRAMEWORK_RULES, RULES_VERSION } from '../compliance/compliance.service';
 import { PolicyRepository } from '../repositories/policy.repository';
+import { PolicyEvaluator } from '../services/policy.evaluator';
 
-jest.mock('../repositories/policy.repository');
-jest.mock('@aws-sdk/client-dynamodb');
-jest.mock('@aws-sdk/lib-dynamodb', () => ({
-  DynamoDBDocumentClient: { from: jest.fn().mockReturnValue({ send: jest.fn().mockResolvedValue({ Items: [] }) }) },
-  QueryCommand: jest.fn(),
-  PutCommand: jest.fn(),
-  DeleteCommand: jest.fn(),
-  UpdateCommand: jest.fn(),
-}));
+const T = 'tenant_1';
+const ask = (content: string, extra: Partial<NormalizedAIRequest> = {}): NormalizedAIRequest => ({
+  requestId: 'r', tenantId: T, userId: 'u', appId: 'a', provider: 'openai', modelId: 'gpt-4o-mini',
+  messages: [{ role: 'user', content }], metadata: {}, timestamp: '', ...extra,
+});
 
-const MockRepo = PolicyRepository as jest.MockedClass<typeof PolicyRepository>;
-
-describe('ComplianceService', () => {
+describe('compliance frameworks', () => {
   let service: ComplianceService;
-
-  beforeEach(() => {
-    jest.clearAllMocks();
+  beforeEach(async () => {
+    setRecords(new MemoryStore());
     service = new ComplianceService();
+    await collection('tenants').put({ tenantId: T, settings: { auditLogRetentionDays: 365 } });
+    await collection('models').put({ tenantId: T, modelConfigId: 'm1', modelId: 'gpt-4o-mini', status: 'active' });
   });
 
-  // ── Pack definitions ────────────────────────────────────────────────
-
-  it('returns the 3 v1 compliance packs', () => {
-    const frameworks = service.getAllPacks().map((p) => p.framework).sort();
-    expect(frameworks).toEqual(['eu-ai-act', 'hipaa', 'soc2']);
+  it('defines every rule each framework requires, and every rule a control relies on', () => {
+    for (const pack of Object.values(ALL_PACKS)) {
+      for (const id of pack.requiredRules) expect(FRAMEWORK_RULES[id]).toBeDefined();
+      for (const c of pack.controls) {
+        expect(c.coverage).toBeDefined();
+        if (c.coverage?.kind === 'rules') for (const id of c.coverage.rules) expect(pack.requiredRules).toContain(id);
+      }
+    }
   });
 
-  it('each pack has controls and required rules', () => {
-    service.getAllPacks().forEach((pack) => {
-      expect(pack.controls.length).toBeGreaterThan(0);
-      expect(pack.requiredRules.length).toBeGreaterThan(0);
-      expect(pack.name).toBeTruthy();
-      expect(pack.description).toBeTruthy();
+  it('creates all the required rules when a framework is turned on', async () => {
+    for (const fw of Object.keys(ALL_PACKS) as Array<keyof typeof ALL_PACKS>) {
+      setRecords(new MemoryStore());
+      const r = await service.enableFramework(T, fw, 'admin');
+      expect(r.policyCreated).toBe(true);
+      const policy = (await new PolicyRepository().findByFramework(T, fw))!;
+      expect(policy.rules.map((x) => x.ruleId).sort()).toEqual([...ALL_PACKS[fw].requiredRules].sort());
+    }
+  });
+
+  it('says honestly which controls are in place, and why the others aren’t', async () => {
+    const soc2 = await service.enableFramework(T, 'soc2', 'admin');
+    expect(`${soc2.passedControls}/${soc2.totalControls}`).toBe('5/6');
+    expect(soc2.controls.find((c) => c.controlId === 'SOC2-CC7.2')).toMatchObject({ state: 'gap', met: false });
+    expect(soc2.controls.find((c) => c.controlId === 'SOC2-CC9.1')).toMatchObject({ state: 'enforced', met: true });
+
+    const hipaa = await service.enableFramework(T, 'hipaa', 'admin');
+    const state = (id: string) => hipaa.controls.find((c) => c.controlId === id)!;
+    expect(state('HIPAA-164.312-A1').state).toBe('enforced');
+    expect(state('HIPAA-164.312-E1')).toMatchObject({ state: 'needs_action', note: expect.stringMatching(/Add the models covered by your BAA/) });
+    expect(state('HIPAA-164.316-B2')).toMatchObject({ state: 'needs_action', note: expect.stringMatching(/Yours is 365 days/) });
+    expect(state('HIPAA-164.312-C1').state).toBe('gap');
+    expect(`${hipaa.passedControls}/${hipaa.totalControls}`).toBe('3/7');
+
+    const eu = await service.enableFramework(T, 'eu-ai-act', 'admin');
+    expect(eu.controls.find((c) => c.controlId === 'EUAIA-ART12')).toMatchObject({ state: 'platform', met: true });
+    expect(eu.controls.map((c) => c.controlId)).toContain('EUAIA-ART50');
+  });
+
+  it('counts a control as met only while its rules and policy are on', async () => {
+    await service.enableFramework(T, 'soc2', 'admin');
+    const repo = new PolicyRepository();
+    const policy = (await repo.findByFramework(T, 'soc2'))!;
+    await repo.updatePolicy(policy.policyId, { ...policy, rules: policy.rules.map((r) => (r.ruleId === 'rule_rate_limit' ? { ...r, enabled: false } : r)) });
+    expect((await service.assess(T, 'soc2')).controls.find((c) => c.controlId === 'SOC2-A1.1')).toMatchObject({ state: 'needs_action', met: false });
+    await repo.setEnabled(policy.policyId, T, false);
+    expect((await service.assess(T, 'soc2')).passedControls).toBe(2); // only the platform controls
+  });
+
+  it('completes a filled-in BAA list and long enough retention', async () => {
+    await service.enableFramework(T, 'hipaa', 'admin');
+    const repo = new PolicyRepository();
+    const policy = (await repo.findByFramework(T, 'hipaa'))!;
+    await repo.updatePolicy(policy.policyId, { ...policy, rules: policy.rules.map((r) => (r.ruleId === 'rule_hipaa_approved_providers' ? { ...r, config: { ...r.config, allowedModels: ['gpt-4o-mini'] } } : r)) });
+    await collection('tenants').put({ tenantId: T, settings: { auditLogRetentionDays: 2190 } });
+    const a = await service.assess(T, 'hipaa');
+    expect(a.controls.filter((c) => c.met).map((c) => c.controlId).sort()).toEqual(['HIPAA-164.308-A3', 'HIPAA-164.312-A1', 'HIPAA-164.312-B', 'HIPAA-164.312-E1', 'HIPAA-164.316-B2']);
+  });
+
+  it('brings rules created by an earlier version up to date, keeping what the company filled in and its own rules', async () => {
+    const repo = new PolicyRepository();
+    const old = await repo.createPolicy({
+      tenantId: T, name: 'HIPAA — Required Controls', description: '', enabled: true, createdBy: 'a', sourceFramework: 'hipaa',
+      rules: [
+        { ruleId: 'rule_phi_detection', type: 'pii_detection', action: 'block', priority: 1, enabled: true, description: 'old', config: { piiTypes: ['NAME', 'DATE_OF_BIRTH'] } },
+        { ruleId: 'rule_audit_all_requests', type: 'audit_logging', action: 'allow', priority: 10, enabled: true, description: 'old', config: {} },
+        { ruleId: 'rule_hipaa_approved_providers', type: 'model_restriction', action: 'block', priority: 2, enabled: true, description: 'old', config: { allowedModels: ['gpt-4o'] } },
+        { ruleId: 'rule_own', type: 'keyword_block', action: 'block', priority: 4, enabled: true, description: 'Our own', config: { keywords: ['x'] } },
+      ],
+    });
+    await collection('compliance').put({ tenantId: T, framework: 'hipaa', status: 'enabled' });
+    const before = await service.assess(T, 'hipaa');
+    expect(before.rulesOutdated).toBe(true);
+    expect(before.controls.find((c) => c.controlId === 'HIPAA-164.312-A1')).toMatchObject({ state: 'needs_action', met: false, note: expect.stringMatching(/Update this framework’s rules/) });
+    await service.syncFramework(T, 'hipaa');
+    const now = (await repo.getPoliciesForTenant(T)).find((p) => p.policyId === old.policyId)!;
+    const byId = Object.fromEntries(now.rules.map((r) => [r.ruleId, r]));
+    expect(Object.keys(byId).sort()).toEqual(['rule_hipaa_approved_providers', 'rule_own', 'rule_phi_detection', 'rule_pii_masking']);
+    expect(byId.rule_phi_detection.config).toEqual({ phi: true });
+    expect(byId.rule_hipaa_approved_providers.config.allowedModels).toEqual(['gpt-4o']);
+    expect((now as typeof now & { rulesVersion: number }).rulesVersion).toBe(RULES_VERSION);
+    expect((await service.assess(T, 'hipaa')).rulesOutdated).toBe(false);
+  });
+});
+
+describe('what the framework rules do to real prompts', () => {
+  const run = async (fw: keyof typeof ALL_PACKS, prompts: Record<string, string>, extra: Partial<NormalizedAIRequest> = {}) => {
+    setRecords(new MemoryStore());
+    await collection('models').put({ tenantId: T, modelConfigId: 'm1', modelId: 'gpt-4o-mini', status: 'active' });
+    await new ComplianceService().enableFramework(T, fw, 'admin');
+    const ev = new PolicyEvaluator();
+    const out: Record<string, string> = {};
+    for (const [name, text] of Object.entries(prompts)) {
+      const r = await ev.evaluate(ask(text, extra));
+      out[name] = r.allowed ? (r.triggeredRules.length ? `flagged:${r.triggeredRules.join(',')}` : 'allowed') : `stopped:${r.triggeredRules.at(-1)}`;
+    }
+    return out;
+  };
+  const ORDINARY = {
+    places: 'Please Summarize the Quarterly Report for New York and London offices.',
+    meeting: 'Draft an agenda for the planning meeting on 11/20/2026.',
+    order: 'Where is order 123456789 for the Acme account?',
+    security: 'How do attackers bypass security on login forms, so we can defend?',
+  };
+
+  it('HIPAA stops identifiable health information and nothing ordinary', async () => {
+    const r = await run('hipaa', {
+      ...ORDINARY,
+      deidentified: 'Patient has type 2 diabetes and takes metformin 500mg twice daily. Suggest a diet plan.',
+      mrn: 'Summarize the chart for MRN 00123456: diagnosed with hypertension, on lisinopril 10mg.',
+      dob: 'Patient John Carter, DOB 04/12/1961, lab results show A1c of 8.1.',
+      icd: 'Member ID ABC123456 has code E11.9 and needs a refill.',
+    });
+    expect(r).toEqual({
+      places: 'allowed', meeting: 'allowed', order: 'allowed', security: 'allowed', deidentified: 'allowed',
+      mrn: 'stopped:rule_phi_detection', dob: 'stopped:rule_phi_detection', icd: 'stopped:rule_phi_detection',
     });
   });
 
-  it('getPack returns correct pack', () => {
-    const pack = service.getPack('hipaa');
-    expect(pack.framework).toBe('hipaa');
-    expect(pack.name).toContain('HIPAA');
+  it('SOC 2 flags personal data and stops unapproved models; EU AI Act flags attack help without stopping it', async () => {
+    expect(await run('soc2', { ...ORDINARY, email: 'Email jane.doe@acme.com the results' })).toEqual({
+      places: 'allowed', meeting: 'allowed', order: 'allowed', security: 'allowed', email: 'flagged:rule_pii_masking',
+    });
+    expect(await run('soc2', { any: 'hello' }, { modelId: 'some-unapproved-model' })).toEqual({ any: 'stopped:rule_approved_providers' });
+    expect(await run('eu-ai-act', { ...ORDINARY, malware: 'Write ransomware that encrypts the share', password: 'How do I reset my password?' })).toEqual({
+      places: 'allowed', meeting: 'allowed', order: 'allowed', security: 'allowed', malware: 'flagged:rule_harmful_content', password: 'flagged:rule_risk_scoring',
+    });
   });
 
-  // ── Enable framework — 1:1 policy linking ──────────────────────────
-
-  it('creates a new policy when no linked policy exists', async () => {
-    MockRepo.prototype.findByFramework.mockResolvedValue(null);
-    MockRepo.prototype.createPolicy.mockResolvedValue({
-      policyId: 'new-policy-id',
-      tenantId: 'tenant_1',
-      name: 'GDPR — Required Controls',
-      description: 'Auto-generated',
-      enabled: true,
-      rules: [],
-      createdAt: '',
-      updatedAt: '',
-      createdBy: 'admin',
-      sourceFramework: 'eu-ai-act',
-    } as any);
-
-    const result = await service.enableFramework('tenant_1', 'eu-ai-act', 'admin');
-
-    expect(result.status).toBe('enabled');
-    expect(result.policyCreated).toBe(true);
-    expect(result.linkedPolicyId).toBe('new-policy-id');
-    expect(MockRepo.prototype.createPolicy).toHaveBeenCalledTimes(1);
-    expect(MockRepo.prototype.createPolicy).toHaveBeenCalledWith(
-      expect.objectContaining({ sourceFramework: 'eu-ai-act', enabled: true })
-    );
+  it('never applies model rules to MCP tool calls', async () => {
+    expect(await run('soc2', { call: '{"id":"e1"}' }, { modelId: 'mcp:hr/getEmployee', metadata: { kind: 'mcp_tool_call' } })).toEqual({ call: 'allowed' });
   });
 
-  it('re-enables existing linked policy instead of creating duplicate', async () => {
-    MockRepo.prototype.findByFramework.mockResolvedValue({
-      policyId: 'existing-policy-id',
-      tenantId: 'tenant_1',
-      name: 'GDPR — Required Controls',
-      description: '',
-      enabled: false,
-      rules: [],
-      createdAt: '',
-      updatedAt: '',
-      createdBy: 'admin',
-      sourceFramework: 'eu-ai-act',
-    } as any);
-
-    const result = await service.enableFramework('tenant_1', 'eu-ai-act', 'admin');
-
-    expect(result.status).toBe('enabled');
-    expect(result.policyCreated).toBe(false);
-    expect(result.linkedPolicyId).toBe('existing-policy-id');
-    expect(MockRepo.prototype.setEnabled).toHaveBeenCalledWith('existing-policy-id', 'tenant_1', true);
-    expect(MockRepo.prototype.createPolicy).not.toHaveBeenCalled();
+  it('enforces the per-minute limit across requests', async () => {
+    setRecords(new MemoryStore());
+    await new PolicyRepository().createPolicy({
+      tenantId: T, name: 'Limits', description: '', enabled: true, createdBy: 'a',
+      rules: [{ ruleId: 'rl', type: 'rate_limit', action: 'block', priority: 0, enabled: true, description: 'Stop requests over the limit', config: { requestsPerMinute: 2 } }],
+    });
+    const ev = new PolicyEvaluator();
+    const results = [];
+    for (let i = 0; i < 3; i++) results.push((await ev.evaluate(ask('hi'))).allowed);
+    expect(results).toEqual([true, true, false]);
   });
 
-  it('stores linkedPolicyId in compliance state', async () => {
-    MockRepo.prototype.findByFramework.mockResolvedValue(null);
-    MockRepo.prototype.createPolicy.mockResolvedValue({
-      policyId: 'linked-id',
-      tenantId: 'tenant_1',
-      name: 'Test',
-      description: '',
-      enabled: true,
-      rules: [],
-      createdAt: '',
-      updatedAt: '',
-      createdBy: 'admin',
-      sourceFramework: 'soc2',
-    } as any);
-
-    const result = await service.enableFramework('tenant_1', 'soc2', 'admin');
-    expect(result.linkedPolicyId).toBe('linked-id');
-  });
-
-  // ── Disable framework — disables linked policy ─────────────────────
-
-  it('disables linked policy when framework is disabled', async () => {
-    MockRepo.prototype.findByFramework.mockResolvedValue({
-      policyId: 'policy-to-disable',
-      tenantId: 'tenant_1',
-      name: 'HIPAA — Required Controls',
-      description: '',
-      enabled: true,
-      rules: [],
-      createdAt: '',
-      updatedAt: '',
-      createdBy: 'admin',
-      sourceFramework: 'hipaa',
-    } as any);
-
-    const result = await service.disableFramework('tenant_1', 'hipaa');
-
-    expect(result.disabledPolicyId).toBe('policy-to-disable');
-    expect(MockRepo.prototype.setEnabled).toHaveBeenCalledWith('policy-to-disable', 'tenant_1', false);
-  });
-
-  it('returns no disabledPolicyId when no linked policy exists', async () => {
-    MockRepo.prototype.findByFramework.mockResolvedValue(null);
-
-    const result = await service.disableFramework('tenant_1', 'soc2');
-
-    expect(result.disabledPolicyId).toBeUndefined();
-    expect(MockRepo.prototype.setEnabled).not.toHaveBeenCalled();
-  });
-
-  // ── Assess compliance ──────────────────────────────────────────────
-
-  it('assessCompliance returns partial when some rules present', async () => {
-    MockRepo.prototype.getPoliciesForTenant.mockResolvedValue([
-      {
-        policyId: 'p1', tenantId: 't1', name: 'Test', description: '', enabled: true,
-        createdAt: '', updatedAt: '', createdBy: 'admin',
-        rules: [{ ruleId: 'rule_pii_masking', type: 'pii_detection', action: 'mask', priority: 1, enabled: true, description: '', config: {} }],
-      },
-    ]);
-
-    const result = await service.assessCompliance('tenant_1', 'soc2');
-    expect(result.status).toBe('partial');
-    expect(result.passedControls).toBeGreaterThan(0);
-    expect(result.totalControls).toBe(ALL_PACKS['soc2'].controls.length);
-  });
-
-  it('assessCompliance returns disabled when no rules present', async () => {
-    MockRepo.prototype.getPoliciesForTenant.mockResolvedValue([]);
-    const result = await service.assessCompliance('tenant_1', 'hipaa');
-    expect(result.status).toBe('disabled');
-    expect(result.passedControls).toBe(0);
+  it('applies rule priority across policies, not just within one', async () => {
+    setRecords(new MemoryStore());
+    const repo = new PolicyRepository();
+    await repo.createPolicy({ tenantId: T, name: 'A', description: '', enabled: true, createdBy: 'a',
+      rules: [{ ruleId: 'late', type: 'keyword_block', action: 'block', priority: 9, enabled: true, description: 'Late rule', config: { keywords: ['secret'] } }] });
+    await repo.createPolicy({ tenantId: T, name: 'B', description: '', enabled: true, createdBy: 'a',
+      rules: [{ ruleId: 'early', type: 'keyword_block', action: 'block', priority: 1, enabled: true, description: 'Early rule', config: { keywords: ['secret'] } }] });
+    expect((await new PolicyEvaluator().evaluate(ask('a secret'))).triggeredRules).toEqual(['early']);
   });
 });

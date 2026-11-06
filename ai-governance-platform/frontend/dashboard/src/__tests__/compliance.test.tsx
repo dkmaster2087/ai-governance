@@ -10,6 +10,7 @@ vi.mock('../lib/compliance-api', () => ({
   enableFramework: vi.fn(),
   disableFramework: vi.fn(),
   assessFramework: vi.fn(),
+  syncFramework: vi.fn(async () => ({})),
 }));
 
 const wrap = () => {
@@ -20,8 +21,9 @@ const wrap = () => {
 const pack = (framework: string, name: string, status: 'enabled' | 'partial' | 'disabled') => ({
   framework, name, version: '1.0', description: `${name} controls`, status, passedControls: status === 'disabled' ? 0 : 3, totalControls: 5,
   controls: [
-    { controlId: `${framework}-1`, title: 'Access control', severity: 'critical', automatable: true },
-    { controlId: `${framework}-2`, title: 'Risk assessment', severity: 'medium', automatable: false },
+    { controlId: `${framework}-1`, title: 'Access control', description: 'd1', severity: 'critical', automatable: true, ...(status !== 'disabled' ? { state: 'platform', met: true, note: 'Every request needs a key.' } : {}) },
+    { controlId: `${framework}-2`, title: 'Approved providers', description: 'd2', severity: 'high', automatable: true, ...(status !== 'disabled' ? { state: 'needs_action', met: false, note: 'Add the models covered by your BAA.' } : {}) },
+    { controlId: `${framework}-3`, title: 'Content marking', description: 'd3', severity: 'medium', automatable: false, ...(status !== 'disabled' ? { state: 'gap', met: false, note: 'Not built yet.' } : {}) },
   ],
 });
 
@@ -67,11 +69,21 @@ describe('CompliancePage', () => {
     expect(await screen.findByRole('alert')).toHaveTextContent('Policy engine unavailable');
   });
 
-  it('lists controls and which need a manual review', async () => {
-    vi.mocked(api.fetchComplianceStatus).mockResolvedValue([pack('soc2', 'SOC 2', 'enabled')]);
+  it('says for each control how it is covered, and what to do about the rest', async () => {
+    vi.mocked(api.fetchComplianceStatus).mockResolvedValue([pack('hipaa', 'HIPAA', 'partial')]);
     wrap();
-    fireEvent.click(await screen.findByRole('button', { name: /Show 2 controls/ }));
-    expect(screen.getByText('Access control')).toBeInTheDocument();
-    expect(screen.getByText('Manual review')).toBeInTheDocument();
+    expect(await screen.findByText(/need your action/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: /Show 3 controls/ }));
+    expect(screen.getByText('Built into Probaline')).toBeInTheDocument();
+    expect(screen.getByText('Needs your action')).toBeInTheDocument();
+    expect(screen.getByText('Add the models covered by your BAA.')).toBeInTheDocument();
+    expect(screen.getByText('Not covered yet')).toBeInTheDocument();
+  });
+
+  it('offers to update rules made by an earlier version', async () => {
+    vi.mocked(api.fetchComplianceStatus).mockResolvedValue([{ ...pack('hipaa', 'HIPAA', 'partial'), rulesOutdated: true }]);
+    wrap();
+    fireEvent.click(await screen.findByRole('button', { name: 'Update rules' }));
+    await waitFor(() => expect(api.syncFramework).toHaveBeenCalledWith('hipaa'));
   });
 });
