@@ -1,18 +1,23 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { ApiKeySummary, createKey, deleteKey, listKeys, revokeKey, rotateKey, Scope } from '../lib/api-keys-api';
 import { errorMessage } from '../lib/rules-api';
-import { Button, Note, Panel, SectionLabel } from '../components/kit/primitives';
+import { Button, Note, Panel, SectionLabel, Segmented } from '../components/kit/primitives';
+import { CATEGORIES, CategoryBadge, CategoryGlyph, categoriesOf, categoryStyle, KeyCategory } from '../lib/key-categories';
 
-const SCOPES: Array<{ value: Scope; label: string; hint: string }> = [
-  { value: 'chat', label: 'Send AI requests', hint: 'For apps and the IDE proxy' },
-  { value: 'models', label: 'List models', hint: 'Lets an app see which models it may use' },
-  { value: 'shadow_ai:ingest', label: 'Browser extension', hint: 'Report visits and read extension settings only' },
-  { value: 'mcp', label: 'Connect AI agents (MCP)', hint: 'Use the tools on your MCP servers' },
+const SCOPES: Array<{ value: Scope; label: string; hint: string; category: KeyCategory }> = [
+  { value: 'chat', label: 'Send AI requests', hint: 'For apps and the IDE proxy', category: 'apps' },
+  { value: 'models', label: 'List models', hint: 'Lets an app see which models it may use', category: 'apps' },
+  { value: 'mcp', label: 'Connect AI agents (MCP)', hint: 'Use the tools on your MCP servers', category: 'agents' },
+  { value: 'shadow_ai:ingest', label: 'Browser extension', hint: 'Report visits and read extension settings only', category: 'extension' },
 ];
 const SCOPE_LABEL: Record<string, string> = { chat: 'Send AI requests', models: 'List models', 'shadow_ai:ingest': 'Browser extension', 'reporting:ingest': 'On-prem license', mcp: 'Connect AI agents (MCP)' };
+
+type Status = 'active' | 'ended';
+const isActive = (k: ApiKeySummary) => k.status === 'active' && !(k.expiresAt && new Date(k.expiresAt) < new Date());
 
 function date(iso?: string) {
   return iso ? new Date(iso).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : '—';
@@ -42,16 +47,22 @@ function KeyRow({ k, onNewKey }: { k: ApiKeySummary; onNewKey: (key: string) => 
   const expired = k.status === 'active' && k.expiresAt && new Date(k.expiresAt) < new Date();
   const status = k.status === 'revoked' ? 'Revoked' : expired ? 'Expired' : 'Active';
   const error = revoke.error ?? rotate.error ?? remove.error;
+  const categories = categoriesOf(k);
 
   return (
-    <Panel as="article" className={clsx('px-[22px] py-[18px] flex flex-wrap items-center gap-x-7 gap-y-3', status !== 'Active' && 'opacity-75')}>
+    <Panel as="article" aria-label={k.name} className={clsx('relative overflow-hidden pl-[26px] pr-[22px] py-[18px] flex flex-wrap items-center gap-x-7 gap-y-3', status !== 'Active' && 'opacity-75')}>
+      {/* The colour bar says what the key is for at a glance; split when it's for several things. */}
+      <span aria-hidden="true" className="absolute left-0 top-0 bottom-0 w-[5px] flex flex-col">
+        {(categories.length ? categories : ['apps' as KeyCategory]).map((c) => <span key={c} className={clsx('flex-1', categoryStyle(c).bar)} />)}
+      </span>
       <div className="flex-[1_1_240px] min-w-0">
         <div className="flex items-center gap-2.5 flex-wrap">
           <h2 className="m-0 text-lg font-bold">{k.name}</h2>
           <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full', status === 'Active' ? 'bg-ink-tint text-ink' : 'bg-line-subtle text-ink-soft')}>{status}</span>
         </div>
-        <div className="font-mono text-xs text-ink-muted mt-0.5">{k.keyPrefix}</div>
-        <div className="text-xs text-ink-muted mt-1">{k.scopes.map((s) => SCOPE_LABEL[s] ?? s).join(' · ')}</div>
+        <div className="flex flex-wrap gap-1.5 mt-1.5">{categories.map((c) => <CategoryBadge key={c} category={c} />)}</div>
+        <div className="font-mono text-xs text-ink-muted mt-1.5">{k.keyPrefix}</div>
+        <div className="text-xs text-ink-muted mt-0.5">Can: {k.scopes.map((s) => SCOPE_LABEL[s] ?? s).join(' · ')}</div>
       </div>
       <dl className="m-0 flex gap-6 text-sm">
         <div><dt className="text-xs text-ink-muted">Last used</dt><dd className="m-0">{date(k.lastUsedAt)}</dd></div>
@@ -82,12 +93,45 @@ export function ApiKeysPage() {
   });
   const canCreate = name.trim().length > 0 && scopes.length > 0 && !create.isPending;
 
+  // Filters live in the address, so a filtered view can be shared or bookmarked.
+  const [params, setParams] = useSearchParams();
+  const category = (CATEGORIES.some((c) => c.id === params.get('category')) ? params.get('category') : 'all') as KeyCategory | 'all';
+  const status = (params.get('status') === 'ended' ? 'ended' : params.get('status') === 'all' ? 'all' : 'active') as Status | 'all';
+  const sort = (['used', 'name'].includes(params.get('sort') ?? '') ? params.get('sort') : 'newest') as 'newest' | 'used' | 'name';
+  const q = params.get('q') ?? '';
+  const setParam = (key: string, value: string, fallback: string) => {
+    const next = new URLSearchParams(params);
+    if (value === fallback) next.delete(key); else next.set(key, value);
+    setParams(next, { replace: true });
+  };
+  const keys = data ?? [];
+  const counts = useMemo(() => {
+    const byStatus = keys.filter((k) => status === 'all' || (status === 'active' ? isActive(k) : !isActive(k)));
+    return {
+      all: byStatus.length,
+      ...Object.fromEntries(CATEGORIES.map((c) => [c.id, byStatus.filter((k) => categoriesOf(k).includes(c.id)).length])),
+      active: keys.filter(isActive).length,
+      ended: keys.filter((k) => !isActive(k)).length,
+    } as Record<KeyCategory | 'all' | 'active' | 'ended', number>;
+  }, [keys, status]);
+  const shownKeys = useMemo(() => {
+    const needle = q.trim().toLowerCase();
+    return keys
+      .filter((k) => status === 'all' || (status === 'active' ? isActive(k) : !isActive(k)))
+      .filter((k) => category === 'all' || categoriesOf(k).includes(category))
+      .filter((k) => !needle || k.name.toLowerCase().includes(needle) || k.keyPrefix.toLowerCase().includes(needle) || k.createdBy?.toLowerCase().includes(needle))
+      .sort((a, b) => sort === 'name' ? a.name.localeCompare(b.name)
+        : sort === 'used' ? (b.lastUsedAt ?? '').localeCompare(a.lastUsedAt ?? '')
+        : b.createdAt.localeCompare(a.createdAt));
+  }, [keys, status, category, q, sort]);
+  const filtered = category !== 'all' || status !== 'active' || !!q;
+
   return (
     <div className="flex flex-col gap-6 max-w-[1100px]">
       <div className="flex flex-wrap justify-between items-end gap-4">
         <div>
           <h1 className="m-0 text-[34px] leading-[1.1] font-bold tracking-[-0.02em]">API keys</h1>
-          <p className="m-0 mt-1.5 text-ink-muted text-[15px]">Keys let your apps, IDE proxy and browser extension use the gateway. Give each one only what it needs.</p>
+          <p className="m-0 mt-1.5 text-ink-muted text-[15px]">Keys let your apps and IDEs, AI agents and the browser extension use Probaline. Give each one only what it needs.</p>
         </div>
         {!creating && <Button onClick={() => setCreating(true)}>Create a key</Button>}
       </div>
@@ -104,12 +148,17 @@ export function ApiKeysPage() {
             </label>
             <fieldset className="m-0 p-0 border-0 flex flex-col gap-2">
               <legend className="text-sm font-semibold mb-1">What it can do</legend>
-              {SCOPES.map((s) => (
-                <label key={s.value} className="flex items-start gap-2.5 min-h-[32px]">
-                  <input type="checkbox" className="mt-1" checked={scopes.includes(s.value)}
-                    onChange={(e) => setScopes(e.target.checked ? [...scopes, s.value] : scopes.filter((x) => x !== s.value))} />
-                  <span><span className="font-medium">{s.label}</span> <span className="text-ink-muted">· {s.hint}</span></span>
-                </label>
+              {CATEGORIES.map((c) => (
+                <div key={c.id} className="flex flex-col gap-1">
+                  <CategoryBadge category={c.id} className="self-start" />
+                  {SCOPES.filter((s) => s.category === c.id).map((s) => (
+                    <label key={s.value} className="flex items-start gap-2.5 min-h-[32px] pl-1">
+                      <input type="checkbox" className="mt-1" checked={scopes.includes(s.value)}
+                        onChange={(e) => setScopes(e.target.checked ? [...scopes, s.value] : scopes.filter((x) => x !== s.value))} />
+                      <span><span className="font-medium">{s.label}</span> <span className="text-ink-muted">· {s.hint}</span></span>
+                    </label>
+                  ))}
+                </div>
               ))}
             </fieldset>
             <label className="flex flex-col gap-1.5 max-w-[240px]">
@@ -134,10 +183,45 @@ export function ApiKeysPage() {
       {isLoading && <Panel className="px-6 py-5"><p className="m-0 text-ink-muted">Loading…</p></Panel>}
       {data && data.length === 0 && <Panel className="px-6"><Note title="No API keys yet.">Create one to connect your first app.</Note></Panel>}
       {data && data.length > 0 && (
-        <div className="flex flex-col gap-3">
-          {[...data].sort((a, b) => (a.status === 'active' ? 0 : 1) - (b.status === 'active' ? 0 : 1) || b.createdAt.localeCompare(a.createdAt))
-            .map((k) => <KeyRow key={k.keyId} k={k} onNewKey={setShown} />)}
-        </div>
+        <>
+          {/* What the keys are for: each card is also a filter. */}
+          <div role="group" aria-label="Keys by what they're for" className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+            {([{ id: 'all', label: 'All keys', hint: 'Everything' }, ...CATEGORIES] as Array<{ id: KeyCategory | 'all'; label: string; hint: string }>).map((c) => {
+              const on = category === c.id;
+              return (
+                <button key={c.id} type="button" aria-pressed={on} onClick={() => setParam('category', c.id, 'all')}
+                  className={clsx('text-left rounded-xl border bg-white px-4 py-3 flex flex-col gap-1 transition-colors',
+                    on ? 'border-ink shadow-[inset_0_0_0_1px_#14213D]' : 'border-line hover:border-line-strong')}>
+                  <span className={clsx('flex items-center gap-1.5 text-sm font-semibold', c.id === 'all' ? 'text-ink' : categoryStyle(c.id).dot)}>
+                    {c.id !== 'all' && <CategoryGlyph category={c.id} />}{c.label}
+                  </span>
+                  <span className="text-2xl font-bold text-ink leading-none">{counts[c.id]}</span>
+                  <span className="text-xs text-ink-muted">{status === 'active' ? 'active' : status === 'ended' ? 'revoked or expired' : 'in all'}<span className="hidden sm:inline"> · {c.hint}</span></span>
+                </button>
+              );
+            })}
+          </div>
+
+          <div className="flex flex-wrap items-center gap-3">
+            <input type="search" aria-label="Search keys" value={q} onChange={(e) => setParam('q', e.target.value, '')}
+              placeholder="Search by name, key start or creator" className="flex-1 min-w-[220px] min-h-[40px] px-3 border border-line-strong rounded-lg bg-white" />
+            <Segmented<Status | 'all'> label="Status" value={status} onChange={(v) => setParam('status', v, 'active')}
+              options={[{ value: 'active', label: `Active (${counts.active})` }, { value: 'ended', label: `Revoked or expired (${counts.ended})` }, { value: 'all', label: 'All' }]} />
+            <label className="flex items-center gap-2 text-sm text-ink-muted">Sort
+              <select aria-label="Sort keys" value={sort} onChange={(e) => setParam('sort', e.target.value, 'newest')} className="min-h-[38px] px-2 border border-line-strong rounded-lg bg-white text-ink">
+                <option value="newest">Newest</option><option value="used">Last used</option><option value="name">Name</option>
+              </select>
+            </label>
+          </div>
+
+          <p className="m-0 text-sm text-ink-muted" aria-live="polite">
+            Showing {shownKeys.length} of {keys.length} {keys.length === 1 ? 'key' : 'keys'}
+            {filtered && <> · <button type="button" className="underline text-ink" onClick={() => setParams(new URLSearchParams(), { replace: true })}>Clear filters</button></>}
+          </p>
+          {shownKeys.length === 0
+            ? <Panel className="px-6"><Note title="No keys match.">Try another category or status, or clear the search.</Note></Panel>
+            : <div className="flex flex-col gap-3">{shownKeys.map((k) => <KeyRow key={k.keyId} k={k} onNewKey={setShown} />)}</div>}
+        </>
       )}
     </div>
   );

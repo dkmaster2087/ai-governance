@@ -16,6 +16,12 @@ export default {
         // Gateway outcomes. Red (stop) stays reserved for "stopped".
         allowed: { DEFAULT: '#1F7A5A', 'on-dark': '#5CC49A' },
         masked: { DEFAULT: '#2F5DA8', 'on-dark': '#8FB0F0' },
+        // What an API key is for. Categories, not statuses: never reuse them for outcomes.
+        cat: {
+          apps: '#14213D', 'apps-soft': '#E8ECF4',
+          agents: '#0E7177', 'agents-soft': '#E1F2F2',
+          extension: '#6B4C9A', 'extension-soft': '#EFEAF6',
+        },
       },
       fontFamily: {
         sans: ['Archivo', 'system-ui', 'sans-serif'],
