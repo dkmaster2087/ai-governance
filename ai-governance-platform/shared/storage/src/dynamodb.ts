@@ -59,12 +59,23 @@ class DynamoCollection<T extends object> implements Collection<T> {
   async update(key: Item, change: Change) {
     checkChange(this.spec, change);
     const Key = this.key(key);
-    const condition = change.ifExists ? 'attribute_exists(#pk)' : undefined;
+    const conditional = !!(change.ifExists || change.where);
     // Names must all be used by the expressions, so the key name is declared only for the condition.
-    const names: Record<string, string> = condition ? { '#pk': this.spec.partitionKey } : {};
+    const conditionParts = (names: Record<string, string>, values: Record<string, unknown>) => {
+      names['#pk'] = this.spec.partitionKey;
+      const parts = ['attribute_exists(#pk)'];
+      Object.entries(change.where ?? {}).forEach(([f, v], n) => {
+        names[`#w${n}`] = f;
+        values[`:w${n}`] = v;
+        parts.push(`#w${n} = :w${n}`);
+      });
+      return parts.join(' AND ');
+    };
+    const names: Record<string, string> = {};
     const values: Record<string, unknown> = {};
+    const condition = conditional ? conditionParts(names, values) : undefined;
     const nameOf = (field: string) => {
-      const existing = Object.entries(names).find(([, v]) => v === field);
+      const existing = Object.entries(names).find(([k, v]) => v === field && k.startsWith('#f'));
       if (existing) return existing[0];
       const n = `#f${Object.keys(names).length}`;
       names[n] = field;
@@ -77,10 +88,12 @@ class DynamoCollection<T extends object> implements Collection<T> {
       try {
         await this.db.send(new UpdateCommand({
           TableName: this.spec.table, Key,
-          UpdateExpression: 'SET #p = if_not_exists(#p, :empty)',
-          ExpressionAttributeNames: { '#p': parent, ...(condition ? { '#pk': this.spec.partitionKey } : {}) },
-          ExpressionAttributeValues: { ':empty': {} },
-          ...(condition ? { ConditionExpression: condition } : {}),
+          ...(() => {
+            const n: Record<string, string> = { '#p': parent };
+            const v: Record<string, unknown> = { ':empty': {} };
+            const c = conditional ? conditionParts(n, v) : undefined;
+            return { UpdateExpression: 'SET #p = if_not_exists(#p, :empty)', ExpressionAttributeNames: n, ExpressionAttributeValues: v, ...(c ? { ConditionExpression: c } : {}) };
+          })(),
         }));
       } catch (err) {
         if (isConditionFailure(err)) return null;
@@ -107,6 +120,7 @@ class DynamoCollection<T extends object> implements Collection<T> {
     if (parts.length === 0) {
       // Nothing to change: like the other backends, an unconditional update still creates the record.
       const existing = await this.get(key);
+      if (change.where && existing && Object.entries(change.where).some(([f, v]) => (existing as Item)[f] !== v)) return null;
       if (existing || condition) return existing;
       await this.put(Key as T);
       return this.get(key);

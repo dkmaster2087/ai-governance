@@ -105,6 +105,20 @@ describe.each(backends)('$name backend', (backend) => {
     expect(await plain().update({ id: `d-${run}` }, { set: { 'nested.v': 2 }, ifExists: true })).toEqual({ id: `d-${run}`, v: 1, nested: { v: 2 } });
   });
 
+  it('changes a record only while its fields hold the expected values, once', async () => {
+    const id = `w-${run}`;
+    await plain().put({ id, status: 'pending', n: 1 });
+    expect(await plain().update({ id }, { set: { status: 'approved' }, where: { status: 'done' } })).toBeNull();
+    expect(await plain().update({ id }, { set: { status: 'approved', 'meta.by': 'a' }, where: { status: 'pending' } })).toEqual({ id, status: 'approved', n: 1, meta: { by: 'a' } });
+    expect(await plain().update({ id }, { set: { status: 'approved' }, where: { status: 'pending' } })).toBeNull();
+    expect(await plain().update({ id: `nothing-${run}` }, { set: { status: 'x' }, where: { status: 'pending' } })).toBeNull();
+    expect(await plain().get({ id: `nothing-${run}` })).toBeNull();
+    // Two racing changes from the same state: exactly one wins.
+    await plain().put({ id: `${id}-race`, status: 'queued' });
+    const results = await Promise.all([1, 2, 3].map((k) => plain().update({ id: `${id}-race` }, { set: { status: 'taken', by: String(k) }, where: { status: 'queued' } })));
+    expect(results.filter(Boolean)).toHaveLength(1);
+  });
+
   it('refuses to change key fields or unsafe paths', async () => {
     await expect(plain().update({ id: 'z' }, { set: { id: 'other' } })).rejects.toThrow(/key field/);
     await expect(plain().update({ id: 'z' }, { set: { "a'; drop": 1 } })).rejects.toThrow(/Unsupported field path/);

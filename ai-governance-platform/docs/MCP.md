@@ -1,7 +1,9 @@
 # MCP gateway: governed access from AI agents to company systems
 
-Status: phase 1 built (beta): servers created on demand, APIs from OpenAPI, read tools, API keys for agents,
-checks, case files, test console. Phases 2–4 planned. Written 2026-11-05.
+Status: phases 1 and 2 built (beta): servers created on demand, APIs from OpenAPI, people signing in through
+the company's identity provider, group access, write tools with approvals, versions, signed identity for
+backends, and the connector for APIs inside the company network. Phases 3–4 planned. Written 2026-11-05,
+updated 2026-11-06.
 
 ## Why
 
@@ -197,7 +199,7 @@ second system.
 | Phase | What | Size |
 |---|---|---|
 | 1 (**built**) | **Create MCP servers on demand**: the MCP servers menu, create flow and per-server address (Streamable HTTP); APIs from OpenAPI; read tools; workloads with API keys; argument and result checks; case files; test console; pause and delete | 3–4 weeks |
-| 2 | People sign in through their identity provider (OAuth for MCP clients, federation per tenant); group access per server and tool; write tools with approval; draft, publish and versions; connector for on-premises APIs | 3–4 weeks |
+| 2 (**built**) | People sign in through their identity provider (OAuth for MCP clients, federation per tenant); group access per server and tool; write tools with approval; draft, publish and versions; signed identity for backends; connector for on-premises APIs | 3–4 weeks |
 | 3 | Put existing MCP servers behind Probaline (company-run and vendor-hosted), with the same checks; templates for common systems; injection classifier; on-behalf-of token exchange; end dates; isolated servers | 3–4 weeks |
 | 4 | Find MCP use in the assessment: the collector looks for MCP servers and agent traffic in network and cloud logs, so the report says which agents already reach company data | 1–2 weeks |
 
@@ -216,10 +218,38 @@ Phase 1 alone is a useful product for companies' own agents. Phase 2 is the one 
   secret store), only to the registered address, no redirects, private addresses refused unless a self-hosted
   operator allows them; personal data removed from the result; instruction-like text flagged; size capped; a
   case file in Evidence ("An agent called … on …").
-- **Not yet:** people signing in (OAuth), write tools and approvals, versions, the connector, signed identity
-  for backends (calls carry an `X-Probaline-Caller` header naming the key), rate limits shared across gateway
-  instances (they're per instance), and tool calls on the Gateway picture (they're on each server's page and
-  in Evidence).
+### What phase 2 adds
+
+- **People sign in.** Dashboard → MCP servers → **Sign-in for people**: the company's OpenID Connect provider
+  (Entra ID, Okta, Google or any other), its client ID and secret, and which ID-token claim holds groups.
+  Each company gets its own OAuth issuer, `<gateway>/oauth/<company>`, with protected-resource and
+  authorization-server metadata, dynamic client registration and client ID metadata documents, PKCE (S256)
+  only, a consent page ("Claude Code wants to use HR self-service as you"), 15-minute access tokens for one
+  server, and rotating refresh tokens (a reused one ends the sign-in). With `offline_access`, every refresh
+  asks the identity provider again, so someone disabled there loses access within 15 minutes; otherwise at
+  the end of the session length the admin sets.
+- **Group access.** Each server lets nobody, everyone, or chosen groups sign in; each tool can be limited to
+  groups (agents with API keys don't get group-limited tools). The tool list is filtered per person.
+- **Write tools with approval.** Writes can be switched on; each needs a person's approval (the default) or
+  runs straight away. A call that needs approval creates a request for that exact call (same caller, tool
+  and arguments), waits up to the server's wait time for a decision, and otherwise tells the agent to ask
+  again once approved. Approvals are used once. Approvers are named per server (any role, including plain
+  users, who see only the Approvals page) or are the company's admins; nobody decides their own request. An
+  optional webhook (Slack, Teams) is told when something waits; it gets a summary, never the arguments.
+- **Draft, publish and versions.** Edits change a draft; agents see the published version until the next
+  publish. Each publish is a numbered version with a note; any version can be restored as the draft.
+  Credentials stay while any version uses them and go with the server.
+- **Signed identity for backends.** Every call carries `X-Probaline-Identity`, a 5-minute ES256 token naming
+  who asked (person and groups, or key), the server, the tool and the request, for that API only. APIs can
+  check it with the key at `<gateway>/.well-known/jwks.json`.
+- **Connector.** A small container in the company network (`connector/`, no dependencies beyond Node) that
+  connects out over HTTPS, collects calls for it, makes them only to its allowed hosts, never to cloud
+  metadata addresses and never following redirects, and sends the answers back. Calls wait in the shared
+  database encrypted (they carry the API's credential) and are deleted once answered.
+- **Not yet:** rate limits shared across gateway instances (they're per instance); tool calls on the Gateway
+  picture (they're on each server's page and in Evidence); SAML (OIDC only); Entra group overage (more than
+  200 groups in a token); the identity provider's own consent screen for each client; email notifications
+  for approvals; answers through a connector over 250 KB; key rotation for the gateway's signing key.
 
 ## Not in scope (for now)
 
@@ -230,9 +260,8 @@ Phase 1 alone is a useful product for companies' own agents. Phase 2 is the one 
 
 ## Open questions
 
-1. Which identity provider to start with for people: Entra ID (most enterprise buyers) or generic OIDC?
-2. Should the first version support approvals, or leave writes out entirely until phase 2?
-   (Recommended: reads only in phase 1, so the first customers can say yes quickly.)
+1. ~~Which identity provider to start with?~~ Generic OIDC, which covers Entra ID, Okta and Google.
+2. ~~Approvals in the first version?~~ Reads only in phase 1; approvals came in phase 2.
 3. Pricing: per tool call, per registered API, or included in the gateway plan?
 4. Which MCP clients to test against first (Claude, ChatGPT, Cursor, VS Code Copilot), given how quickly their
    MCP support is changing.

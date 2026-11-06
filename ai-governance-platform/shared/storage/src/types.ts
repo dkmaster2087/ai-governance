@@ -63,6 +63,11 @@ export interface Change {
   increment?: Record<string, number>;
   /** Only change a record that already exists; otherwise nothing is written and `update` returns null. */
   ifExists?: boolean;
+  /**
+   * Only change the record if these top-level fields currently hold these values (compared as strings).
+   * Implies ifExists. Used to move a record from one state to the next exactly once (e.g. pending → approved).
+   */
+  where?: Record<string, string>;
 }
 
 export interface Collection<T extends object = Item> {
@@ -121,6 +126,10 @@ export function checkChange(spec: CollectionSpec, change: Change) {
   for (const p of paths) {
     const parts = fieldPath(p);
     if (keys.has(parts[0])) throw new StorageError(`${spec.name}: key field ${parts[0]} can't be changed`);
+  }
+  for (const f of Object.keys(change.where ?? {})) {
+    if (fieldPath(f).length !== 1) throw new StorageError(`${spec.name}: conditions are on top-level fields only`);
+    if (typeof change.where![f] !== 'string') throw new StorageError(`${spec.name}: condition values must be strings`);
   }
   for (const [f, n] of Object.entries(change.increment ?? {})) {
     if (fieldPath(f).length !== 1) throw new StorageError(`${spec.name}: only top-level fields can be incremented`);

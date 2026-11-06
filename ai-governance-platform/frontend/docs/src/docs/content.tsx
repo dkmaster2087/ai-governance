@@ -290,32 +290,48 @@ node collector/dist/cli.js report --out ./results --company "Acme"
   {
     slug: 'mcp',
     title: 'MCP servers',
-    summary: 'Give AI agents your APIs as tools, with every call checked and recorded.',
+    summary: 'Give AI agents your APIs as tools: people sign in, writes wait for approval, every call is checked and recorded.',
     body: (
       <>
-        <P>An MCP server in Probaline is configuration, not code: create one in a minute, put one or more of your APIs behind it, and agents connect to its address. Agents only ever reach Probaline; your APIs are called by Probaline with its own credential. This is a beta: read tools only, and agents connect with API keys.</P>
+        <P>An MCP server in Probaline is configuration, not code: create one in a minute, put one or more of your APIs behind it, and agents connect to its address. Agents only ever reach Probaline; your APIs are called by Probaline with its own credential, plus a signed statement of who asked. This is a beta.</P>
         <H2>Create one</H2>
         <ol className="my-3 pl-6 flex flex-col gap-2 text-[16px] leading-relaxed">
           <li>Open <strong>MCP servers</strong> → <strong>Create MCP server</strong>. Give it a name and a line on what it’s for (agents see it).</li>
-          <li><strong>Add an API</strong>: its base URL (https), how Probaline signs in to it (bearer token or an API key header; kept in your secret store), and its OpenAPI 3 description (JSON or YAML, pasted or uploaded). Each operation becomes a tool. Tools that read are on; tools that change data are listed but can’t be turned on yet.</li>
-          <li>Switch tools off that agents shouldn’t have, and try any tool in the test console. It runs through every check and calls the API for real.</li>
-          <li>Set access (every key with the <C>mcp</C> permission, or chosen keys), calls per minute, the largest result, and whether personal data is removed from results (on by default).</li>
-          <li><strong>Publish</strong>. Drafts aren’t reachable; a paused server answers “paused”.</li>
+          <li><strong>Add an API</strong>: its base URL, how Probaline reaches it (directly, or through a <strong>connector</strong> in your network), how Probaline signs in to it (bearer token or an API key header; kept in your secret store), and its OpenAPI 3 description (JSON or YAML). Each operation becomes a tool.</li>
+          <li>Choose tools. Tools that read are on. Tools that change data are off until you turn them on; each then needs a person’s approval for every call, unless you choose <strong>Runs without approval</strong>. Any tool can be limited to groups.</li>
+          <li>Set access: which people may sign in (nobody, everyone, or chosen groups) and which API keys may connect; calls per minute, the largest result, and whether personal data is removed from results (on by default).</li>
+          <li>Try any tool in the test console, then <strong>Publish</strong>. Later changes are a draft until you publish them again; each publish is a version you can go back to.</li>
         </ol>
-        <H2>Connect an agent</H2>
-        <P>Create an API key with <strong>Connect AI agents (MCP)</strong> in <strong>More → API keys</strong>. The server page has copy-paste setup; for example, Claude Code:</P>
-        <Code>{`claude mcp add --transport http hr-self-service https://<gateway>/mcp/<company>/hr-self-service \
-  --header "Authorization: Bearer <your Probaline key>"`}</Code>
-        <P>Cursor and VS Code take the same address and header in their MCP settings. Claude Desktop and ChatGPT sign people in rather than using a key; that arrives with sign-in through your identity provider.</P>
+        <H2>People sign in</H2>
+        <P>In <strong>MCP servers → Sign-in for people</strong>, connect your identity provider: Entra ID, Okta, Google or any OpenID Connect provider. Register Probaline there as a web application with the redirect address the page shows, and enter its issuer, client ID and secret, and the claim that holds groups. Add the <C>offline_access</C> scope so someone disabled in your provider loses access within 15 minutes.</P>
+        <P>People then add the server’s address in their agent. Claude and ChatGPT: <strong>Settings → Connectors → Add custom connector</strong>. Claude Code:</P>
+        <Code>{`claude mcp add --transport http hr-self-service https://<gateway>/mcp/<company>/hr-self-service
+# then /mcp → Authenticate`}</Code>
+        <P>They sign in with their company account, then see a Probaline page asking them to allow the agent. They get only the tools their groups allow.</P>
+        <H2>Your own agents, with a key</H2>
+        <P>Create an API key with <strong>Connect AI agents (MCP)</strong> in <strong>More → API keys</strong>, and send it as <C>Authorization: Bearer …</C>. Keys don’t get tools limited to groups.</P>
+        <H2>Approvals</H2>
+        <P>When an agent calls a tool that needs approval, Probaline creates a request for that exact call and holds the call for up to the server’s wait time (45 seconds by default). Approvers see who asked, the tool and what it will send on the <strong>Approvals</strong> page, and approve or refuse with a reason. If nobody decides in time, the agent is told to ask again once it’s approved. An approval runs the call once. Name approvers by email on each server (they can be plain users, who see only the Approvals page), or leave it to your admins; nobody approves their own request. A Slack or Teams webhook can announce new requests (a summary only, never the arguments).</P>
+        <H2>APIs inside your network</H2>
+        <P>In <strong>MCP servers → Connectors</strong>, add a connector with the hosts it may call. Run it where it can reach them; it connects out over HTTPS, so no inbound firewall change:</P>
+        <Code>{`docker run -d --restart unless-stopped \
+  -e PROBALINE_URL=https://<gateway> \
+  -e PROBALINE_CONNECTOR_TOKEN=<token shown once> \
+  probaline/connector:0.1.0`}</Code>
+        <P>It never calls cloud metadata addresses or follows redirects, and logs only host, method and status. Answers through a connector are capped at 250 KB.</P>
         <H2>What happens on every call</H2>
         <Table head={['Step', 'What Probaline does']} rows={[
+          ['Who', 'A signed-in person (token for this server only, 15 minutes) or an API key with the mcp permission, allowed on this server'],
           ['Arguments', 'Checked against the tool’s schema; unknown fields refused'],
           ['Secrets', 'A key, token or password in the arguments stops the call'],
           ['Company rules', 'Your words, patterns and personal-data rules, as for prompts'],
-          ['The API call', 'Only to the registered base URL, with Probaline’s credential; no redirects; private addresses refused unless your self-hosted gateway allows them'],
+          ['Approval', 'For tools that change data and need it: waits for a person'],
+          ['The API call', 'Only to the registered address, with Probaline’s credential and X-Probaline-Identity; no redirects; private addresses only through a connector or a self-hosted gateway'],
           ['The result', 'Personal data removed; text that tries to instruct the agent flagged; cut at the size limit'],
-          ['Evidence', 'A case file per call: who, which tool, the checks, the API’s answer code; results are kept only as a fingerprint'],
+          ['Evidence', 'A case file per call: who, which agent, which tool, the checks, the approval, the API’s answer code; results are kept only as a fingerprint'],
         ]} />
+        <H2>For your API’s team: who asked</H2>
+        <P>Every call carries <C>X-Probaline-Identity</C>, a token Probaline signs (ES256, five minutes) for your API’s address. It names the person and their groups (or the key), the server, the tool and the request ID. Check it with the key at <C>https://&lt;gateway&gt;/.well-known/jwks.json</C> if your API applies its own per-person rules.</P>
         <P>Tool calls appear in Evidence and on each server’s page, not in the Gateway picture, which shows prompts to AI models.</P>
       </>
     ),
@@ -331,7 +347,9 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           [<C>POST /v1/chat/completions</C>, 'OpenAI-compatible chat completion'],
           [<C>GET /v1/models</C>, 'Models your company allows'],
           [<C>ANY /v1/proxy/:provider/*</C>, 'Proxy mode (needs X-Probaline-Key)'],
-          [<C>POST /mcp/:company/:server</C>, 'An MCP server (Streamable HTTP, JSON-RPC); needs a key with the mcp permission'],
+          [<C>POST /mcp/:company/:server</C>, 'An MCP server (Streamable HTTP, JSON-RPC); a signed-in person’s token or a key with the mcp permission'],
+          [<C>/oauth/:company/…</C>, 'Sign-in for MCP clients: register, authorize, token, revoke (OAuth 2.1 with PKCE)'],
+          [<C>GET /.well-known/jwks.json</C>, 'The key that checks X-Probaline-Identity and Probaline’s sign-in tokens'],
         ]} />
         <H2>Headers</H2>
         <Table head={['Header', 'Meaning']} rows={[
@@ -352,6 +370,7 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           ['503', <C>GOVERNANCE_UNAVAILABLE</C>, 'A check couldn’t run and your company blocks in that case'],
           ['503', <C>SERVER_PAUSED</C>, 'The MCP server is paused by your administrator'],
           ['404', <C>NOT_FOUND</C>, 'No such MCP server, or it isn’t published yet'],
+          ['401', <C>INVALID_TOKEN</C>, 'An MCP sign-in token that is expired or for another server; the agent signs in again'],
         ]} />
       </>
     ),

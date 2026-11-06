@@ -1,9 +1,9 @@
 import { useState } from 'react';
-import { Link, useNavigate } from 'react-router-dom';
+import { Link, NavLink, useNavigate } from 'react-router-dom';
 import { useMutation, useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
-import { createServer, listServers, McpServerSummary, ServerStatus } from '../lib/mcp-api';
+import { createServer, listApprovals, listServers, McpServerSummary, ServerStatus } from '../lib/mcp-api';
 import { errorMessage } from '../lib/rules-api';
 import { Button, Note, Panel, SectionLabel, formatCount } from '../components/kit/primitives';
 
@@ -18,6 +18,24 @@ export function StatusPill({ status }: { status: ServerStatus }) {
   );
 }
 
+/** The MCP section's own menu: servers, the approvals queue, connectors and sign-in. */
+export function McpTabs() {
+  const { isAdmin } = useAuth();
+  const { data: approvals } = useQuery({ queryKey: ['mcp-approvals'], queryFn: listApprovals, refetchInterval: 15_000 });
+  const waiting = (approvals ?? []).filter((a) => a.status === 'pending').length;
+  const tab = ({ isActive }: { isActive: boolean }) => clsx('min-h-[40px] flex items-center no-underline px-1 text-[15px]', isActive ? 'font-semibold text-ink shadow-[inset_0_-2px_0_#14213D]' : 'text-ink-muted hover:text-ink');
+  return (
+    <nav aria-label="MCP" className="flex flex-wrap gap-x-6 border-b border-line">
+      {isAdmin && <NavLink end to="/mcp" className={tab}>Servers</NavLink>}
+      <NavLink to="/mcp/approvals" className={tab}>
+        Approvals{waiting > 0 && <span className="ml-1.5 text-xs font-bold bg-stop text-white rounded-full px-1.5 py-px" aria-label={`${waiting} waiting`}>{waiting}</span>}
+      </NavLink>
+      {isAdmin && <NavLink to="/mcp/connectors" className={tab}>Connectors</NavLink>}
+      {isAdmin && <NavLink to="/mcp/sign-in" className={tab}>Sign-in for people</NavLink>}
+    </nav>
+  );
+}
+
 function ServerCard({ s }: { s: McpServerSummary }) {
   return (
     <Link to={`/mcp/${encodeURIComponent(s.serverId)}`} className="no-underline text-ink">
@@ -26,6 +44,7 @@ function ServerCard({ s }: { s: McpServerSummary }) {
           <div className="flex items-center gap-2.5 flex-wrap">
             <h2 className="m-0 text-lg font-bold">{s.name}</h2>
             <StatusPill status={s.status} />
+            {s.hasChanges && <span className="text-xs font-semibold text-ink-soft">Unpublished changes</span>}
           </div>
           {s.description && <p className="m-0 mt-1 text-sm text-ink-muted">{s.description}</p>}
           <div className="font-mono text-xs text-ink-muted mt-1">{s.path}</div>
@@ -64,6 +83,7 @@ export function McpServersPage() {
         </div>
         {!creating && <Button onClick={() => setCreating(true)}>Create MCP server</Button>}
       </div>
+      <McpTabs />
 
       {creating && (
         <Panel aria-label="New MCP server" className="px-6 py-5">

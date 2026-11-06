@@ -22,7 +22,10 @@ interface ServicesStackProps extends cdk.StackProps {
   apiKeysTable: dynamodb.Table;
   alertsTable: dynamodb.Table;
   shadowAiTable: dynamodb.Table;
-  mcpTables?: { servers: dynamodb.Table; apis: dynamodb.Table; tools: dynamodb.Table };
+  mcpTables?: {
+    servers: dynamodb.Table; apis: dynamodb.Table; tools: dynamodb.Table;
+    versions: dynamodb.Table; approvals: dynamodb.Table; oauth: dynamodb.Table; connectors: dynamodb.Table;
+  };
   auditLogsTable: dynamodb.Table;
   modelsTable: dynamodb.Table;
   complianceTable: dynamodb.Table;
@@ -129,6 +132,9 @@ export class ServicesStack extends cdk.Stack {
 
     // Customers' provider API keys live in Secrets Manager under this prefix.
     const providerKeysPrefix = `${prefix}/${stage}/provider-keys`;
+    // The gateway's public address (-c gatewayUrl=https://gateway.example.com): MCP sign-in and the identity
+    // statements sent to company APIs name it, so it must not depend on request headers.
+    const gatewayUrl: string | undefined = this.node.tryGetContext('gatewayUrl');
 
     // --- Gateway Service (public-facing) ---
     this.gatewayService = this.createService({
@@ -153,11 +159,16 @@ export class ServicesStack extends cdk.Stack {
           MCP_SERVERS_TABLE: props.mcpTables.servers.tableName,
           MCP_APIS_TABLE: props.mcpTables.apis.tableName,
           MCP_TOOLS_TABLE: props.mcpTables.tools.tableName,
+          MCP_VERSIONS_TABLE: props.mcpTables.versions.tableName,
+          MCP_APPROVALS_TABLE: props.mcpTables.approvals.tableName,
+          MCP_OAUTH_TABLE: props.mcpTables.oauth.tableName,
+          MCP_CONNECTORS_TABLE: props.mcpTables.connectors.tableName,
         } : {}),
         AUDIT_LOGS_TABLE: auditLogsTable.tableName,
         POLICY_ENGINE_URL: `http://${internalAlb.loadBalancerDnsName}:3001`,
         DATA_PROTECTION_URL: `http://${internalAlb.loadBalancerDnsName}:3002`,
         ALLOWED_ORIGINS: '', // Set per environment
+        ...(gatewayUrl ? { PUBLIC_GATEWAY_URL: gatewayUrl } : {}),
         COGNITO_USER_POOL_ID: props.userPool.userPoolId,
         COGNITO_CLIENT_ID: props.userPoolClient.userPoolClientId,
         PROVIDER_KEYS_SECRET_PREFIX: providerKeysPrefix,

@@ -53,11 +53,16 @@ case "${1:-start}" in
       (cd "$ROOT" && nohup node scripts/mock-llm.mjs 4010 > "$LOGS/mock-llm.log" 2>&1 < /dev/null &) > /dev/null 2>&1
       echo "  mock-llm → http://localhost:4010/v1 (OpenAI-compatible stand-in)"
     fi
+    if ! lsof -tiTCP:4030 -sTCP:LISTEN >/dev/null 2>&1; then
+      (cd "$ROOT" && nohup node scripts/dev-idp.mjs 4030 > "$LOGS/dev-idp.log" 2>&1 < /dev/null &) > /dev/null 2>&1
+      echo "  dev-idp → http://localhost:4030 (stand-in company sign-in: client probaline-dev / dev-secret)"
+    fi
     start_service policy-engine services/policy-engine 3001
     start_service data-protection services/data-protection 3002 COMPREHEND_ENABLED=false
     start_service analytics services/analytics 3003
     # MCP: local stand-in APIs run on http://localhost, which a deployed gateway refuses.
-    start_service gateway services/gateway 3000 AUTH_DEV_MODE=true MCP_ALLOW_PRIVATE_BACKENDS=true MCP_ALLOW_HTTP_BACKENDS=true \
+    # PUBLIC_GATEWAY_URL: the address agents and the sign-in flow use.
+    start_service gateway services/gateway 3000 AUTH_DEV_MODE=true MCP_ALLOW_PRIVATE_BACKENDS=true MCP_ALLOW_HTTP_BACKENDS=true PUBLIC_GATEWAY_URL=http://localhost:3000 \
       POLICY_ENGINE_URL=http://localhost:3001 DATA_PROTECTION_URL=http://localhost:3002 ALLOWED_ORIGINS=http://localhost:5174,http://localhost:5173 \
       OPENAI_BASE_URL=http://localhost:4010/v1 PROXY_TARGET_OPENAI=http://localhost:4010 GLOBAL_RATE_LIMIT=2000
     if lsof -tiTCP:5173 -sTCP:LISTEN >/dev/null 2>&1; then echo "  website: port 5173 already in use, skipping"
@@ -65,10 +70,10 @@ case "${1:-start}" in
     if lsof -tiTCP:5175 -sTCP:LISTEN >/dev/null 2>&1; then echo "  docs: port 5175 already in use, skipping"
     else (cd "$ROOT/frontend/docs" && nohup npx vite --port 5175 > "$LOGS/docs.log" 2>&1 < /dev/null &) > /dev/null 2>&1; echo "  docs → http://localhost:5175"; fi
     if lsof -tiTCP:5174 -sTCP:LISTEN >/dev/null 2>&1; then echo "  dashboard: port 5174 already in use, skipping"
-    else (cd "$ROOT/frontend/dashboard" && nohup npx vite --port 5174 > "$LOGS/dashboard.log" 2>&1 < /dev/null &) > /dev/null 2>&1; echo "  dashboard → http://localhost:5174"; fi
+    else (cd "$ROOT/frontend/dashboard" && VITE_GATEWAY_PUBLIC_URL=http://localhost:3000 nohup npx vite --port 5174 > "$LOGS/dashboard.log" 2>&1 < /dev/null &) > /dev/null 2>&1; echo "  dashboard → http://localhost:5174"; fi
     ;;
   stop)
-    for port in 3000 3001 3002 3003 4010 5173 5174 5175; do
+    for port in 3000 3001 3002 3003 4010 4030 5173 5174 5175; do
       pids=$(lsof -tiTCP:"$port" -sTCP:LISTEN 2>/dev/null || true)
       [ -n "$pids" ] && kill $pids && echo "  stopped :$port"
     done

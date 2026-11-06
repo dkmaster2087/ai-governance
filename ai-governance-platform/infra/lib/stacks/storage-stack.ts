@@ -22,6 +22,10 @@ export class StorageStack extends cdk.Stack {
   public readonly mcpServersTable: dynamodb.Table;
   public readonly mcpApisTable: dynamodb.Table;
   public readonly mcpToolsTable: dynamodb.Table;
+  public readonly mcpVersionsTable: dynamodb.Table;
+  public readonly mcpApprovalsTable: dynamodb.Table;
+  public readonly mcpOauthTable: dynamodb.Table;
+  public readonly mcpConnectorsTable: dynamodb.Table;
   public readonly auditLogsTable: dynamodb.Table;
   public readonly auditLogBucket: s3.Bucket;
   public readonly athenaBucket: s3.Bucket;
@@ -141,7 +145,7 @@ export class StorageStack extends cdk.Stack {
     });
 
     // MCP servers created from the dashboard, their backend APIs and tools
-    const mcpTable = (id: string, name: string, sortKey: string) => new dynamodb.Table(this, id, {
+    const mcpTable = (id: string, name: string, sortKey: string, ttl = false) => new dynamodb.Table(this, id, {
       tableName: `${prefix}-${name}-${stage}`,
       partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
       sortKey: { name: sortKey, type: dynamodb.AttributeType.STRING },
@@ -149,11 +153,16 @@ export class StorageStack extends cdk.Stack {
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
       pointInTimeRecovery: stage === 'prod',
+      ...(ttl ? { timeToLiveAttribute: 'ttl' } : {}),
       removalPolicy,
     });
     this.mcpServersTable = mcpTable('McpServersTable', 'mcp-servers', 'serverId');
     this.mcpApisTable = mcpTable('McpApisTable', 'mcp-apis', 'apiId');
     this.mcpToolsTable = mcpTable('McpToolsTable', 'mcp-tools', 'toolKey');
+    this.mcpVersionsTable = mcpTable('McpVersionsTable', 'mcp-versions', 'versionKey');
+    this.mcpApprovalsTable = mcpTable('McpApprovalsTable', 'mcp-approvals', 'approvalId', true);
+    this.mcpOauthTable = mcpTable('McpOauthTable', 'mcp-oauth', 'recordKey', true);
+    this.mcpConnectorsTable = mcpTable('McpConnectorsTable', 'mcp-connectors', 'recordKey', true);
 
     // Audit logs table (tenantId + requestId) with TTL for retention
     this.auditLogsTable = new dynamodb.Table(this, 'AuditLogsTable', {

@@ -26,6 +26,9 @@ import { rulesRoutes } from './routes/rules.routes';
 import { evidenceRoutes } from './routes/evidence.routes';
 import { policiesRoutes } from './routes/policies.routes';
 import { mcpRoutes } from './routes/mcp.routes';
+import { mcpOauthRoutes } from './routes/mcp-oauth.routes';
+import { mcpApprovalRoutes } from './routes/mcp-approvals.routes';
+import { mcpConnectorRoutes } from './routes/mcp-connectors.routes';
 
 export async function buildApp() {
   const securityConfig = getSecurityConfig();
@@ -79,6 +82,9 @@ export async function buildApp() {
   await app.register(policiesRoutes, { prefix: '/v1' });
   // MCP servers: admin API under /v1/mcp/…, and the address agents connect to at /mcp/<tenant>/<server>.
   await app.register(mcpRoutes);
+  await app.register(mcpOauthRoutes);
+  await app.register(mcpApprovalRoutes);
+  await app.register(mcpConnectorRoutes);
   await app.register(metricsRoutes, { prefix: '/internal' });
 
   // Graceful shutdown

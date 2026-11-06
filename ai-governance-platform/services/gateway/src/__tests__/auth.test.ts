@@ -67,6 +67,13 @@ async function buildTestApp(opts: { devAuth?: boolean; withUserTokens?: boolean 
     forwardedAuth: request.headers.authorization,
   }));
   app.post('/v1/reporting/ingest', async () => ({ reachedHandler: true }));
+  // MCP, OAuth and connector routes check credentials themselves when the plugin leaves them.
+  const who = async (request: any) => ({ principal: request.principal?.kind ?? null });
+  app.post('/mcp/:tenantId/:serverId', who);
+  app.get('/oauth/:tenantId/authorize', who);
+  app.get('/.well-known/jwks.json', who);
+  app.post('/connector/v1/poll', who);
+  app.post('/v1/mcp/servers', { preHandler: requireAccess(TENANT_ADMIN) }, echo);
   return app;
 }
 
@@ -210,6 +217,21 @@ describe('gateway auth', () => {
     it('leaves health and license-authenticated routes to their handlers', async () => {
       expect((await app.inject({ method: 'GET', url: '/health' })).statusCode).toBe(200);
       expect((await app.inject({ method: 'POST', url: '/v1/reporting/ingest', payload: {} })).json()).toEqual({ reachedHandler: true });
+    });
+  });
+
+  describe('MCP and sign-in routes', () => {
+    it('lets the MCP route answer people without a key (so it can say where to sign in), and still checks API keys', async () => {
+      expect((await app.inject({ method: 'POST', url: '/mcp/tenant_acme/hr', payload: {} })).json()).toEqual({ principal: null });
+      expect((await app.inject({ method: 'POST', url: '/mcp/tenant_acme/hr', headers: bearer('aaa.bbb.ccc'), payload: {} })).json()).toEqual({ principal: null });
+      expect((await app.inject({ method: 'POST', url: '/mcp/tenant_acme/hr', headers: bearer(ACME_KEY), payload: {} })).json()).toEqual({ principal: 'api_key' });
+      expect((await app.inject({ method: 'POST', url: '/mcp/tenant_acme/hr', headers: bearer('pbl_unknown'), payload: {} })).statusCode).toBe(401);
+    });
+    it('leaves OAuth, published keys and connectors open, and nothing else under /v1', async () => {
+      for (const [method, url] of [['GET', '/oauth/tenant_acme/authorize'], ['GET', '/.well-known/jwks.json'], ['POST', '/connector/v1/poll']] as const) {
+        expect((await app.inject({ method, url, ...(method === 'POST' ? { payload: {} } : {}) })).json()).toEqual({ principal: null });
+      }
+      expect((await app.inject({ method: 'POST', url: '/v1/mcp/servers', payload: {} })).statusCode).toBe(401);
     });
   });
 

@@ -41,6 +41,14 @@ export const SPECS = {
   mcpApis: (): CollectionSpec => ({ name: 'mcp_apis', table: env('MCP_APIS_TABLE', 'ai-gov-mcp-apis-dev'), partitionKey: 'tenantId', sortKey: 'apiId' }),
   /** Tools, keyed `<serverId>#<toolName>` so a server's tools are one prefix query. */
   mcpTools: (): CollectionSpec => ({ name: 'mcp_tools', table: env('MCP_TOOLS_TABLE', 'ai-gov-mcp-tools-dev'), partitionKey: 'tenantId', sortKey: 'toolKey' }),
+  /** Published versions of each MCP server, keyed `<serverId>#v<000001>`: what agents see. */
+  mcpVersions: (): CollectionSpec => ({ name: 'mcp_versions', table: env('MCP_VERSIONS_TABLE', 'ai-gov-mcp-versions-dev'), partitionKey: 'tenantId', sortKey: 'versionKey' }),
+  /** Requests to run write tools that need a person's approval, keyed `<fingerprint>-<id>`. */
+  mcpApprovals: (): CollectionSpec => ({ name: 'mcp_approvals', table: env('MCP_APPROVALS_TABLE', 'ai-gov-mcp-approvals-dev'), partitionKey: 'tenantId', sortKey: 'approvalId', ttlField: 'ttl' }),
+  /** People signing in to MCP servers: identity-provider settings, OAuth clients, pending sign-ins, codes and refresh tokens. */
+  mcpOauth: (): CollectionSpec => ({ name: 'mcp_oauth', table: env('MCP_OAUTH_TABLE', 'ai-gov-mcp-oauth-dev'), partitionKey: 'tenantId', sortKey: 'recordKey', ttlField: 'ttl' }),
+  /** Connectors in companies' networks, and the calls waiting for them. */
+  mcpConnectors: (): CollectionSpec => ({ name: 'mcp_connectors', table: env('MCP_CONNECTORS_TABLE', 'ai-gov-mcp-connectors-dev'), partitionKey: 'tenantId', sortKey: 'recordKey', ttlField: 'ttl' }),
 };
 
 export type CollectionName = keyof typeof SPECS;

@@ -4,31 +4,47 @@ import { z } from 'zod';
 import { createLogger } from '@ai-governance/utils';
 import { requireAccess, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
 import { queryAuditLogs } from '../services/audit-query';
+import { tenantSettings } from '../services/tenant-settings.service';
+import { connectRefusal, toolsFor } from '../mcp/access';
+import { publicBase } from '../mcp/base';
+import { Caller, ToolCaller } from '../mcp/calls';
+import { connectorService, ConnectorService, hostAllowed } from '../mcp/connectors';
 import { McpCredentialStore, hint } from '../mcp/credentials';
 import { checkBaseUrl, EgressError } from '../mcp/egress';
 import { OpenApiError, parseOpenApi } from '../mcp/openapi';
 import { handleMessage, rpcError } from '../mcp/protocol';
 import { mcpStore } from '../mcp/store';
-import { ToolCaller } from '../mcp/calls';
-import { BackendAuth, DEFAULT_LIMITS, McpApi, McpServer, McpTool } from '../mcp/types';
+import { BackendAuth, DEFAULT_ACCESS, DEFAULT_APPROVALS, DEFAULT_LIMITS, McpApi, McpServer, McpTool, withDefaults } from '../mcp/types';
+import { credentialsInUse, liveConfig, publishVersion, restoreVersion } from '../mcp/versions';
+import { personFromToken } from './mcp-oauth.routes';
 
 const logger = createLogger('gateway:mcp-routes');
 const MAX_TOOLS_PER_API = 300;
 
 const slug = (s: string) => s.toLowerCase().normalize('NFKD').replace(/[^a-z0-9]+/g, '-').replace(/^-+|-+$/g, '').slice(0, 40) || 'server';
+const group = z.string().trim().min(1).max(200);
+const email = z.string().trim().toLowerCase().email().max(200);
 
 const serverInput = z.object({ name: z.string().trim().min(1).max(80), description: z.string().trim().max(500).optional().default('') });
 const serverChange = z.object({
   name: z.string().trim().min(1).max(80).optional(),
   description: z.string().trim().max(500).optional(),
-  access: z.object({ allKeys: z.boolean(), keyIds: z.array(z.string().max(80)).max(200) }).optional(),
+  access: z.object({
+    allKeys: z.boolean(), keyIds: z.array(z.string().max(80)).max(200),
+    people: z.enum(['none', 'all', 'groups']).optional(), groups: z.array(group).max(100).optional(),
+  }).optional(),
   limits: z.object({ callsPerMinute: z.number().int().min(1).max(10_000), maxResultBytes: z.number().int().min(1_000).max(1_000_000) }).optional(),
   returnPersonalData: z.boolean().optional(),
+  approvals: z.object({
+    approvers: z.array(email).max(50), waitSeconds: z.number().int().min(0).max(110), expiresMinutes: z.number().int().min(5).max(7 * 24 * 60),
+    webhookUrl: z.string().trim().url().max(500).or(z.literal('')).optional(),
+  }).optional(),
 }).refine((c) => Object.keys(c).length > 0, 'Nothing to change');
 const apiInput = z.object({
   name: z.string().trim().min(1).max(80),
   baseUrl: z.string().trim().min(8).max(500),
   openapi: z.string().min(2).max(5_000_000),
+  connectorId: z.string().regex(/^con_[a-f0-9]+$/).optional(),
   auth: z.discriminatedUnion('type', [
     z.object({ type: z.literal('none') }),
     z.object({ type: z.literal('bearer'), secret: z.string().min(1).max(4000) }),
@@ -39,8 +55,11 @@ const toolChange = z.object({
   enabled: z.boolean().optional(),
   title: z.string().trim().min(1).max(120).optional(),
   description: z.string().trim().min(1).max(2000).optional(),
+  approval: z.enum(['required', 'none']).optional(),
+  groups: z.array(group).max(50).optional(),
 }).refine((c) => Object.keys(c).length > 0, 'Nothing to change');
 const testInput = z.object({ tool: z.string().min(1).max(64), arguments: z.record(z.unknown()).optional().default({}) });
+const publishInput = z.object({ note: z.string().trim().max(200).optional().default('') });
 
 const bad = (reply: FastifyReply, code: string, error: string, status = 400) => reply.status(status).send({ error, code });
 
@@ -50,7 +69,7 @@ export const mcpPath = (s: Pick<McpServer, 'tenantId' | 'serverId'>) => `/mcp/${
 /** What the dashboard sees of an API: never the credential. */
 const apiView = (a: McpApi) => ({ ...a, auth: a.auth.type === 'none' ? { type: 'none' } : { type: a.auth.type, ...(a.auth.type === 'header' ? { header: a.auth.header } : {}), hint: a.auth.hint } });
 
-/** A simple per-instance limit: calls per minute per key per server. */
+/** A simple per-instance limit: calls per minute per caller per server. */
 class MinuteLimiter {
   private windows = new Map<string, { minute: number; count: number }>();
   allow(key: string, limit: number): boolean {
@@ -61,17 +80,20 @@ class MinuteLimiter {
   }
 }
 
-export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCaller; credentials?: McpCredentialStore } = {}) {
+export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCaller; credentials?: McpCredentialStore; connectors?: ConnectorService } = {}) {
   const caller = opts.caller ?? new ToolCaller();
   const credentials = opts.credentials ?? new McpCredentialStore();
+  const connectors = () => opts.connectors ?? connectorService();
   const limiter = new MinuteLimiter();
 
   async function loadServer(request: FastifyRequest, reply: FastifyReply) {
     const { serverId } = request.params as { serverId: string };
     const server = await mcpStore.getServer(request.tenantId, serverId);
     if (!server) { bad(reply, 'NOT_FOUND', 'MCP server not found', 404); return null; }
-    return server;
+    return withDefaults(server);
   }
+  /** Any change to the draft of a published server is waiting to be published. */
+  const changed = (s: McpServer) => (s.publishedVersion ? mcpStore.updateServer(s.tenantId, s.serverId, { hasChanges: true }) : Promise.resolve(null));
 
   // ── Admin: servers ──────────────────────────────────────────────────────────────────────────
 
@@ -80,7 +102,8 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
     const to = new Date();
     const { logs } = await queryAuditLogs(request.tenantId, new Date(to.getTime() - 7 * 86_400_000).toISOString(), to.toISOString());
     const calls = logs.filter((l) => l.metadata?.kind === 'mcp_tool_call' && l.metadata.test !== 'true');
-    return Promise.all(servers.map(async (s) => {
+    return Promise.all(servers.map(async (raw) => {
+      const s = withDefaults(raw);
       const mine = calls.filter((l) => l.metadata.mcpServer === s.serverId);
       const tools = await mcpStore.listTools(request.tenantId, s.serverId);
       return {
@@ -98,7 +121,7 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
     for (let i = 1; i <= 50; i++) {
       const server: McpServer = {
         tenantId: request.tenantId, serverId: i === 1 ? base : `${base}-${i}`, name: parsed.data.name, description: parsed.data.description,
-        status: 'draft', access: { allKeys: true, keyIds: [] }, limits: { ...DEFAULT_LIMITS }, returnPersonalData: false,
+        status: 'draft', access: { ...DEFAULT_ACCESS }, limits: { ...DEFAULT_LIMITS }, returnPersonalData: false, approvals: { ...DEFAULT_APPROVALS },
         createdAt: now, updatedAt: now, createdBy: request.userId,
       };
       if (await mcpStore.createServer(server)) {
@@ -121,30 +144,70 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
     if (!server) return;
     const parsed = serverChange.safeParse(request.body);
     if (!parsed.success) return bad(reply, 'INVALID_SERVER', parsed.error.issues[0]?.message ?? 'Invalid change');
-    return mcpStore.updateServer(request.tenantId, server.serverId, parsed.data as Partial<McpServer>);
+    const change = parsed.data;
+    const set: Partial<McpServer> = { ...change } as Partial<McpServer>;
+    if (change.access) set.access = { ...server.access, ...change.access, groups: [...new Set(change.access.groups ?? server.access.groups)] };
+    if (change.approvals) {
+      if (change.approvals.webhookUrl) {
+        try { checkBaseUrl(change.approvals.webhookUrl); } catch (err) { return bad(reply, 'INVALID_SERVER', `Webhook: ${(err as Error).message}`); }
+      }
+      set.approvals = { ...change.approvals, approvers: [...new Set(change.approvals.approvers)], webhookUrl: change.approvals.webhookUrl || undefined };
+    }
+    return mcpStore.updateServer(request.tenantId, server.serverId, { ...set, ...(server.publishedVersion ? { hasChanges: true } : {}) });
   });
 
-  const setStatus = (status: 'published' | 'paused') => async (request: FastifyRequest, reply: FastifyReply) => {
+  /** Publish the draft as a new version: agents see it all at once. */
+  app.post('/v1/mcp/servers/:serverId/publish', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const server = await loadServer(request, reply);
     if (!server) return;
-    if (status === 'published') {
-      const tools = await mcpStore.listTools(request.tenantId, server.serverId);
-      if (!tools.some((t) => t.enabled)) return bad(reply, 'NO_TOOLS', 'Turn on at least one tool before publishing');
-    }
-    const updated = await mcpStore.updateServer(request.tenantId, server.serverId, { status, ...(status === 'published' ? { publishedAt: new Date().toISOString() } : {}) });
-    logger.info(`MCP server ${status}`, { tenantId: request.tenantId, serverId: server.serverId, by: request.userId });
-    return { ...updated, path: mcpPath(server) };
-  };
-  app.post('/v1/mcp/servers/:serverId/publish', { preHandler: requireAccess(TENANT_ADMIN) }, setStatus('published'));
-  app.post('/v1/mcp/servers/:serverId/pause', { preHandler: requireAccess(TENANT_ADMIN) }, setStatus('paused'));
+    const parsed = publishInput.safeParse(request.body ?? {});
+    if (!parsed.success) return bad(reply, 'INVALID_PUBLISH', 'Invalid note');
+    const tools = await mcpStore.listTools(request.tenantId, server.serverId);
+    if (!tools.some((t) => t.enabled)) return bad(reply, 'NO_TOOLS', 'Turn on at least one tool before publishing');
+    const v = await publishVersion(server, request.userId, parsed.data.note);
+    logger.info('MCP server published', { tenantId: request.tenantId, serverId: server.serverId, version: v.version, by: request.userId });
+    return { ...(await mcpStore.getServer(request.tenantId, server.serverId)), path: mcpPath(server), version: v.version };
+  });
+
+  app.post('/v1/mcp/servers/:serverId/pause', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
+    const server = await loadServer(request, reply);
+    if (!server) return;
+    if (server.status === 'draft') return bad(reply, 'NOT_PUBLISHED', 'Only a published server can be paused');
+    logger.info('MCP server paused', { tenantId: request.tenantId, serverId: server.serverId, by: request.userId });
+    return { ...(await mcpStore.updateServer(request.tenantId, server.serverId, { status: 'paused' })), path: mcpPath(server) };
+  });
+
+  app.post('/v1/mcp/servers/:serverId/resume', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
+    const server = await loadServer(request, reply);
+    if (!server) return;
+    if (server.status !== 'paused') return bad(reply, 'NOT_PAUSED', 'The server isn\'t paused');
+    logger.info('MCP server resumed', { tenantId: request.tenantId, serverId: server.serverId, by: request.userId });
+    return { ...(await mcpStore.updateServer(request.tenantId, server.serverId, { status: 'published' })), path: mcpPath(server) };
+  });
+
+  app.get('/v1/mcp/servers/:serverId/versions', { preHandler: requireAccess(TENANT_READ) }, async (request, reply) => {
+    const server = await loadServer(request, reply);
+    if (!server) return;
+    return (await mcpStore.listVersions(request.tenantId, server.serverId)).map((v) => ({
+      version: v.version, note: v.note, publishedAt: v.publishedAt, publishedBy: v.publishedBy, tools: v.toolCount, apis: v.apis.length, live: v.version === server.publishedVersion,
+    }));
+  });
+
+  app.post('/v1/mcp/servers/:serverId/versions/:version/restore', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
+    const server = await loadServer(request, reply);
+    if (!server) return;
+    const n = Number((request.params as { version: string }).version);
+    if (!Number.isInteger(n) || n < 1 || !(await restoreVersion(server, n))) return bad(reply, 'NOT_FOUND', 'Version not found', 404);
+    logger.info('MCP server version restored to draft', { tenantId: request.tenantId, serverId: server.serverId, version: n, by: request.userId });
+    return { ok: true, restored: n };
+  });
 
   app.delete('/v1/mcp/servers/:serverId', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const server = await loadServer(request, reply);
     if (!server) return;
-    for (const a of await mcpStore.listApis(request.tenantId, server.serverId)) {
-      if (a.auth.type !== 'none') await credentials.remove(a.auth.secretArn);
-    }
+    const arns = await credentialsInUse(server);
     await mcpStore.deleteServer(request.tenantId, server.serverId);
+    for (const arn of arns) await credentials.remove(arn);
     logger.info('MCP server deleted', { tenantId: request.tenantId, serverId: server.serverId, by: request.userId });
     return { ok: true };
   });
@@ -157,7 +220,17 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
     const parsed = apiInput.safeParse(request.body);
     if (!parsed.success) return bad(reply, 'INVALID_API', parsed.error.issues[0]?.message ?? 'Invalid API');
     const body = parsed.data;
-    try { checkBaseUrl(body.baseUrl); } catch (err) { return bad(reply, (err as EgressError).code, (err as Error).message); }
+    if (body.connectorId) {
+      // Reached inside the company's network: any address the connector is allowed to call.
+      const c = await connectors().get(request.tenantId, body.connectorId);
+      if (!c) return bad(reply, 'NOT_FOUND', 'Connector not found', 404);
+      let u: URL;
+      try { u = new URL(body.baseUrl); } catch { return bad(reply, 'INVALID_BASE_URL', 'The base URL isn\'t a valid URL'); }
+      if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password || u.search || u.hash) return bad(reply, 'INVALID_BASE_URL', 'Use an http or https address without credentials, query or fragment');
+      if (!hostAllowed(c, u)) return bad(reply, 'CONNECTOR_HOST_NOT_ALLOWED', `The connector ${c.name} isn't allowed to call ${u.host}. Add it to the connector's allowed hosts first.`);
+    } else {
+      try { checkBaseUrl(body.baseUrl); } catch (err) { return bad(reply, (err as EgressError).code, (err as Error).message); }
+    }
     let spec;
     try { spec = parseOpenApi(body.openapi); } catch (err) {
       if (err instanceof OpenApiError) return bad(reply, err.code, err.message);
@@ -174,6 +247,7 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
     const now = new Date().toISOString();
     const api: McpApi = {
       tenantId: request.tenantId, apiId, serverId: server.serverId, name: body.name, baseUrl: body.baseUrl.replace(/\/$/, ''), auth,
+      ...(body.connectorId ? { connectorId: body.connectorId } : {}),
       openapi: { title: spec.title, version: spec.version, operations: spec.operations.length, skipped: spec.skipped.slice(0, 50) }, createdAt: now,
     };
     await mcpStore.putApi(api);
@@ -186,12 +260,13 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
       const tool: McpTool = {
         tenantId: request.tenantId, toolKey: `${server.serverId}#${name}`, serverId: server.serverId, apiId, name,
         title: op.title, description: op.description, inputSchema: op.inputSchema, method: op.method, path: op.path, params: op.params,
-        // Reads are on by default; writes are off until chosen (and can't be turned on yet).
-        write: op.write, enabled: !op.write, createdAt: now,
+        // Reads are on by default; writes are off until chosen, and then need approval unless the admin says otherwise.
+        write: op.write, enabled: !op.write, ...(op.write ? { approval: 'required' as const } : {}), createdAt: now,
       };
       await mcpStore.putTool(tool);
     }
-    logger.info('MCP API added', { tenantId: request.tenantId, serverId: server.serverId, apiId, operations: spec.operations.length });
+    await changed(server);
+    logger.info('MCP API added', { tenantId: request.tenantId, serverId: server.serverId, apiId, operations: spec.operations.length, connector: body.connectorId });
     return reply.status(201).send({ api: apiView(api), tools: spec.operations.length, reads: spec.operations.filter((o) => !o.write).length, skipped: spec.skipped });
   });
 
@@ -200,8 +275,10 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
     if (!server) return;
     const api = await mcpStore.getApi(request.tenantId, (request.params as { apiId: string }).apiId);
     if (!api || api.serverId !== server.serverId) return bad(reply, 'NOT_FOUND', 'API not found', 404);
-    if (api.auth.type !== 'none') await credentials.remove(api.auth.secretArn);
+    // The credential stays while a published version may still use it; it goes with the server.
     await mcpStore.deleteApi(request.tenantId, api);
+    if (!server.publishedVersion && api.auth.type !== 'none') await credentials.remove(api.auth.secretArn);
+    await changed(server);
     return { ok: true };
   });
 
@@ -213,13 +290,16 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
     if (!tool) return bad(reply, 'NOT_FOUND', 'Tool not found', 404);
     const parsed = toolChange.safeParse(request.body);
     if (!parsed.success) return bad(reply, 'INVALID_TOOL', parsed.error.issues[0]?.message ?? 'Invalid change');
-    if (parsed.data.enabled && tool.write) {
-      return bad(reply, 'WRITE_TOOLS_NOT_YET', 'Tools that change data (with approval where needed) come in the next release; only read tools can be turned on today', 409);
-    }
-    return mcpStore.updateTool(request.tenantId, server.serverId, name, parsed.data);
+    if (parsed.data.approval && !tool.write) return bad(reply, 'INVALID_TOOL', 'Only tools that change data need approval');
+    const set: Partial<McpTool> = { ...parsed.data, ...(parsed.data.groups ? { groups: [...new Set(parsed.data.groups)] } : {}) };
+    // A write switched on without a choice needs approval.
+    if (tool.write && parsed.data.enabled && !tool.approval && !parsed.data.approval) set.approval = 'required';
+    const updated = await mcpStore.updateTool(request.tenantId, server.serverId, name, set);
+    await changed(server);
+    return updated;
   });
 
-  /** Try a tool from the dashboard, through every check, before anyone connects. Works on drafts. */
+  /** Try a tool from the dashboard, through every check, before anyone connects. Works on the draft. */
   app.post('/v1/mcp/servers/:serverId/test', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const server = await loadServer(request, reply);
     if (!server) return;
@@ -229,38 +309,65 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
     if (!tool) return bad(reply, 'NOT_FOUND', 'Tool not found', 404);
     const api = await mcpStore.getApi(request.tenantId, tool.apiId);
     if (!api) return bad(reply, 'NOT_FOUND', 'The tool\'s API was removed', 404);
-    return caller.call(server, tool, api, parsed.data.arguments, { kind: 'test', id: request.userId, userId: request.userId, appId: 'dashboard-test' });
+    const p = request.principal;
+    const email = p?.kind === 'user' ? p.email : undefined;
+    // Tests don't wait for approval: the console shows the request, and running it again uses the decision.
+    return caller.call({ ...server, approvals: { ...server.approvals, waitSeconds: 0 } }, tool, api, parsed.data.arguments,
+      { kind: 'test', id: `test:${request.userId}`, userId: request.userId, email, appId: 'dashboard-test' });
   });
 
   // ── The MCP address agents connect to ───────────────────────────────────────────────────────
 
   app.post('/mcp/:tenantId/:serverId', async (request, reply) => {
     const { tenantId, serverId } = request.params as { tenantId: string; serverId: string };
-    const p = request.principal;
+    const base = publicBase(request);
     // Browsers on other sites must not be able to drive an agent's session (MCP's DNS-rebinding rule).
     const origin = request.headers.origin;
     const allowedOrigins = (process.env.MCP_ALLOWED_ORIGINS ?? '').split(',').map((s) => s.trim()).filter(Boolean);
     if (origin && !allowedOrigins.includes(origin)) return bad(reply, 'ORIGIN_NOT_ALLOWED', 'Requests from browsers on other sites are refused', 403);
-    if (!p || p.kind !== 'api_key' || !p.scopes.includes('mcp')) return bad(reply, 'FORBIDDEN', 'Use a Probaline API key with the mcp permission', 403);
-    if (p.tenantId !== tenantId) return bad(reply, 'TENANT_MISMATCH', 'API key does not belong to this company', 403);
-    const server = await mcpStore.getServer(tenantId, serverId);
-    if (!server || server.status === 'draft') return bad(reply, 'NOT_FOUND', 'MCP server not found', 404);
+
+    // Who: a person signed in through the company's identity provider, or a workload with an API key.
+    const p = request.principal;
+    let who: Caller | null = null;
+    const auth = String(request.headers.authorization ?? '');
+    if (p?.kind === 'api_key') {
+      if (!p.scopes.includes('mcp')) return bad(reply, 'FORBIDDEN', 'Use a Probaline API key with the mcp permission', 403);
+      if (p.tenantId !== tenantId) return bad(reply, 'TENANT_MISMATCH', 'API key does not belong to this company', 403);
+      who = { kind: 'api_key', id: p.keyId, userId: p.userId, appId: p.appId };
+    } else if (!p && auth.startsWith('Bearer ')) {
+      who = await personFromToken(auth.slice(7).trim(), base, tenantId, serverId);
+      if (who && (await tenantSettings().getStatus(tenantId)) === 'suspended') return bad(reply, 'TENANT_SUSPENDED', 'This tenant is suspended', 403);
+    } else if (p) {
+      return bad(reply, 'FORBIDDEN', 'Use a Probaline API key with the mcp permission, or sign in', 403);
+    }
+    if (!who) {
+      // Tell the client where to sign in (OAuth protected-resource metadata).
+      return reply.status(401)
+        .header('www-authenticate', `Bearer resource_metadata="${base}/.well-known/oauth-protected-resource/mcp/${tenantId}/${serverId}"${auth ? ', error="invalid_token"' : ''}`)
+        .send({ error: 'Sign in, or use a Probaline API key with the mcp permission', code: auth ? 'INVALID_TOKEN' : 'MISSING_AUTH' });
+    }
+
+    const raw = await mcpStore.getServer(tenantId, serverId);
+    if (!raw || raw.status === 'draft') return bad(reply, 'NOT_FOUND', 'MCP server not found', 404);
+    const server = withDefaults(raw);
     if (server.status === 'paused') return bad(reply, 'SERVER_PAUSED', `${server.name} is paused by your administrator`, 503);
-    if (!server.access.allKeys && !server.access.keyIds.includes(p.keyId)) return bad(reply, 'FORBIDDEN', 'This API key may not use this MCP server', 403);
-    if (!limiter.allow(`${tenantId}:${serverId}:${p.keyId}`, server.limits.callsPerMinute)) {
+    const live = await liveConfig(server);
+    const refusal = connectRefusal(live.config, who);
+    if (refusal) return bad(reply, 'FORBIDDEN', refusal, 403);
+    if (!limiter.allow(`${tenantId}:${serverId}:${who.id}`, live.config.limits.callsPerMinute)) {
       return reply.status(429).header('retry-after', '60').send({ error: 'Too many calls; try again in a minute', code: 'RATE_LIMITED' });
     }
 
     const msg = request.body as any;
     if (Array.isArray(msg)) return reply.status(400).send(rpcError(null, -32600, 'Batches are not supported'));
-    let tools: McpTool[] | undefined;
-    const enabledTools = async () => (tools ??= (await mcpStore.listTools(tenantId, serverId)).filter((t) => t.enabled));
-    const answer = await handleMessage(server, msg, {
-      tools: enabledTools,
+    const ref = { ...live.config, tenantId, serverId };
+    const caller_ = who;
+    const answer = await handleMessage(ref, msg, {
+      tools: async () => toolsFor(live.tools, caller_),
       call: async (tool, args) => {
-        const api = await mcpStore.getApi(tenantId, tool.apiId);
+        const api = live.apis.find((a) => a.apiId === tool.apiId);
         if (!api) return { requestId: '', isError: true, outcome: 'backend_error', checks: [], text: 'This tool\'s API was removed.' };
-        return caller.call(server, tool, api, args, { kind: 'api_key', id: p.keyId, userId: p.userId, appId: p.appId });
+        return caller.call(ref, tool, api, args, caller_);
       },
     });
     if (answer === null) return reply.status(202).send();

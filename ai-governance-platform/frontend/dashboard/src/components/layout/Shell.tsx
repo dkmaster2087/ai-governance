@@ -40,6 +40,7 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
       { label: 'Gateway', href: '/gateway' },
       { label: 'Stopped', href: '/stopped' },
       { label: 'Evidence', href: '/evidence' },
+      { label: 'Approvals', href: '/mcp/approvals' },
     ],
     more: [],
   },
@@ -81,7 +82,8 @@ export function Shell({ children }: { children: React.ReactNode }) {
   const moreRef = useRef<HTMLDetailsElement>(null);
   const accountRef = useRef<HTMLDetailsElement>(null);
 
-  const nav = user && user.role !== 'tenant_user' ? NAV[user.role] : { primary: [], more: [] };
+  // Plain users only reach the dashboard to approve agents' requests.
+  const nav = user && user.role !== 'tenant_user' ? NAV[user.role] : { primary: [{ label: 'Approvals', href: '/mcp/approvals' }], more: [] };
   const all = [...nav.primary, ...nav.more];
   const current = all.find((n) => location.pathname === n.href || location.pathname.startsWith(n.href + '/'));
   const moreActive = !!current && nav.more.includes(current);
@@ -94,7 +96,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
   return (
     <div className="min-h-full bg-canvas text-ink font-sans text-sm leading-[1.45]">
       <header className="sticky top-0 z-30 flex flex-wrap items-center gap-x-8 gap-y-2 px-5 sm:px-10 min-h-[64px] bg-white border-b border-line">
-        <Logo to={user?.role === 'platform_admin' ? '/overview' : '/gateway'} />
+        <Logo to={user?.role === 'platform_admin' ? '/overview' : user?.role === 'tenant_user' ? '/mcp/approvals' : '/gateway'} />
         <nav aria-label="Main" className="flex flex-wrap items-center gap-x-6 gap-y-1">
           {nav.primary.map((n) => (
             <NavLink key={n.href} to={n.href} className={linkClass}>{n.label}</NavLink>

@@ -90,6 +90,10 @@ jobs:
         working-directory: ai-governance-platform/collector
         run: npx jest --runInBand --ci
 
+      - name: Connector
+        working-directory: ai-governance-platform/connector
+        run: npx jest --runInBand --ci
+
       - name: Browser extension
         run: node --test extensions/shadow-ai-guard/tests/lib.test.mjs
 
@@ -125,7 +129,7 @@ jobs:
         run: npm run build -w shared/types -w shared/utils -w shared/storage
 
       - name: Build services and collector
-        run: npm run build -w services/gateway -w services/policy-engine -w services/data-protection -w services/analytics -w services/reporting-agent -w collector
+        run: npm run build -w services/gateway -w services/policy-engine -w services/data-protection -w services/analytics -w services/reporting-agent -w collector -w connector
 
       - name: Build frontends
         run: npm run build -w frontend/dashboard -w frontend/website -w frontend/docs
@@ -151,6 +155,7 @@ jobs:
           - { name: analytics, dockerfile: services/analytics/Dockerfile, context: . }
           - { name: reporting-agent, dockerfile: services/reporting-agent/Dockerfile, context: . }
           - { name: collector, dockerfile: collector/deploy/onprem/Dockerfile, context: collector }
+          - { name: connector, dockerfile: connector/Dockerfile, context: connector }
     steps:
       - uses: actions/checkout@v4
 

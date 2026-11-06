@@ -101,13 +101,18 @@ function buildMcpRecord(log: AuditLog, retentionDays: number): EvidenceRecord {
   const outcome = outcomeOf(log);
   const server = m.mcpServer ?? 'an MCP server';
   const tool = m.mcpTool ?? 'a tool';
-  const who = m.caller === 'test' ? `an admin testing in the dashboard (${log.userId})` : `${log.appId || 'an agent'} with an API key`;
+  const who = m.caller === 'test' ? `an admin testing in the dashboard (${log.userId})`
+    : m.caller === 'person' ? `${m.callerEmail || log.userId}, signed in through ${log.appId || 'an agent'}`
+    : `${log.appId || 'an agent'} with an API key`;
   const reason = outcome === 'stopped' ? m.policyReason || log.triggeredRules?.[log.triggeredRules.length - 1] || 'a company rule' : undefined;
   const steps: EvidenceStep[] = [{ label: 'Received', detail: `a call to ${tool} on ${server}, from ${who}.`, kind: 'neutral' }];
   if (outcome === 'stopped') {
-    steps.push({ label: m.check === 'secrets' ? 'Stopped: secret in the arguments' : 'Stopped by a policy rule', detail: `“${reason}”. The API was not called.`, kind: 'stopped' });
+    const label = m.check === 'secrets' ? 'Stopped: secret in the arguments' : m.check === 'approval' ? 'Refused by an approver' : 'Stopped by a policy rule';
+    steps.push({ label, detail: `“${reason}”. The API was not called.`, kind: 'stopped' });
   } else {
     steps.push({ label: 'Arguments passed the checks', detail: 'company rules and the secrets check.', kind: 'neutral' });
+    if (m.approvalBy) steps.push({ label: 'Approved', detail: `by ${m.approvalBy} (request ${m.approvalId}).`, kind: 'neutral' });
+    if (m.connector) steps.push({ label: 'Through the connector', detail: `the call was made inside the company network by connector ${m.connector}.`, kind: 'neutral' });
     const status = Number(m.backendStatus ?? 0);
     steps.push(m.backendError
       ? { label: 'API not reached', detail: `${m.mcpApi ?? 'the API'} couldn't be reached (${m.backendError}).`, kind: 'skipped' }
@@ -119,7 +124,8 @@ function buildMcpRecord(log: AuditLog, retentionDays: number): EvidenceRecord {
   return {
     requestId: log.requestId,
     outcome,
-    headline: outcome === 'stopped' ? `A call to ${tool} on ${server} was stopped before reaching the API.` : `An agent called ${tool} on ${server}.`,
+    headline: outcome === 'stopped' ? `A call to ${tool} on ${server} was stopped before reaching the API.`
+      : m.caller === 'person' ? `${m.callerEmail || 'A person'}’s agent called ${tool} on ${server}.` : `An agent called ${tool} on ${server}.`,
     time: log.timestamp,
     app: log.appId || 'unknown',
     user: log.userId || 'anonymous',

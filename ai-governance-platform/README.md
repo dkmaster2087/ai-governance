@@ -22,6 +22,8 @@ frontend/
   website/          Public website and docs (React + Vite + Tailwind, :5173)
 extensions/
   shadow-ai-guard/  Chrome extension for shadow AI (managed through Chrome policy)
+collector/          Assessment collector: finds AI use in a company's own logs, installed on its own
+connector/          MCP connector: lets the gateway reach APIs inside a company network (outbound HTTPS only)
 infra/              AWS CDK stacks
 shared/             Shared types and utilities
 scripts/            Local development helpers
@@ -40,6 +42,8 @@ node scripts/seed-traffic.mjs   # optional: realistic sample traffic
 - Dashboard: http://localhost:5174, demo sign-in `admin@democorp.com` / `demo123`
 - Website: http://localhost:5173
 - Gateway: http://localhost:3000
+- Stand-in company sign-in for MCP servers: http://localhost:4030 (pick a demo person; client `probaline-dev` /
+  `dev-secret`), from `scripts/dev-idp.mjs`
 
 `scripts/dev-local.sh stop` stops the Node processes; `status` shows what's running. Logs are in `.dev-logs/`.
 Locally the gateway runs with `AUTH_DEV_MODE=true`, which accepts the demo accounts; it refuses to start
@@ -77,7 +81,8 @@ stages serve plain HTTP. See "Known gaps" in [docs/ARCHITECTURE.md](docs/ARCHITE
 | `PROVIDER_KEYS_SECRET_PREFIX` | gateway | Secrets Manager prefix for customers' provider keys |
 | `STORAGE_BACKEND` | gateway, policy engine, analytics | `dynamodb` (default), `postgres` or `memory` |
 | `DATABASE_URL`, `PG_TABLE_PREFIX` | same | PostgreSQL connection (`?sslmode=require` for TLS) and optional table prefix |
-| `MCP_SERVERS_TABLE`, `MCP_APIS_TABLE`, `MCP_TOOLS_TABLE` | gateway | DynamoDB tables for MCP servers (set by CDK) |
+| `MCP_SERVERS_TABLE`, `MCP_APIS_TABLE`, `MCP_TOOLS_TABLE`, `MCP_VERSIONS_TABLE`, `MCP_APPROVALS_TABLE`, `MCP_OAUTH_TABLE`, `MCP_CONNECTORS_TABLE` | gateway | DynamoDB tables for MCP servers (set by CDK) |
+| `PUBLIC_GATEWAY_URL` | gateway | The gateway's public address, used for MCP sign-in and signed identity (CDK: `-c gatewayUrl=https://…`). Required for people to sign in |
 | `MCP_ALLOW_PRIVATE_BACKENDS` | gateway | `true` lets MCP tools call private addresses: only for a self-hosted gateway inside the company network |
 | `MCP_ALLOW_HTTP_BACKENDS` | gateway | `true` allows plain-http APIs (local development only) |
 | `MCP_ALLOWED_ORIGINS` | gateway | Browser origins allowed to call MCP addresses (default: none; agents don't send one) |

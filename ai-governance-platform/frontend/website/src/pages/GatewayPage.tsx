@@ -38,7 +38,7 @@ const WAYS_IN: Array<{ title: string; status: 'Available' | 'Beta'; points: stri
   {
     title: 'AI agents (MCP)',
     status: 'Beta',
-    points: ['Your APIs become tools, from their OpenAPI', 'Agents reach Probaline, never your APIs', 'Every call checked and kept as evidence'],
+    points: ['People sign in with their company account', 'Changes wait for a person’s approval', 'Every call checked and kept as evidence'],
   },
 ];
 
@@ -102,13 +102,17 @@ export function GatewayPage() {
             <ul className="m-0 p-0 list-none flex flex-col gap-1.5 text-sm">
               <li className="flex justify-between gap-3"><span><span className="font-mono text-[11px] bg-ink-tint rounded px-1.5 mr-1.5">GET</span>One employee</span><span className="font-semibold">On</span></li>
               <li className="flex justify-between gap-3"><span><span className="font-mono text-[11px] bg-ink-tint rounded px-1.5 mr-1.5">GET</span>Search employees</span><span className="font-semibold">On</span></li>
-              <li className="flex justify-between gap-3 text-ink-muted"><span><span className="font-mono text-[11px] bg-line-subtle rounded px-1.5 mr-1.5">POST</span>Add an employee</span><span>Off</span></li>
+              <li className="flex justify-between gap-3"><span><span className="font-mono text-[11px] bg-ink-tint rounded px-1.5 mr-1.5">POST</span>Add an employee</span><span className="font-semibold">Needs approval</span></li>
             </ul>
+            <div className="bg-canvas border border-line-subtle rounded-[10px] px-4 py-3 text-sm flex flex-wrap items-center justify-between gap-3">
+              <span><span className="font-semibold">priya@acme.com</span>’s agent wants to add Sam Lee</span>
+              <span className="flex gap-2"><span className="text-xs font-semibold px-2.5 py-1 rounded-md bg-ink text-white">Approve</span><span className="text-xs font-semibold px-2.5 py-1 rounded-md border border-line-strong">Refuse</span></span>
+            </div>
             <div className="bg-canvas border border-line-subtle rounded-[10px] px-4 py-3 font-mono text-[12px]">{'{"name":"Jane Doe","email":'}<mark className="bg-ink-tint text-ink font-bold px-1 rounded">[REDACTED]</mark>{'}'}</div>
           </Panel>
         }
       >
-        <p className="m-0">Create an MCP server in a minute from an OpenAPI description. Reads are on, writes stay off, and every call passes your rules, with personal data removed before the agent sees it.</p>
+        <p className="m-0">Create an MCP server in a minute from an OpenAPI description. People connect Claude, ChatGPT or Cursor with their company sign-in and get only their groups’ tools. Changes wait for a person’s approval, APIs inside your network are reached through a connector, and every call passes your rules.</p>
       </Feature>
 
       <Feature

@@ -50,7 +50,8 @@ class MemoryCollection<T extends object> implements Collection<T> {
     const id = this.id(key);
     const existing = this.rows.get(id);
     const live = existing && !expired(this.spec, existing) ? existing : undefined;
-    if (change.ifExists && !live) return null;
+    if ((change.ifExists || change.where) && !live) return null;
+    if (change.where && Object.entries(change.where).some(([f, v]) => live![f] !== v)) return null;
     const { pk, sk } = keyOf(this.spec, key);
     const base: Item = live ?? { [this.spec.partitionKey]: pk, ...(this.spec.sortKey ? { [this.spec.sortKey]: sk } : {}) };
     const next = applyChange(base, change);

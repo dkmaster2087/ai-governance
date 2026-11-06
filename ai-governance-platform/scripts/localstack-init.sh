@@ -144,6 +144,50 @@ aws --endpoint-url=$ENDPOINT dynamodb create-table \
     AttributeName=toolKey,KeyType=RANGE \
   --billing-mode PAY_PER_REQUEST || true
 
+aws --endpoint-url=$ENDPOINT dynamodb create-table \
+  --region $REGION \
+  --table-name $PREFIX-mcp-versions-$STAGE \
+  --attribute-definitions \
+    AttributeName=tenantId,AttributeType=S \
+    AttributeName=versionKey,AttributeType=S \
+  --key-schema \
+    AttributeName=tenantId,KeyType=HASH \
+    AttributeName=versionKey,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST || true
+
+aws --endpoint-url=$ENDPOINT dynamodb create-table \
+  --region $REGION \
+  --table-name $PREFIX-mcp-approvals-$STAGE \
+  --attribute-definitions \
+    AttributeName=tenantId,AttributeType=S \
+    AttributeName=approvalId,AttributeType=S \
+  --key-schema \
+    AttributeName=tenantId,KeyType=HASH \
+    AttributeName=approvalId,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST || true
+
+aws --endpoint-url=$ENDPOINT dynamodb create-table \
+  --region $REGION \
+  --table-name $PREFIX-mcp-oauth-$STAGE \
+  --attribute-definitions \
+    AttributeName=tenantId,AttributeType=S \
+    AttributeName=recordKey,AttributeType=S \
+  --key-schema \
+    AttributeName=tenantId,KeyType=HASH \
+    AttributeName=recordKey,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST || true
+
+aws --endpoint-url=$ENDPOINT dynamodb create-table \
+  --region $REGION \
+  --table-name $PREFIX-mcp-connectors-$STAGE \
+  --attribute-definitions \
+    AttributeName=tenantId,AttributeType=S \
+    AttributeName=recordKey,AttributeType=S \
+  --key-schema \
+    AttributeName=tenantId,KeyType=HASH \
+    AttributeName=recordKey,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST || true
+
 aws --endpoint-url=$ENDPOINT s3 mb s3://$PREFIX-audit-logs-$STAGE-$ACCOUNT --region $REGION || true
 aws --endpoint-url=$ENDPOINT s3 mb s3://$PREFIX-athena-results-$STAGE-$ACCOUNT --region $REGION || true
 

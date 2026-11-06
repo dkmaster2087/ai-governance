@@ -111,10 +111,14 @@ nothing else installed. Plan: [ASSESSMENT.md](ASSESSMENT.md). Built in [collecto
 on-premises, and as beta Zscaler, Netskope, Azure, Google Cloud, Microsoft 365, Google Workspace, Okta, Entra and
 other identity providers' sign-in exports.
 
-**MCP servers on demand** (phase 1 built, beta): admins create MCP servers from the dashboard, each in front of one or more
-company APIs, with its own address, tools, access and approvals. Agents sign in through the company's identity
-provider; arguments and results are checked like prompts, and every tool call has a case file. Plan:
-[MCP.md](MCP.md).
+**MCP servers on demand** (phases 1 and 2 built, beta): admins create MCP servers from the dashboard, each in front
+of one or more company APIs, with its own address, tools, access and approvals. People sign in through the
+company's identity provider: the gateway is an OAuth authorization server per company (`/oauth/<tenant>`) and an
+OIDC client of the company's provider. Writes wait for approval; every call carries a signed identity token
+(keys at `/.well-known/jwks.json`); arguments and results are checked like prompts, and every tool call has a
+case file. APIs inside a company network are reached through the connector (`connector/`), which polls the
+gateway over HTTPS; queued calls are kept, encrypted, in the shared database so any gateway instance can hand
+them out. Plan: [MCP.md](MCP.md).
 
 ## Known gaps before production
 
@@ -133,7 +137,8 @@ provider; arguments and results are checked like prompts, and every tool call ha
   through when split across chunks.
 - A revoked API key stops working at once on the gateway instance that revoked it; other instances drop
   their cached copy within a minute.
-- MCP servers (beta): per-key rate limits are counted per gateway instance; backends are told who called in an
-  unsigned `X-Probaline-Caller` header (a signed identity token comes with OAuth sign-in); only read tools.
+- MCP servers (beta): rate limits are counted per gateway instance; the gateway's signing key isn't rotated
+  yet; sign-in needs `PUBLIC_GATEWAY_URL` set (without it, addresses come from request headers); approval
+  waits and connector calls poll the database, which adds load and a little latency.
 - Policy engine, data protection and analytics have no service-to-service authentication; they rely on
   being reachable only inside the VPC.

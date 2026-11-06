@@ -20,7 +20,13 @@ declare module 'fastify' {
 }
 
 /** Routes that need no credentials. */
-const PUBLIC_PREFIXES = ['/health', '/public/'];
+const PUBLIC_PREFIXES = ['/health', '/public/',
+  // OAuth for MCP clients and published keys: open by design (each route checks what it needs).
+  '/.well-known/', '/oauth/',
+  // Connectors authenticate with their own token in the route.
+  '/connector/v1/'];
+/** MCP addresses accept a Probaline API key here, or a sign-in token the MCP route checks itself. */
+const MCP_PREFIX = '/mcp/';
 /** On-prem agent routes authenticate with the license key in the request body instead. */
 const LICENSE_AUTH_ROUTES = ['/v1/reporting/validate-license', '/v1/reporting/ingest'];
 const PROXY_PREFIX = '/v1/proxy/';
@@ -106,6 +112,9 @@ export function createAuthPlugin(deps: AuthDeps) {
       // untouched, so the Probaline credential travels in x-probaline-key (injected by the corporate proxy).
       const isProxyRoute = request.url.startsWith(PROXY_PREFIX);
       const authHeader = isProxyRoute ? header(request, 'x-probaline-key') : header(request, 'authorization');
+      const isMcpRoute = request.url.startsWith(MCP_PREFIX);
+      // No credentials, or a token from Probaline's own sign-in: the MCP route answers (and says where to sign in).
+      if (isMcpRoute && (!authHeader || looksLikeJwt(authHeader.replace(/^Bearer /, '').trim()))) return;
       if (!authHeader) return deny(reply, 401, 'MISSING_AUTH', 'Unauthorized');
       const token = authHeader.startsWith('Bearer ') ? authHeader.slice(7).trim() : authHeader.trim();
       if (!token) return deny(reply, 401, 'MISSING_AUTH', 'Unauthorized');

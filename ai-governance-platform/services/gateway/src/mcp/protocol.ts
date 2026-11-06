@@ -1,4 +1,4 @@
-import { McpServer, McpTool } from './types';
+import { McpTool } from './types';
 import { ToolResult } from './calls';
 
 /**
@@ -21,7 +21,7 @@ export interface Handlers {
 }
 
 /** Answer one message. Returns null for notifications (no reply is sent). */
-export async function handleMessage(server: McpServer, msg: RpcRequest, h: Handlers): Promise<object | null> {
+export async function handleMessage(server: { serverId: string; name: string; description: string }, msg: RpcRequest, h: Handlers): Promise<object | null> {
   if (!msg || msg.jsonrpc !== '2.0' || typeof msg.method !== 'string') return rpcError(msg?.id, -32600, 'Invalid request');
   const isNotification = msg.id === undefined;
   if (isNotification) return null; // notifications/initialized and friends need no answer
@@ -42,7 +42,9 @@ export async function handleMessage(server: McpServer, msg: RpcRequest, h: Handl
       const tools = await h.tools();
       return ok(msg.id, {
         tools: tools.map((t) => ({
-          name: t.name, title: t.title, description: t.description, inputSchema: t.inputSchema,
+          name: t.name, title: t.title,
+          description: t.write && t.approval !== 'none' ? `${t.description}${t.description ? '\n\n' : ''}Changes data. A person must approve each call before it runs; if the call says it's waiting, ask again with the same arguments after approval.` : t.description,
+          inputSchema: t.inputSchema,
           annotations: { title: t.title, readOnlyHint: !t.write, destructiveHint: t.method === 'DELETE', openWorldHint: false },
         })),
       });

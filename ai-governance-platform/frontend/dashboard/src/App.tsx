@@ -9,6 +9,9 @@ import { RulesPage } from './pages/RulesPage';
 import { ApiKeysPage } from './pages/ApiKeysPage';
 import { McpServersPage } from './pages/McpServersPage';
 import { McpServerPage } from './pages/McpServerPage';
+import { McpApprovalsPage } from './pages/McpApprovalsPage';
+import { McpConnectorsPage } from './pages/McpConnectorsPage';
+import { McpSignInPage } from './pages/McpSignInPage';
 import { PlatformDashboardPage } from './pages/PlatformDashboardPage';
 import { EvidencePage } from './pages/EvidencePage';
 import { ModelsPage } from './pages/ModelsPage';
@@ -68,7 +71,15 @@ export default function App() {
   }
 
   // Plain users (tenant_user) use AI through approved apps, not the dashboard
-  if (!hasDashboardAccess) return <NoDashboardAccessPage />;
+  // …except approving agents' requests: an approver can have any role.
+  if (!hasDashboardAccess) {
+    return (
+      <Routes>
+        <Route path="/mcp/approvals" element={<Shell><McpApprovalsPage /></Shell>} />
+        <Route path="*" element={<NoDashboardAccessPage />} />
+      </Routes>
+    );
+  }
 
   // Platform admin — super admin dashboard
   if (isPlatformAdmin) {
@@ -108,6 +119,9 @@ export default function App() {
           <Route path="/rules" element={<RequireAdmin><RulesPage /></RequireAdmin>} />
           <Route path="/keys" element={<RequireAdmin><ApiKeysPage /></RequireAdmin>} />
           <Route path="/mcp" element={<RequireAdmin><McpServersPage /></RequireAdmin>} />
+          <Route path="/mcp/approvals" element={<McpApprovalsPage />} />
+          <Route path="/mcp/connectors" element={<RequireAdmin><McpConnectorsPage /></RequireAdmin>} />
+          <Route path="/mcp/sign-in" element={<RequireAdmin><McpSignInPage /></RequireAdmin>} />
           <Route path="/mcp/:serverId" element={<RequireAdmin><McpServerPage /></RequireAdmin>} />
           <Route path="/policies" element={<Navigate to="/rules" replace />} />
           <Route path="/compliance" element={<RequireAdmin><CompliancePage /></RequireAdmin>} />

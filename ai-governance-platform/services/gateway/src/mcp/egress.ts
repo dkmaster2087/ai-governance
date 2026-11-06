@@ -62,14 +62,14 @@ function guardedLookup(hostname: string, options: dns.LookupOptions, cb: (err: N
 export interface BackendResponse { status: number; contentType: string; body: string; truncated: boolean; ms: number }
 
 export function callBackend(o: {
-  url: URL; method: string; headers: Record<string, string>; body?: string; timeoutMs?: number; maxBytes: number;
+  url: URL; method: string; headers: Record<string, string>; body?: string; timeoutMs?: number; maxBytes: number; contentType?: string;
 }): Promise<BackendResponse> {
   const started = Date.now();
   const lib = o.url.protocol === 'https:' ? https : http;
   return new Promise((resolve, reject) => {
     const req = lib.request(o.url, {
       method: o.method,
-      headers: { ...o.headers, ...(o.body !== undefined ? { 'content-type': 'application/json', 'content-length': String(Buffer.byteLength(o.body)) } : {}) },
+      headers: { ...o.headers, ...(o.body !== undefined ? { 'content-type': o.contentType ?? 'application/json', 'content-length': String(Buffer.byteLength(o.body)) } : {}) },
       lookup: guardedLookup as any,
       timeout: o.timeoutMs ?? 15_000,
     }, (res) => {

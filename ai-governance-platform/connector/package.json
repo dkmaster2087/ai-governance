@@ -1,0 +1,22 @@
+{
+  "name": "@ai-governance/connector",
+  "version": "0.1.0",
+  "description": "Probaline connector: lets the gateway in the cloud reach APIs inside a company's network over outbound HTTPS only. No dependencies.",
+  "private": true,
+  "bin": {
+    "probaline-connector": "dist/cli.js"
+  },
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/cli.js",
+    "test": "jest --runInBand",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "typescript": "^5.4.0"
+  }
+}

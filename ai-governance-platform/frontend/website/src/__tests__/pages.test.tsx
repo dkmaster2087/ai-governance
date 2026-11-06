@@ -39,6 +39,8 @@ describe('website', () => {
     const card = screen.getByRole('heading', { name: 'AI agents (MCP)' }).closest('[class*="p-6"]')!;
     expect(within(card as HTMLElement).getByText('Beta')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Give agents your APIs/ })).toBeInTheDocument();
+    expect(screen.getByText('Needs approval')).toBeInTheDocument();
+    expect(within(card as HTMLElement).getByText('People sign in with their company account')).toBeInTheDocument();
   });
 
   it('shows secrets as a live gateway check', () => {

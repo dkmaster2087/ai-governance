@@ -92,11 +92,20 @@ by platform admins only.
 ## MCP servers (beta)
 
 From **MCP servers** in the dashboard, admins create as many MCP servers as they need, each in front of one or
-more company APIs added from their OpenAPI descriptions, with its own address, tools and list of which keys may
-connect. Agents (Claude Code, Cursor, VS Code, a company's own) connect with an API key that has the `mcp`
-permission. Read tools only for now. Every call: arguments checked against the schema, the secrets check and
-company rules; the API called with Probaline's own credential; personal data removed from the result;
-instruction-like text flagged; a case file in Evidence. A test console tries tools before publishing.
+more company APIs added from their OpenAPI descriptions, with its own address, tools, access and approvals.
 
-Planned: people signing in through the company's identity provider, write tools with approval, versions, and a
-connector for on-premises APIs. Plan: [MCP.md](MCP.md).
+- **Who connects.** People sign in with their company account (any OpenID Connect provider: Entra ID, Okta,
+  Google…) from Claude, ChatGPT, Cursor or VS Code; a consent page asks them to allow the agent. Each server
+  lets nobody, everyone or chosen groups in, and tools can be limited to groups. The company's own agents use
+  an API key with the `mcp` permission.
+- **Reads and writes.** Read tools are on when an API is added. Write tools are switched on one by one, and each
+  needs a person's approval (on the **Approvals** page, optionally announced in Slack or Teams) or runs
+  straight away. An approval is for one exact call and is used once; nobody approves their own request.
+- **Every call:** arguments checked against the schema, the secrets check and company rules; approval where
+  needed; the API called with Probaline's own credential plus a signed statement of who asked; personal data
+  removed from the result; instruction-like text flagged; a case file in Evidence.
+- **Draft and versions.** Changes are made as a draft and published as a numbered version; any version can be
+  restored. A test console tries tools before publishing.
+- **APIs inside the network.** A connector in the company's network reaches them over outbound HTTPS only.
+
+Plan and limits: [MCP.md](MCP.md).

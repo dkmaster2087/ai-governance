@@ -185,9 +185,8 @@ describe('MCP servers', () => {
     expect(server.apis[0].auth).toEqual({ type: 'bearer', hint: '…-123' });
     expect(JSON.stringify(server)).not.toContain('backend-token-123');
 
-    const write = await admin.inject({ method: 'PATCH', url: '/v1/mcp/servers/hr-self-service/tools/createEmployee', payload: { enabled: true } });
-    expect(write.statusCode).toBe(409);
-    expect((await admin.inject({ method: 'POST', url: '/v1/mcp/servers/hr-self-service/publish' })).json()).toMatchObject({ status: 'published' });
+    expect(server.tools.find((t: any) => t.name === 'createEmployee').approval).toBe('required');
+    expect((await admin.inject({ method: 'POST', url: '/v1/mcp/servers/hr-self-service/publish', payload: { note: 'First' } })).json()).toMatchObject({ status: 'published', version: 1, hasChanges: false });
     const list = (await admin.inject({ method: 'GET', url: '/v1/mcp/servers' })).json();
     expect(list[0]).toMatchObject({ serverId: 'hr-self-service', tools: 5, week: { calls: 0, stopped: 0 } });
   });
@@ -268,6 +267,9 @@ describe('MCP servers', () => {
     expect((await rpc(await appAs({ key: { keyId: 'k', scopes: ['mcp'], tenantId: 'tenant_other' } }), 'tools/list')).json().code).toBe('TENANT_MISMATCH');
     expect((await rpc(await agent(), 'tools/list', undefined, { origin: 'https://evil.example' })).statusCode).toBe(403);
     await admin.inject({ method: 'PATCH', url: '/v1/mcp/servers/hr-self-service', payload: { access: { allKeys: false, keyIds: ['key_allowed'] }, limits: { callsPerMinute: 2, maxResultBytes: 100000 } } });
+    // Changes reach agents when published.
+    expect((await rpc(await agent(), 'tools/list')).statusCode).toBe(200);
+    await admin.inject({ method: 'POST', url: '/v1/mcp/servers/hr-self-service/publish' });
     expect((await rpc(await agent(), 'tools/list')).statusCode).toBe(403);
     const allowed = await agent(['mcp'], 'key_allowed');
     expect((await rpc(allowed, 'tools/list')).statusCode).toBe(200);

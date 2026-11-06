@@ -60,7 +60,11 @@ const servicesStack = new ServicesStack(app, `${prefix}-services-${stage}`, {
   apiKeysTable: storageStack.apiKeysTable,
   alertsTable: storageStack.alertsTable,
   shadowAiTable: storageStack.shadowAiTable,
-  mcpTables: { servers: storageStack.mcpServersTable, apis: storageStack.mcpApisTable, tools: storageStack.mcpToolsTable },
+  mcpTables: {
+    servers: storageStack.mcpServersTable, apis: storageStack.mcpApisTable, tools: storageStack.mcpToolsTable,
+    versions: storageStack.mcpVersionsTable, approvals: storageStack.mcpApprovalsTable,
+    oauth: storageStack.mcpOauthTable, connectors: storageStack.mcpConnectorsTable,
+  },
   auditLogsTable: storageStack.auditLogsTable,
   modelsTable: storageStack.modelsTable,
   complianceTable: storageStack.complianceTable,

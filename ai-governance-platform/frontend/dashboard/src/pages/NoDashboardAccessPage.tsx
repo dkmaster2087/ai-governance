@@ -19,6 +19,9 @@ export function NoDashboardAccessPage() {
           Your account{user?.tenantName ? ` at ${user.tenantName}` : ''} can use AI through your organization’s approved
           tools, but doesn’t include access to the governance dashboard. Ask an administrator if you need it.
         </p>
+        <p className={clsx('text-sm mb-6', isDark ? 'text-slate-400' : 'text-gray-500')}>
+          If you approve AI agents’ requests, open <a href="/mcp/approvals" className="underline font-medium">Approvals</a>.
+        </p>
         <button
           onClick={logout}
           className="inline-flex items-center gap-2 px-4 py-2 rounded-lg bg-ink hover:bg-ink-soft text-white text-sm font-medium"

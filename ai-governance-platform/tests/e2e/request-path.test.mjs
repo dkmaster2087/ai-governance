@@ -465,7 +465,167 @@ describe('MCP servers', () => {
     assert.equal(chatOnly.status, 403);
     await call('POST', `/v1/mcp/servers/${serverId}/pause`, { headers: adminOf(A) });
     assert.equal((await rpc('tools/list')).status, 503);
-    await call('POST', `/v1/mcp/servers/${serverId}/publish`, { headers: adminOf(A) });
+    await call('POST', `/v1/mcp/servers/${serverId}/resume`, { headers: adminOf(A) });
+    assert.equal((await rpc('tools/list')).status, 200);
+  });
+});
+
+describe('MCP servers: approvals, people signing in, connectors', () => {
+  const SPEC = JSON.stringify({
+    openapi: '3.0.3', info: { title: 'People API', version: '1' },
+    paths: {
+      '/employees/{id}': { get: { operationId: 'getEmployee', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }] } },
+      '/employees': { post: { operationId: 'createEmployee', requestBody: { required: true, content: { 'application/json': { schema: { type: 'object', properties: { name: { type: 'string' } } } } } } } },
+      '/salaries': { get: { operationId: 'listSalaries' } },
+    },
+  });
+  const IDP_PORT = 4031;
+  const IDP = `http://localhost:${IDP_PORT}`;
+  let api; let apiUrl; let serverId; let agentKey; let idp; let connector;
+  const hits = [];
+  const servers = [];
+
+  before(async () => {
+    const http = await import('node:http');
+    api = http.createServer((req, res) => {
+      let body = '';
+      req.on('data', (c) => { body += c; });
+      req.on('end', () => {
+        hits.push({ method: req.method, url: req.url, identity: req.headers['x-probaline-identity'], body });
+        res.writeHead(req.method === 'POST' ? 201 : 200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ id: 'e1', name: 'Jane Doe' }));
+      });
+    });
+    await new Promise((r) => api.listen(0, '127.0.0.1', r));
+    apiUrl = `http://127.0.0.1:${api.address().port}`;
+    agentKey = (await newKey(A, 'e2e-agent-2', ['mcp'])).key;
+    idp = spawn('node', [path.join(ROOT, 'scripts/dev-idp.mjs'), String(IDP_PORT)], { stdio: 'ignore' });
+    for (let i = 0; i < 50; i++) { try { if ((await fetch(`${IDP}/jwks`)).ok) break; } catch {} await new Promise((r) => setTimeout(r, 100)); }
+  });
+  after(async () => {
+    for (const id of servers) await call('DELETE', `/v1/mcp/servers/${id}`, { headers: adminOf(A) });
+    await call('DELETE', '/v1/mcp/sign-in', { headers: adminOf(A) });
+    idp?.kill();
+    connector?.kill();
+    await new Promise((r) => api?.close(r));
+  });
+
+  async function newServer(extra = {}) {
+    const made = await call('POST', '/v1/mcp/servers', { headers: adminOf(A), body: { name: `E2E phase 2 ${marker()}` } });
+    servers.push(made.body.serverId);
+    const added = await call('POST', `/v1/mcp/servers/${made.body.serverId}/apis`, { headers: adminOf(A), body: { name: 'People API', baseUrl: apiUrl, openapi: SPEC, auth: { type: 'bearer', secret: 'people-api-token' }, ...extra } });
+    assert.equal(added.status, 201, JSON.stringify(added.body));
+    return made.body.serverId;
+  }
+  const rpcAs = (auth, id, method, params) => call('POST', `/mcp/${A}/${id}`, { headers: { authorization: `Bearer ${auth}` }, body: { jsonrpc: '2.0', id: 1, method, ...(params ? { params } : {}) } });
+
+  test('a write runs only after a person approves it, and the API can check who asked', async () => {
+    serverId = await newServer();
+    const s = `/v1/mcp/servers/${serverId}`;
+    assert.equal((await call('PATCH', `${s}/tools/createEmployee`, { headers: adminOf(A), body: { enabled: true } })).body.approval, 'required');
+    await call('PATCH', s, { headers: adminOf(A), body: { approvals: { approvers: [], waitSeconds: 0, expiresMinutes: 60 } } });
+    assert.equal((await call('POST', `${s}/publish`, { headers: adminOf(A), body: { note: 'writes' } })).body.version, 1);
+
+    const ask = () => rpcAs(agentKey, serverId, 'tools/call', { name: 'createEmployee', arguments: { body: { name: 'Sam' } } });
+    const first = (await ask()).body.result;
+    assert.match(first.content[0].text, /needs approval before it runs/);
+    assert.equal(hits.filter((h) => h.method === 'POST').length, 0);
+    const pending = (await call('GET', '/v1/mcp/approvals', { headers: adminOf(A) })).body.find((a) => a.serverId === serverId && a.status === 'pending');
+    assert.ok(pending, 'the request is waiting');
+    assert.equal((await call('POST', `/v1/mcp/approvals/${pending.approvalId}/approve`, { headers: adminOf(A), body: {} })).status, 200);
+    const done = (await ask()).body.result;
+    assert.equal(done.isError, false, JSON.stringify(done));
+    const post = hits.filter((h) => h.method === 'POST');
+    assert.deepEqual(post.map((h) => h.body), ['{"name":"Sam"}']);
+    assert.match((await ask()).body.result.content[0].text, /needs approval/, 'an approval is used once');
+
+    // The signed statement of who asked checks out against the published key.
+    const { createPublicKey, verify } = await import('node:crypto');
+    const jwks = (await call('GET', '/.well-known/jwks.json')).body;
+    const [h, p, sig] = post[0].identity.split('.');
+    assert.ok(verify('sha256', Buffer.from(`${h}.${p}`), { key: createPublicKey({ key: jwks.keys[0], format: 'jwk' }), dsaEncoding: 'ieee-p1363' }, Buffer.from(sig, 'base64url')));
+    const claims = JSON.parse(Buffer.from(p, 'base64url').toString());
+    assert.equal(claims.kind, 'api_key');
+    assert.equal(claims.tool, 'createEmployee');
+    const record = await caseFile(A, done._meta['probaline/requestId']);
+    assert.ok(record.body.steps.some((st) => st.label === 'Approved'), JSON.stringify(record.body.steps));
+  });
+
+  test('a person signs in through the company identity provider and gets only their groups\' tools', async () => {
+    const saved = await call('PUT', '/v1/mcp/sign-in', { headers: adminOf(A), body: { issuer: IDP, clientId: 'probaline-dev', clientSecret: 'dev-secret', groupsClaim: 'groups', extraScopes: [], sessionHours: 8 } });
+    assert.equal(saved.status, 200, JSON.stringify(saved.body));
+    assert.equal((await call('POST', '/v1/mcp/sign-in/check', { headers: adminOf(A), body: {} })).body.ok, true);
+    const id = await newServer();
+    const s = `/v1/mcp/servers/${id}`;
+    await call('PATCH', s, { headers: adminOf(A), body: { access: { allKeys: false, keyIds: [], people: 'groups', groups: ['HR'] } } });
+    await call('PATCH', `${s}/tools/listSalaries`, { headers: adminOf(A), body: { groups: ['Payroll'] } });
+    await call('POST', `${s}/publish`, { headers: adminOf(A), body: {} });
+
+    // What an MCP client does, following each redirect by hand.
+    const get = (url, init = {}) => fetch(url, { redirect: 'manual', ...init });
+    const unauth = await get(`${GATEWAY}/mcp/${A}/${id}`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: '{"jsonrpc":"2.0","id":1,"method":"tools/list"}' });
+    assert.equal(unauth.status, 401);
+    const prm = await (await get(/resource_metadata="([^"]+)"/.exec(unauth.headers.get('www-authenticate'))[1])).json();
+    const { createHash, randomBytes } = await import('node:crypto');
+    const signIn = async (person) => {
+      const reg = await (await get(`${prm.authorization_servers[0]}/register`, { method: 'POST', headers: { 'content-type': 'application/json' }, body: JSON.stringify({ redirect_uris: ['http://localhost:7777/cb'], client_name: 'E2E agent' }) })).json();
+      const verifier = randomBytes(32).toString('base64url');
+      const q = new URLSearchParams({ response_type: 'code', client_id: reg.client_id, redirect_uri: 'http://localhost:7777/cb', state: 's1', resource: prm.resource, code_challenge: createHash('sha256').update(verifier).digest('base64url'), code_challenge_method: 'S256' });
+      const toIdp = (await get(`${prm.authorization_servers[0]}/authorize?${q}`)).headers.get('location');
+      const page = await (await get(toIdp)).text();
+      const pick = new RegExp(`href="(/login\\?[^"]*person=${person}[^"]*)"`).exec(page)[1].replace(/&amp;/g, '&');
+      const back = await get(`${IDP}${pick}`);
+      const consent = await get(back.headers.get('location'));
+      if (consent.status !== 200) return { status: consent.status };
+      const html = await consent.text();
+      const field = (n) => new RegExp(`name="${n}" value="([^"]+)"`).exec(html)[1];
+      const allowed = await get(`${prm.authorization_servers[0]}/consent`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ rid: field('rid'), token: field('token'), decision: 'allow' }) });
+      const code = new URL(allowed.headers.get('location')).searchParams.get('code');
+      const tokens = await (await get(`${prm.authorization_servers[0]}/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'authorization_code', code, redirect_uri: 'http://localhost:7777/cb', client_id: reg.client_id, code_verifier: verifier, resource: prm.resource }) })).json();
+      return { tokens, clientId: reg.client_id };
+    };
+
+    const jane = await signIn('jane');
+    assert.ok(jane.tokens.access_token, JSON.stringify(jane));
+    const tools = (await rpcAs(jane.tokens.access_token, id, 'tools/list')).body.result.tools.map((t) => t.name).sort();
+    assert.deepEqual(tools, ['getEmployee'], 'HR gets reads, not Payroll\'s salaries');
+    const res = (await rpcAs(jane.tokens.access_token, id, 'tools/call', { name: 'getEmployee', arguments: { id: 'e1' } })).body.result;
+    assert.equal(res.isError, false, JSON.stringify(res));
+    const record = await caseFile(A, res._meta['probaline/requestId']);
+    assert.match(record.body.headline, /jane@democorp.com’s agent called getEmployee/);
+
+    assert.equal((await signIn('max')).status, 403, 'Sales isn\'t allowed on this server');
+
+    // Disabled in the identity provider: the next refresh ends the sign-in.
+    await fetch(`${IDP}/_disable?person=jane`, { method: 'POST' });
+    const refreshed = await (await get(`${prm.authorization_servers[0]}/token`, { method: 'POST', headers: { 'content-type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams({ grant_type: 'refresh_token', refresh_token: jane.tokens.refresh_token, client_id: jane.clientId }) })).json();
+    assert.equal(refreshed.error, 'invalid_grant');
+  });
+
+  test('an API inside the company network is reached through the connector', async () => {
+    const made = await call('POST', '/v1/mcp/connectors', { headers: adminOf(A), body: { name: `E2E connector ${marker()}`, allowedHosts: ['127.0.0.1'] } });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    const { execSync } = await import('node:child_process');
+    execSync('npm run build -w connector', { cwd: ROOT, stdio: 'ignore' });
+    connector = spawn('node', [path.join(ROOT, 'connector/dist/cli.js')], {
+      env: { ...process.env, PROBALINE_URL: GATEWAY, PROBALINE_CONNECTOR_TOKEN: made.body.token, CONNECTOR_ALLOW_HTTP: 'true' }, stdio: 'ignore',
+    });
+    const id = await newServer({ connectorId: made.body.connectorId });
+    await call('POST', `/v1/mcp/servers/${id}/publish`, { headers: adminOf(A), body: {} });
+    for (let i = 0; i < 50; i++) {
+      if ((await call('GET', '/v1/mcp/connectors', { headers: adminOf(A) })).body.find((c) => c.connectorId === made.body.connectorId)?.online) break;
+      await new Promise((r) => setTimeout(r, 200));
+    }
+    const before = hits.length;
+    const res = (await rpcAs(agentKey, id, 'tools/call', { name: 'getEmployee', arguments: { id: 'e7' } })).body.result;
+    assert.equal(res.isError, false, JSON.stringify(res));
+    assert.equal(hits.at(-1).url, '/employees/e7');
+    assert.equal(hits.length, before + 1);
+    connector.kill();
+    connector = null;
+    await call('DELETE', `/v1/mcp/servers/${id}`, { headers: adminOf(A) });
+    servers.splice(servers.indexOf(id), 1);
+    assert.equal((await call('DELETE', `/v1/mcp/connectors/${made.body.connectorId}`, { headers: adminOf(A) })).status, 200);
   });
 });
 

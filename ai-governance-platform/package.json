@@ -7,7 +7,8 @@
     "frontend/*",
     "infra",
     "shared/*",
-    "collector"
+    "collector",
+    "connector"
   ],
   "scripts": {
     "build": "turbo run build",

@@ -109,7 +109,7 @@ class PgCollection<T extends object> implements Collection<T> {
     const { pk, sk } = keyOf(this.spec, key);
     const keyRecord = { [this.spec.partitionKey]: pk, ...(this.spec.sortKey ? { [this.spec.sortKey]: sk } : {}) };
     return this.store.transaction(async (c) => {
-      if (!change.ifExists) {
+      if (!change.ifExists && !change.where) {
         // Create the record (or replace an expired one) so the update below always has a row to change.
         const q = new Sql();
         await c.query(
@@ -122,7 +122,8 @@ class PgCollection<T extends object> implements Collection<T> {
       const q = new Sql();
       const data = changedData(change, q);
       const r = await c.query(
-        `UPDATE ${this.table} SET data = ${data} WHERE pk = ${q.p(pk)} AND sk = ${q.p(sk)} AND ${this.live(q)} RETURNING data`,
+        `UPDATE ${this.table} SET data = ${data} WHERE pk = ${q.p(pk)} AND sk = ${q.p(sk)} AND ${this.live(q)}${
+          Object.entries(change.where ?? {}).map(([f, v]) => ` AND (data->>'${fieldPath(f)[0]}') = ${q.p(v)}`).join('')} RETURNING data`,
         q.params,
       );
       return (r.rows[0]?.data ?? null) as T | null;
