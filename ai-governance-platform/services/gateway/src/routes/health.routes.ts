@@ -1,6 +1,7 @@
 import { FastifyInstance } from 'fastify';
 import axios from 'axios';
 import { records } from '@ai-governance/storage';
+import { analyticsClient } from '../clients/analytics.client';
 
 const startTime = Date.now();
 
@@ -67,10 +68,12 @@ export async function healthRoutes(app: FastifyInstance) {
         const url = process.env.DATA_PROTECTION_URL || 'http://localhost:3002';
         await axios.get(`${url}/health`, { timeout: 3000 });
       }),
+      // Off the request path: if it's down, reports are unavailable but prompts are unaffected.
+      checkDependency('analytics', () => analyticsClient().ping()),
     ]);
 
     const allHealthy = checks.every((c) => c.status === 'healthy');
-    const criticalHealthy = checks.filter((c) => c.name !== 'data-protection').every((c) => c.status === 'healthy');
+    const criticalHealthy = checks.filter((c) => c.name !== 'data-protection' && c.name !== 'analytics').every((c) => c.status === 'healthy');
 
     return {
       status: allHealthy ? 'healthy' : criticalHealthy ? 'degraded' : 'unhealthy',

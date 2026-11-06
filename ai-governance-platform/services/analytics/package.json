@@ -13,12 +13,8 @@
     "@ai-governance/storage": "*",
     "@ai-governance/types": "*",
     "@ai-governance/utils": "*",
-    "@aws-sdk/client-athena": "^3.0.0",
-    "@aws-sdk/client-dynamodb": "^3.0.0",
-    "@aws-sdk/lib-dynamodb": "^3.0.0",
-    "@fastify/cors": "^10.0.0",
-    "@fastify/helmet": "^12.0.0",
-    "fastify": "^5.8.4"
+    "fastify": "^5.8.4",
+    "zod": "^3.22.0"
   },
   "devDependencies": {
     "@types/jest": "^29.0.0",

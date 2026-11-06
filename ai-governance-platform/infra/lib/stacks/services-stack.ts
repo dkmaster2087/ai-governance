@@ -8,6 +8,7 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
 interface ServicesStackProps extends cdk.StackProps {
@@ -110,7 +111,17 @@ export class ServicesStack extends cdk.Stack {
       })
     );
 
-    // --- Analytics Service ---
+    // The key the gateway signs internal requests with, and analytics checks them with. Generated here, held
+    // in Secrets Manager, and given only to those two services.
+    const internalKey = new secretsmanager.Secret(this, 'InternalServiceKey', {
+      secretName: `${prefix}/${stage}/internal-service-key`,
+      description: 'Signs requests from the gateway to internal services',
+      generateSecretString: { passwordLength: 64, excludePunctuation: true },
+      removalPolicy: stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+    });
+    const internalKeySecret = { INTERNAL_SERVICE_KEY: ecs.Secret.fromSecretsManager(internalKey) };
+
+    // --- Analytics Service: every report built from history. Reads only; never on the request path. ---
     const analyticsService = this.createService({
       id: 'Analytics',
       name: 'analytics',
@@ -119,16 +130,32 @@ export class ServicesStack extends cdk.Stack {
       cluster: this.cluster,
       vpc,
       port: 3003,
-      cpu: 512,
-      memory: 1024,
+      cpu: 1024,
+      memory: 2048,
       environment: {
         ...commonEnv,
-        ATHENA_DATABASE: `${prefix}_logs_${stage}`,
-        ATHENA_OUTPUT_BUCKET: `s3://${auditLogBucket.bucketName}/athena-results/`,
+        AUDIT_LOGS_TABLE: auditLogsTable.tableName,
+        TENANTS_TABLE: tenantsTable.tableName,
+        SHADOW_AI_TABLE: shadowAiTable.tableName,
       },
+      secrets: internalKeySecret,
     });
-    metricsTable.grantReadData(analyticsService.taskDefinition.taskRole);
-    auditLogBucket.grantRead(analyticsService.taskDefinition.taskRole);
+    for (const t of [auditLogsTable, tenantsTable, shadowAiTable, metricsTable]) t.grantReadData(analyticsService.taskDefinition.taskRole);
+
+    // The gateway reaches the policy engine and data protection through the internal load balancer: one
+    // listener per service, open only inside the VPC.
+    const internalRoute = (id: string, service: ecs.FargateService, port: number) => {
+      const listener = internalAlb.addListener(`${id}InternalListener`, { port, protocol: elbv2.ApplicationProtocol.HTTP, open: false });
+      internalAlb.connections.allowFrom(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(port), `${id} from inside the VPC`);
+      listener.addTargets(`${id}InternalTarget`, {
+        port, protocol: elbv2.ApplicationProtocol.HTTP, targets: [service],
+        healthCheck: { path: '/health', interval: cdk.Duration.seconds(30), healthyThresholdCount: 2 },
+        deregistrationDelay: cdk.Duration.seconds(30),
+      });
+    };
+    internalRoute('PolicyEngine', policyEngineService, 3001);
+    internalRoute('DataProtection', dataProtectionService, 3002);
+    internalRoute('Analytics', analyticsService, 3003);
 
     // Customers' provider API keys live in Secrets Manager under this prefix.
     const providerKeysPrefix = `${prefix}/${stage}/provider-keys`;
@@ -140,6 +167,7 @@ export class ServicesStack extends cdk.Stack {
     this.gatewayService = this.createService({
       id: 'Gateway',
       name: 'gateway',
+      secrets: internalKeySecret,
       prefix,
       stage,
       cluster: this.cluster,
@@ -167,6 +195,7 @@ export class ServicesStack extends cdk.Stack {
         AUDIT_LOGS_TABLE: auditLogsTable.tableName,
         POLICY_ENGINE_URL: `http://${internalAlb.loadBalancerDnsName}:3001`,
         DATA_PROTECTION_URL: `http://${internalAlb.loadBalancerDnsName}:3002`,
+        ANALYTICS_URL: `http://${internalAlb.loadBalancerDnsName}:3003`,
         ALLOWED_ORIGINS: '', // Set per environment
         ...(gatewayUrl ? { PUBLIC_GATEWAY_URL: gatewayUrl } : {}),
         COGNITO_USER_POOL_ID: props.userPool.userPoolId,
@@ -254,8 +283,9 @@ export class ServicesStack extends cdk.Stack {
     cpu: number;
     memory: number;
     environment: Record<string, string>;
+    secrets?: Record<string, ecs.Secret>;
   }): ecs.FargateService {
-    const { id, name, prefix, stage, cluster, vpc, port, cpu, memory, environment } = config;
+    const { id, name, prefix, stage, cluster, vpc, port, cpu, memory, environment, secrets } = config;
 
     const repo = new ecr.Repository(this, `${id}Repo`, {
       repositoryName: `${prefix}-${name}-${stage}`,
@@ -278,6 +308,7 @@ export class ServicesStack extends cdk.Stack {
       image: ecs.ContainerImage.fromEcrRepository(repo, 'latest'),
       portMappings: [{ containerPort: port }],
       environment,
+      ...(secrets ? { secrets } : {}),
       logging: ecs.LogDrivers.awsLogs({
         streamPrefix: name,
         logGroup,

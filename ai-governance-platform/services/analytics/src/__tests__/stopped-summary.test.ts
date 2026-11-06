@@ -1,5 +1,5 @@
 import { AuditLog } from '@ai-governance/types';
-import { localDate, summarizeStopped } from '../services/stopped-summary';
+import { localDate, summarizeStopped } from '../reports/stopped-summary';
 
 let n = 0;
 function log(partial: Partial<AuditLog>): AuditLog {

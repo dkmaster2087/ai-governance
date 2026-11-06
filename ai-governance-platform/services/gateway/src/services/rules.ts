@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import { AuditLog, Policy, PolicyRule, PolicyRuleType } from '@ai-governance/types';
+import { Policy, PolicyRule, PolicyRuleType } from '@ai-governance/types';
 
 /** Rule types the gateway actually evaluates on each request. */
 export const ENFORCEABLE_TYPES: PolicyRuleType[] = ['keyword_block', 'model_restriction', 'data_classification', 'pii_detection'];
@@ -34,15 +34,10 @@ export interface RuleView {
 }
 
 /** Flatten a tenant's policies into rules, with what each did in the audit window. */
-export function buildRuleViews(policies: Policy[], logs: AuditLog[]): RuleView[] {
-  const stopped = new Map<string, number>();
-  const flagged = new Map<string, number>();
-  for (const l of logs) {
-    const rules = l.triggeredRules ?? [];
-    const stopper = l.eventType === 'request_blocked' ? rules[rules.length - 1] : undefined;
-    if (stopper) stopped.set(stopper, (stopped.get(stopper) ?? 0) + 1);
-    for (const r of rules) if (r !== stopper) flagged.set(r, (flagged.get(r) ?? 0) + 1);
-  }
+/** What each rule did recently, from the analytics service. */
+export type RuleActivity = Record<string, { stopped: number; flagged: number }>;
+
+export function buildRuleViews(policies: Policy[], activity: RuleActivity = {}): RuleView[] {
   return policies.flatMap((p) =>
     p.rules.map((r) => ({
       ruleId: r.ruleId,
@@ -56,8 +51,8 @@ export function buildRuleViews(policies: Policy[], logs: AuditLog[]): RuleView[]
       enabled: r.enabled && p.enabled,
       policyEnabled: p.enabled,
       effect: ruleEffect(r),
-      stopped: stopped.get(r.ruleId) ?? 0,
-      flagged: flagged.get(r.ruleId) ?? 0,
+      stopped: activity[r.ruleId]?.stopped ?? 0,
+      flagged: activity[r.ruleId]?.flagged ?? 0,
     }))
   );
 }

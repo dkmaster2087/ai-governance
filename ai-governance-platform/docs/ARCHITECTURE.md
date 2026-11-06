@@ -48,13 +48,35 @@ tenants via `X-Tenant-Id`; everyone else is limited to their own.
 
 | Gateway endpoint | For |
 |---|---|
-| `GET /v1/gateway/summary`, `GET /v1/gateway/stopped` | Gateway and Stopped pages (from the audit log) |
+| `GET /v1/gateway/summary`, `GET /v1/gateway/stopped` | Gateway and Stopped pages (built by analytics) |
 | `GET/POST/PATCH/DELETE /v1/rules…`, `GET/PUT /v1/gateway/settings` | Rules page (forwards to the policy engine with the caller's tenant) |
 | `GET /v1/shadow-ai/summary`, `GET/PUT /v1/shadow-ai/policy` | Shadow AI page |
 | `GET /v1/shadow-ai/config`, `POST /v1/shadow-ai/events` | Browser extension (`shadow_ai:ingest` key; tenant from the key) |
-| `GET /v1/evidence…` | Evidence page and exports |
+| `GET /v1/evidence…` | Evidence page and exports (built by analytics) |
+| `GET /v1/cost/…` | Spend (built by analytics) |
 | `GET/POST /v1/api-keys…` | API keys page |
 | `GET /v1/platform/usage`, `/v1/tenants…`, `/health/deep` | Platform-admin pages (platform admins only, except health) |
+
+## Reports (analytics service)
+
+Every report built from history runs in the analytics service (:3003), not in the gateway, so a heavy report
+can never slow a prompt down, and the two scale separately: the Gateway and Stopped summaries, spend, Evidence
+search and case files, the Shadow AI summary, what each rule did, MCP calls per server, and the platform view.
+
+```
+Dashboard ──▶ Gateway: who is this, may they see it? ──▶ Analytics (internal only)
+                 signs X-Probaline-Internal                  checks the signature, takes the
+                 (HS256, 60 s: company, user, role)          company from the token, reads history
+```
+
+- Analytics answers nothing without a token the gateway signed with `INTERNAL_SERVICE_KEY` (generated in
+  Secrets Manager by CDK and given only to those two services). The company always comes from the token,
+  never from the address, so a request for one company can't read another's data even from inside the VPC.
+- Analytics only reads (audit records, tenants, shadow AI events); it has no write access.
+- Off the request path: if analytics is down, reports answer `503 ANALYTICS_UNAVAILABLE`, the Rules and MCP
+  pages load without their counts, the Health page shows it under **Reports**, and prompts are unaffected.
+- Next, for very large histories: running totals kept as requests happen, and long-range reports read from
+  the S3 archive through Athena.
 
 ## Storage
 
@@ -140,5 +162,5 @@ them out. Plan: [MCP.md](MCP.md).
 - MCP servers (beta): rate limits are counted per gateway instance; the gateway's signing key isn't rotated
   yet; sign-in needs `PUBLIC_GATEWAY_URL` set (without it, addresses come from request headers); approval
   waits and connector calls poll the database, which adds load and a little latency.
-- Policy engine, data protection and analytics have no service-to-service authentication; they rely on
-  being reachable only inside the VPC.
+- Policy engine and data protection have no service-to-service authentication yet; they rely on being
+  reachable only inside the VPC (analytics already checks a signed token from the gateway).

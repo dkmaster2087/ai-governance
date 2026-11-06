@@ -51,8 +51,8 @@ function ServerCard({ s }: { s: McpServerSummary }) {
         </div>
         <dl className="m-0 flex gap-7 text-sm">
           <div><dt className="text-xs text-ink-muted">Tools on</dt><dd className="m-0 text-xl font-bold">{formatCount(s.tools)}</dd></div>
-          <div><dt className="text-xs text-ink-muted">Calls this week</dt><dd className="m-0 text-xl font-bold">{formatCount(s.week.calls)}</dd></div>
-          <div><dt className="text-xs text-ink-muted">Stopped</dt><dd className={clsx('m-0 text-xl font-bold', s.week.stopped > 0 && 'text-stop')}>{formatCount(s.week.stopped)}</dd></div>
+          <div><dt className="text-xs text-ink-muted">Calls this week</dt><dd className="m-0 text-xl font-bold" title={s.week ? undefined : 'Unavailable right now'}>{s.week ? formatCount(s.week.calls) : '—'}</dd></div>
+          <div><dt className="text-xs text-ink-muted">Stopped</dt><dd className={clsx('m-0 text-xl font-bold', (s.week?.stopped ?? 0) > 0 && 'text-stop')}>{s.week ? formatCount(s.week.stopped) : '—'}</dd></div>
         </dl>
       </Panel>
     </Link>

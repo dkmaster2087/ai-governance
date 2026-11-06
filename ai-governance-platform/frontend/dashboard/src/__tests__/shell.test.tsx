@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen } from '@testing-library/react';
 import { MemoryRouter } from 'react-router-dom';
 import { vi } from 'vitest';
 
@@ -25,5 +25,23 @@ describe('Shell', () => {
     for (const name of ['Gateway', 'Stopped', 'Shadow AI', 'Rules', 'Evidence']) {
       expect(screen.getByRole('link', { name })).toBeInTheDocument();
     }
+  });
+
+  it('closes the More and account menus on a click elsewhere or Escape', () => {
+    role = 'tenant_admin';
+    render(<MemoryRouter><Shell><p>Page</p></Shell></MemoryRouter>);
+    const more = screen.getByText('More').closest('details')!;
+    const account = screen.getByText('Account menu').closest('details')!;
+    more.setAttribute('open', '');
+    fireEvent.pointerDown(more.querySelector('a')!); // inside: stays open
+    expect(more.open).toBe(true);
+    fireEvent.pointerDown(screen.getByText('Page'));
+    expect(more.open).toBe(false);
+    account.setAttribute('open', '');
+    more.setAttribute('open', '');
+    fireEvent.pointerDown(more.querySelector('summary')!); // opening one closes the other
+    expect(account.open).toBe(false);
+    fireEvent.keyDown(document, { key: 'Escape' });
+    expect(more.open).toBe(false);
   });
 });

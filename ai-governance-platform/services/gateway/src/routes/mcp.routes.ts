@@ -3,7 +3,7 @@ import { randomBytes } from 'crypto';
 import { z } from 'zod';
 import { createLogger } from '@ai-governance/utils';
 import { requireAccess, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
-import { queryAuditLogs } from '../services/audit-query';
+import { AnalyticsClient, analyticsClient } from '../clients/analytics.client';
 import { tenantSettings } from '../services/tenant-settings.service';
 import { connectRefusal, toolsFor } from '../mcp/access';
 import { publicBase } from '../mcp/base';
@@ -98,17 +98,17 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
   // ── Admin: servers ──────────────────────────────────────────────────────────────────────────
 
   app.get('/v1/mcp/servers', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
-    const servers = await mcpStore.listServers(request.tenantId);
-    const to = new Date();
-    const { logs } = await queryAuditLogs(request.tenantId, new Date(to.getTime() - 7 * 86_400_000).toISOString(), to.toISOString());
-    const calls = logs.filter((l) => l.metadata?.kind === 'mcp_tool_call' && l.metadata.test !== 'true');
+    // This week's calls come from analytics; the list still loads without them.
+    const [servers, activity] = await Promise.all([
+      mcpStore.listServers(request.tenantId),
+      analyticsClient().optional<{ servers: Record<string, { calls: number; stopped: number }> }>('/internal/v1/mcp/activity', AnalyticsClient.callerOf(request)),
+    ]);
     return Promise.all(servers.map(async (raw) => {
       const s = withDefaults(raw);
-      const mine = calls.filter((l) => l.metadata.mcpServer === s.serverId);
       const tools = await mcpStore.listTools(request.tenantId, s.serverId);
       return {
         ...s, path: mcpPath(s), tools: tools.filter((t) => t.enabled).length,
-        week: { calls: mine.length, stopped: mine.filter((l) => l.eventType === 'request_blocked').length },
+        week: activity ? (activity.servers[s.serverId] ?? { calls: 0, stopped: 0 }) : null,
       };
     }));
   });

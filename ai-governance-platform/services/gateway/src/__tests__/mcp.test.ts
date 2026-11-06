@@ -6,6 +6,7 @@ import { parseOpenApi, OpenApiError } from '../mcp/openapi';
 import { validateArguments } from '../mcp/schema';
 import { checkBaseUrl, isPrivateAddress } from '../mcp/egress';
 import { looksLikeInjection, ToolCaller } from '../mcp/calls';
+import { setAnalyticsClient } from '../clients/analytics.client';
 
 const SPEC = `
 openapi: 3.0.3
@@ -140,7 +141,12 @@ describe('MCP servers', () => {
     delete process.env.MCP_ALLOW_PRIVATE_BACKENDS; delete process.env.MCP_ALLOW_HTTP_BACKENDS;
     await new Promise((r) => backend.close(r));
   });
-  beforeEach(() => { setRecords(new MemoryStore()); seen.length = 0; jest.clearAllMocks(); });
+  beforeEach(() => {
+    setRecords(new MemoryStore()); seen.length = 0; jest.clearAllMocks();
+    // This week's calls come from analytics.
+    setAnalyticsClient({ optional: async () => ({ servers: { 'hr-self-service': { calls: 4, stopped: 1 } } }) } as any);
+  });
+  afterAll(() => setAnalyticsClient(null));
 
   type Who = { role?: string; key?: { keyId: string; scopes: string[]; tenantId?: string } };
   async function appAs(who: Who): Promise<FastifyInstance> {
@@ -188,7 +194,9 @@ describe('MCP servers', () => {
     expect(server.tools.find((t: any) => t.name === 'createEmployee').approval).toBe('required');
     expect((await admin.inject({ method: 'POST', url: '/v1/mcp/servers/hr-self-service/publish', payload: { note: 'First' } })).json()).toMatchObject({ status: 'published', version: 1, hasChanges: false });
     const list = (await admin.inject({ method: 'GET', url: '/v1/mcp/servers' })).json();
-    expect(list[0]).toMatchObject({ serverId: 'hr-self-service', tools: 5, week: { calls: 0, stopped: 0 } });
+    expect(list[0]).toMatchObject({ serverId: 'hr-self-service', tools: 5, week: { calls: 4, stopped: 1 } });
+    setAnalyticsClient({ optional: async () => null } as any);
+    expect((await admin.inject({ method: 'GET', url: '/v1/mcp/servers' })).json()[0].week).toBeNull(); // analytics down: the list still loads
   });
 
   it('refuses agents until the server is published, and while it is paused', async () => {

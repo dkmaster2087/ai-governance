@@ -4,8 +4,8 @@ import { collection } from '@ai-governance/storage';
 import { createLogger } from '@ai-governance/utils';
 import { requireAccess, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
 import { PolicyAdminClient } from '../clients/policy-admin.client';
-import { queryAuditLogs } from '../services/audit-query';
-import { applyRuleChange, buildRuleViews, newRule, PII_TYPES } from '../services/rules';
+import { AnalyticsClient, analyticsClient } from '../clients/analytics.client';
+import { applyRuleChange, buildRuleViews, newRule, PII_TYPES, RuleActivity } from '../services/rules';
 import { tenantSettings } from '../services/tenant-settings.service';
 import { getSecurityConfig } from '../config/security';
 
@@ -29,27 +29,25 @@ export async function rulesRoutes(app: FastifyInstance) {
   const engine = new PolicyAdminClient();
 
   /** Every rule for the tenant, what it did in the last 7 days, and the gateway's fail mode. */
+  /** The rules come from the policy engine; what they did comes from analytics, and the page still loads without it. */
   app.get('/rules', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
-    const to = new Date();
-    const from = new Date(to.getTime() - 7 * 86_400_000);
-    const [policies, audit, failMode, secretsAction] = await Promise.all([
+    type Activity = { from: string; to: string; rules: RuleActivity; secrets: { stopped: number; redacted: number }; cleaned: number };
+    const [policies, activity, failMode, secretsAction] = await Promise.all([
       engine.list(request.tenantId),
-      queryAuditLogs(request.tenantId, from.toISOString(), to.toISOString()),
+      analyticsClient().optional<Activity>('/internal/v1/rules/activity', AnalyticsClient.callerOf(request)),
       tenantSettings().getFailMode(request.tenantId),
       tenantSettings().getSecretsAction(request.tenantId),
     ]);
+    const to = new Date();
     return {
-      from: from.toISOString(),
-      to: to.toISOString(),
+      from: activity?.from ?? new Date(to.getTime() - 7 * 86_400_000).toISOString(),
+      to: activity?.to ?? to.toISOString(),
       failMode,
-      secrets: {
-        action: secretsAction,
-        stopped: audit.logs.filter((l) => l.eventType === 'request_blocked' && l.metadata?.check === 'secrets').length,
-        redacted: audit.logs.filter((l) => l.eventType !== 'request_blocked' && l.metadata?.secretsRedacted).length,
-      },
-      cleaned: audit.logs.filter((l) => l.eventType !== 'request_blocked' && l.piiDetected).length,
+      ...(activity ? {} : { activityUnavailable: true }),
+      secrets: { action: secretsAction, stopped: activity?.secrets.stopped ?? 0, redacted: activity?.secrets.redacted ?? 0 },
+      cleaned: activity?.cleaned ?? 0,
       piiTypes: PII_TYPES,
-      rules: buildRuleViews(policies, audit.logs),
+      rules: buildRuleViews(policies, activity?.rules),
     };
   });
 

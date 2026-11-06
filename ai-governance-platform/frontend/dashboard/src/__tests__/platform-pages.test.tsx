@@ -120,6 +120,17 @@ describe('platform pages', () => {
     expect(screen.getByText('connect ECONNREFUSED')).toBeInTheDocument();
   });
 
+  it('health keeps analytics apart from the request path', async () => {
+    vi.mocked(platform.fetchHealth).mockResolvedValue({
+      status: 'degraded', version: '1.0.0', uptime: 7200,
+      dependencies: [{ name: 'dynamodb', status: 'healthy', latencyMs: 12 }, { name: 'policy-engine', status: 'healthy', latencyMs: 4 }, { name: 'analytics', status: 'unhealthy', error: 'Analytics answered 503' }],
+    });
+    wrap(<PlatformHealthPage />);
+    expect(await screen.findByText('AI traffic is working. Reports are unavailable.')).toBeInTheDocument();
+    expect(screen.getByText('Reports')).toBeInTheDocument();
+    expect(screen.getByText('Analytics')).toBeInTheDocument();
+  });
+
   it('health says when the gateway itself is not answering', async () => {
     vi.mocked(platform.fetchHealth).mockRejectedValue(new Error('Network Error'));
     wrap(<PlatformHealthPage />);

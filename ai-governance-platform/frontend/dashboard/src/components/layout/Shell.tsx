@@ -1,4 +1,4 @@
-import { useRef } from 'react';
+import { useEffect, useRef } from 'react';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { PlumbMark } from '../kit/PlumbMark';
@@ -92,6 +92,26 @@ export function Shell({ children }: { children: React.ReactNode }) {
     accountRef.current?.removeAttribute('open');
   };
   const handleLogout = () => { closeMenus(); logout(); navigate('/login'); };
+
+  // Menus close on a click or tap anywhere else, on Escape, and when the page changes.
+  useEffect(() => {
+    const menus = () => [moreRef.current, accountRef.current].filter((m): m is HTMLDetailsElement => !!m);
+    const onPointer = (e: PointerEvent) => {
+      for (const m of menus()) if (m.open && !m.contains(e.target as Node)) m.removeAttribute('open');
+    };
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key !== 'Escape') return;
+      for (const m of menus()) {
+        if (!m.open) continue;
+        m.removeAttribute('open');
+        m.querySelector('summary')?.focus();
+      }
+    };
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => { document.removeEventListener('pointerdown', onPointer); document.removeEventListener('keydown', onKey); };
+  }, []);
+  useEffect(() => { closeMenus(); }, [location.pathname]); // eslint-disable-line react-hooks/exhaustive-deps
 
   return (
     <div className="min-h-full bg-canvas text-ink font-sans text-sm leading-[1.45]">

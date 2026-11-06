@@ -12,7 +12,8 @@ export interface McpServerSummary {
   status: ServerStatus;
   path: string;
   tools: number;
-  week: { calls: number; stopped: number };
+  /** Null when analytics can't say. */
+  week: { calls: number; stopped: number } | null;
   updatedAt: string;
   hasChanges?: boolean;
   publishedVersion?: number;

@@ -159,6 +159,8 @@ async function startDegradedGateway() {
     AUTH_DEV_MODE: 'true', OPENAI_BASE_URL: `${MOCK}/v1`, GLOBAL_RATE_LIMIT: '2000',
     PORT: String(DEGRADED_PORT),
     POLICY_ENGINE_URL: 'http://127.0.0.1:9', DATA_PROTECTION_URL: 'http://127.0.0.1:9',
+    // Analytics is down for this gateway too: reports fail, prompts don't.
+    ANALYTICS_URL: 'http://127.0.0.1:9', INTERNAL_SERVICE_KEY: process.env.INTERNAL_SERVICE_KEY || 'local-dev-internal-service-key-not-a-secret',
   };
   const child = spawn('npx', ['ts-node', '--transpile-only', '-r', 'tsconfig-paths/register', 'src/index.ts'], {
     cwd: path.join(ROOT, 'services/gateway'), env, stdio: ['ignore', 'ignore', 'pipe'],
@@ -771,5 +773,25 @@ describe('when the checks are down', () => {
     const skipped = record.body.steps.filter((s) => s.kind === 'skipped').map((s) => s.label);
     assert.ok(skipped.includes('Policy rules skipped'), `steps: ${skipped}`);
     assert.ok(skipped.includes('Personal data not checked'), `steps: ${skipped}`);
+  });
+
+  test('with analytics down, reports say so, prompts are still answered, and rules still load', async () => {
+    const summary = await call('GET', '/v1/gateway/summary', { headers: adminOf(B), base: DEGRADED });
+    assert.equal(summary.status, 503);
+    assert.equal(summary.body.code, 'ANALYTICS_UNAVAILABLE');
+    assert.equal((await chat(keyB, `hello ${marker()}`, { base: DEGRADED })).status, 200);
+    const health = await call('GET', '/health/deep', { base: DEGRADED });
+    assert.equal(health.body.dependencies.find((d) => d.name === 'analytics').status, 'unhealthy');
+  });
+});
+
+describe('reports come from the analytics service', () => {
+  test('analytics refuses anything but a request the gateway signed', async () => {
+    const direct = await fetch('http://localhost:3003/internal/v1/gateway/summary');
+    assert.equal(direct.status, 401);
+    const forged = await fetch('http://localhost:3003/internal/v1/cost/summary', { headers: { 'x-probaline-internal': 'e30.e30.AAAA' } });
+    assert.equal(forged.status, 401);
+    // Through the gateway, the same report works.
+    assert.equal((await call('GET', '/v1/gateway/summary', { headers: adminOf(A) })).status, 200);
   });
 });

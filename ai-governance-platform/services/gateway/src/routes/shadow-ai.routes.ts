@@ -4,7 +4,7 @@ import { createLogger } from '@ai-governance/utils';
 import { z } from 'zod';
 import { requireAccess, requireTenantParam, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
 import { ShadowAiPolicyStore, applyPolicyChange, extensionConfig } from '../services/shadow-ai-policy';
-import { ShadowEvent, summarizeShadowAi } from '../services/shadow-ai-summary';
+import { analyticsClient } from '../clients/analytics.client';
 
 const logger = createLogger('gateway:shadow-ai');
 
@@ -46,10 +46,6 @@ const policyChangeSchema = z.object({
   }).optional(),
 });
 
-const summaryRangeSchema = z.object({
-  from: z.string().datetime({ offset: true }).optional(),
-  to: z.string().datetime({ offset: true }).optional(),
-});
 
 export async function shadowAIRoutes(app: FastifyInstance) {
   const shadow = () => collection('shadowAi');
@@ -116,109 +112,6 @@ export async function shadowAIRoutes(app: FastifyInstance) {
     return result.policy;
   });
 
-  // Visits to AI tools outside the gateway, grouped by tool, for the dashboard.
-  app.get('/shadow-ai/summary', { preHandler: requireAccess(TENANT_READ) }, async (request, reply) => {
-    const parsed = summaryRangeSchema.safeParse(request.query);
-    if (!parsed.success) return reply.status(400).send({ error: 'from and to must be ISO timestamps', code: 'INVALID_RANGE' });
-    const to = parsed.data.to ? new Date(parsed.data.to) : new Date();
-    const from = parsed.data.from ? new Date(parsed.data.from) : new Date(to.getTime() - 7 * 86_400_000);
-    if (from >= to || to.getTime() - from.getTime() > 31 * 86_400_000) {
-      return reply.status(400).send({ error: 'Range must be positive and at most 31 days', code: 'INVALID_RANGE' });
-    }
-    const [events, policy] = await Promise.all([readAllEvents(request.tenantId), policies.get(request.tenantId)]);
-    return summarizeShadowAi(events, policy, { from: from.toISOString(), to: to.toISOString() });
-  });
-
-  /** All stored events for a tenant (kept 30 days), following pagination with a safety cap. */
-  async function readAllEvents(tenantId: string): Promise<ShadowEvent[]> {
-    try {
-      return (await allPages((after) => shadow().query({ partition: tenantId, after, limit: 1000 }), 50_000)) as unknown as ShadowEvent[];
-    } catch (err) {
-      logger.warn('Shadow AI events not available', { tenantId, error: (err as Error).message });
-      return [];
-    }
-  }
-
-  // Get aggregated shadow AI data for dashboard
-  app.get('/shadow-ai/data/:tenantId', { preHandler: [requireAccess(TENANT_READ), requireTenantParam] }, async (request) => {
-    const { tenantId } = request.params as { tenantId: string };
-
-    let events: ShadowAIEvent[] = [];
-    try {
-      const page = await shadow().query({ partition: tenantId, order: 'desc', limit: 500 });
-      events = page.items as unknown as ShadowAIEvent[];
-    } catch (err) {
-      logger.warn('Shadow AI table not available, returning empty', { tenantId });
-    }
-
-    // Aggregate
-    const now = Date.now();
-    const last7d = events.filter((e) => now - new Date(e.timestamp).getTime() < 7 * 86400000);
-
-    const uniqueUsers = new Set(last7d.map((e) => e.userId || 'unknown'));
-    const blockedEndpoints = [...new Set(last7d.filter((e) => e.blocked).map((e) => e.domain))];
-
-    // By day
-    const byDay: Record<string, number> = {};
-    for (const e of last7d) {
-      const day = e.timestamp.slice(0, 10);
-      byDay[day] = (byDay[day] || 0) + 1;
-    }
-    const bypassAttempts = Object.entries(byDay)
-      .sort(([a], [b]) => a.localeCompare(b))
-      .slice(-7)
-      .map(([date, attempts]) => ({ date: date.slice(5), attempts }));
-
-    // By endpoint
-    const byEndpoint: Record<string, number> = {};
-    for (const e of last7d) byEndpoint[e.domain] = (byEndpoint[e.domain] || 0) + 1;
-    const total = last7d.length || 1;
-    const endpointBreakdown = Object.entries(byEndpoint)
-      .sort(([, a], [, b]) => b - a)
-      .slice(0, 10)
-      .map(([endpoint, attempts]) => ({ endpoint, attempts, percentage: Math.round((attempts / total) * 100) }));
-
-    // Top users
-    const byUser: Record<string, { attempts: number; lastSeen: string; endpoints: Set<string> }> = {};
-    for (const e of last7d) {
-      const uid = e.userId || 'unknown';
-      if (!byUser[uid]) byUser[uid] = { attempts: 0, lastSeen: e.timestamp, endpoints: new Set() };
-      byUser[uid].attempts++;
-      byUser[uid].endpoints.add(e.domain);
-      if (e.timestamp > byUser[uid].lastSeen) byUser[uid].lastSeen = e.timestamp;
-    }
-    const topBypassUsers = Object.entries(byUser)
-      .sort(([, a], [, b]) => b.attempts - a.attempts)
-      .slice(0, 10)
-      .map(([userId, d]) => ({ userId, department: 'Unknown', attempts: d.attempts, lastSeen: d.lastSeen, endpoints: [...d.endpoints] }));
-
-    // Risk score
-    const riskScore = Math.min(100, Math.round(
-      (last7d.length * 2) + (uniqueUsers.size * 5) + (blockedEndpoints.length * 10)
-    ));
-
-    // Recent events
-    const recentEvents = last7d.slice(0, 20).map((e) => ({
-      id: (e as any).eventId || e.id,
-      userId: e.userId || 'unknown',
-      endpoint: e.domain,
-      method: e.method || 'BROWSER',
-      timestamp: e.timestamp,
-      blocked: e.blocked,
-    }));
-
-    return {
-      summary: {
-        totalBypassAttempts: last7d.length,
-        uniqueUsers: uniqueUsers.size,
-        blockedEndpoints,
-        riskScore,
-        trend: last7d.length > 0 ? `+${last7d.length}` : '0',
-      },
-      bypassAttempts,
-      topBypassUsers,
-      endpointBreakdown,
-      recentEvents,
-    };
-  });
+  // Visits to AI tools outside the gateway, grouped by tool: built by the analytics service.
+  app.get('/shadow-ai/summary', { preHandler: requireAccess(TENANT_READ) }, (req, reply) => analyticsClient().forward('/internal/v1/shadow-ai/summary')(req, reply));
 }

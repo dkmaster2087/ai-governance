@@ -15,7 +15,7 @@ services/
   gateway/          Public API: auth, chat completions, proxy mode, rules, evidence, shadow AI (Fastify, :3000)
   policy-engine/    Evaluates rules and compliance packs (internal, :3001)
   data-protection/  Removes personal data from prompts and responses (internal, :3002)
-  analytics/        Usage metrics for the platform view (internal, :3003)
+  analytics/        Every report built from history: summaries, spend, evidence, platform view (internal, :3003)
   reporting-agent/  Optional on-prem agent that reports usage with a license key (:3005)
 frontend/
   dashboard/        The app (React + Vite + Tailwind, :5174)
@@ -82,6 +82,8 @@ stages serve plain HTTP. See "Known gaps" in [docs/ARCHITECTURE.md](docs/ARCHITE
 | `STORAGE_BACKEND` | gateway, policy engine, analytics | `dynamodb` (default), `postgres` or `memory` |
 | `DATABASE_URL`, `PG_TABLE_PREFIX` | same | PostgreSQL connection (`?sslmode=require` for TLS) and optional table prefix |
 | `MCP_SERVERS_TABLE`, `MCP_APIS_TABLE`, `MCP_TOOLS_TABLE`, `MCP_VERSIONS_TABLE`, `MCP_APPROVALS_TABLE`, `MCP_OAUTH_TABLE`, `MCP_CONNECTORS_TABLE` | gateway | DynamoDB tables for MCP servers (set by CDK) |
+| `INTERNAL_SERVICE_KEY` | gateway, analytics | Key the gateway signs requests to analytics with (at least 32 characters; from Secrets Manager in AWS) |
+| `ANALYTICS_URL` | gateway | Where analytics is (set by CDK; local default `http://localhost:3003`) |
 | `PUBLIC_GATEWAY_URL` | gateway | The gateway's public address, used for MCP sign-in and signed identity (CDK: `-c gatewayUrl=https://…`). Required for people to sign in |
 | `MCP_ALLOW_PRIVATE_BACKENDS` | gateway | `true` lets MCP tools call private addresses: only for a self-hosted gateway inside the company network |
 | `MCP_ALLOW_HTTP_BACKENDS` | gateway | `true` allows plain-http APIs (local development only) |

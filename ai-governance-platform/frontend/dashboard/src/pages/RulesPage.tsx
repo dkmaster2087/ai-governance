@@ -254,7 +254,10 @@ export function RulesPage() {
           <h1 className="m-0 text-[40px] leading-[1.1] font-bold tracking-[-0.025em]">
             {data ? `Every request is checked against ${activeStops} ${activeStops === 1 ? 'rule' : 'rules'} that can stop it.` : 'Rules'}
           </h1>
-          <p className="m-0 mt-2 text-ink-muted text-base">Checks run in order, left to right. Counts are for the last 7 days.</p>
+          <p className="m-0 mt-2 text-ink-muted text-base">
+            Checks run in order, left to right.{' '}
+            {data?.activityUnavailable ? <strong className="text-stop-text">This week’s counts are unavailable right now; the rules themselves are unaffected.</strong> : 'Counts are for the last 7 days.'}
+          </p>
         </div>
         {data && (
           <div className="flex gap-4 items-end flex-wrap">

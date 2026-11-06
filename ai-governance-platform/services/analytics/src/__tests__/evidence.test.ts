@@ -1,7 +1,5 @@
-import Fastify from 'fastify';
 import { AuditLog } from '@ai-governance/types';
-import { collection, MemoryStore, setRecords } from '@ai-governance/storage';
-import { buildEvidenceRecord, listEvidence } from '../services/evidence';
+import { buildEvidenceRecord, listEvidence } from '../reports/evidence';
 
 const log = (over: Partial<AuditLog>): AuditLog => ({
   logId: 'l', requestId: 'req-1', tenantId: 'tenant_acme', userId: 'j.patel', appId: 'billing-api', eventType: 'request_allowed',
@@ -86,39 +84,5 @@ describe('evidence list', () => {
     expect(page.items).toHaveLength(2);
     expect(page.nextOffset).toBe(2);
     expect(listEvidence(logs, { limit: 2, offset: 2 }).nextOffset).toBeNull();
-  });
-});
-
-jest.mock('../services/tenant-settings.service', () => ({ tenantSettings: () => ({ getSettings: async () => ({ auditLogRetentionDays: 90 }) }) }));
-jest.mock('../services/audit-query', () => ({ queryAuditLogs: jest.fn(async () => ({ logs: [], truncated: false })) }));
-
-describe('evidence routes', () => {
-  beforeEach(() => setRecords(new MemoryStore()));
-  async function app() {
-    const { evidenceRoutes } = await import('../routes/evidence.routes');
-    const a = Fastify();
-    a.decorateRequest('principal', null);
-    a.addHook('preHandler', async (req: any) => {
-      req.principal = { kind: 'user', homeTenantId: 'tenant_acme', userId: 'u1', role: 'tenant_auditor' };
-      req.tenantId = 'tenant_acme';
-      req.userId = 'u1';
-    });
-    await a.register(evidenceRoutes, { prefix: '/v1' });
-    return a;
-  }
-
-  it('looks records up under the caller’s tenant only', async () => {
-    // The request exists, but under another tenant.
-    await collection('auditLogs').put({ ...log({ requestId: 'someone-elses-request' }), tenantId: 'tenant_other' });
-    const res = await (await app()).inject({ method: 'GET', url: '/v1/evidence/someone-elses-request' });
-    expect(res.statusCode).toBe(404);
-  });
-
-  it('exports a record as a downloadable file', async () => {
-    await collection('auditLogs').put(log({}) as unknown as Record<string, unknown>);
-    const res = await (await app()).inject({ method: 'GET', url: '/v1/evidence/req-1/export' });
-    expect(res.statusCode).toBe(200);
-    expect(res.headers['content-disposition']).toBe('attachment; filename="probaline-evidence-req-1.json"');
-    expect(JSON.parse(res.body).record.requestId).toBe('req-1');
   });
 });

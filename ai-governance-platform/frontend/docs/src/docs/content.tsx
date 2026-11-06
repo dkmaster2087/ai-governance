@@ -387,6 +387,14 @@ node collector/dist/cli.js report --out ./results --company "Acme"
 npm install
 npx cdk bootstrap
 npx cdk deploy --all --context stage=prod`}</Code>
+        <H2>Services</H2>
+        <Table head={['Service', 'Reachable from', 'What it does']} rows={[
+          ['Gateway', 'The internet (load balancer)', 'Sign-in, every AI request and its checks, MCP servers, admin settings'],
+          ['Policy engine', 'Inside the network only', 'Your rules and compliance packs'],
+          ['Data protection', 'Inside the network only', 'Finds and removes personal data'],
+          ['Analytics', 'Inside the network only', 'Every report built from history: summaries, spend, evidence search, the platform view. It answers only requests the gateway signs, and never sits on the request path'],
+        ]} />
+        <P>If analytics is down, AI traffic is unaffected: reports say they’re unavailable until it’s back. The key the gateway signs with, <C>INTERNAL_SERVICE_KEY</C>, is generated in Secrets Manager by the deployment; when self-hosting another way, give the gateway and analytics the same random value of at least 32 characters.</P>
         <H2>Database</H2>
         <P>Records are stored in DynamoDB by default, which is what the AWS deployment creates. PostgreSQL 12 or later works too: set <C>STORAGE_BACKEND=postgres</C> and <C>DATABASE_URL</C> on the gateway, policy engine and analytics. Tables are created on first start; no migration step. Files (audit archives) go to S3 or any S3-compatible store (<C>S3_ENDPOINT</C>), or to a directory with <C>OBJECT_STORE=file</C> and <C>OBJECT_STORE_DIR</C>.</P>
         <Table head={['Setting', 'Values']} rows={[

@@ -28,6 +28,8 @@ export interface RulesResponse {
   from: string;
   to: string;
   failMode: 'open' | 'closed';
+  /** Analytics couldn't say what the rules did: the counts are missing, not zero. */
+  activityUnavailable?: boolean;
   secrets: { action: SecretsAction; stopped: number; redacted: number };
   cleaned: number;
   piiTypes: string[];

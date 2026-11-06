@@ -1,5 +1,5 @@
 import { AuditLog } from '@ai-governance/types';
-import { localDate, summarizePlatform } from '../services/platform-usage';
+import { localDate, summarizePlatform } from '../reports/platform-usage';
 
 const log = (over: Partial<AuditLog>): AuditLog => ({
   logId: 'l', requestId: 'r', tenantId: 't', userId: 'u', appId: 'a', eventType: 'request_completed' as AuditLog['eventType'],

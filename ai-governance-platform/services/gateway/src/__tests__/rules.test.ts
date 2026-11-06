@@ -25,11 +25,8 @@ describe('rules', () => {
     expect(ruleEffect({ type: 'audit_logging', action: 'allow' })).toBe('not_enforced');
   });
 
-  it('counts stops for the stopping rule and flags for the rest', () => {
-    const views = buildRuleViews([policy()], [
-      log({ eventType: 'request_blocked', triggeredRules: ['r_flag', 'r_kw'] }),
-      log({ triggeredRules: ['r_flag'] }),
-    ]);
+  it('shows what each rule did, from analytics', () => {
+    const views = buildRuleViews([policy()], { r_kw: { stopped: 1, flagged: 0 }, r_flag: { stopped: 0, flagged: 2 } });
     const kw = views.find((v) => v.ruleId === 'r_kw')!;
     const flag = views.find((v) => v.ruleId === 'r_flag')!;
     expect([kw.stopped, kw.flagged]).toEqual([1, 0]);
@@ -37,7 +34,7 @@ describe('rules', () => {
   });
 
   it('treats a rule in a switched-off policy as off', () => {
-    const views = buildRuleViews([policy({ enabled: false })], []);
+    const views = buildRuleViews([policy({ enabled: false })]);
     expect(views.every((v) => !v.enabled)).toBe(true);
   });
 
@@ -58,7 +55,8 @@ describe('rules', () => {
 // ── Routes ─────────────────────────────────────────────────────────────────
 const engine = { list: jest.fn(), create: jest.fn(), update: jest.fn() };
 jest.mock('../clients/policy-admin.client', () => ({ PolicyAdminClient: jest.fn(() => engine) }));
-jest.mock('../services/audit-query', () => ({ queryAuditLogs: jest.fn(async () => ({ logs: [], truncated: false })) }));
+const activity = { optional: jest.fn(async (): Promise<unknown> => ({ from: 'f', to: 't', rules: { r_kw: { stopped: 3, flagged: 0 } }, secrets: { stopped: 2, redacted: 1 }, cleaned: 4 })) };
+jest.mock('../clients/analytics.client', () => ({ ...jest.requireActual('../clients/analytics.client'), analyticsClient: () => activity }));
 jest.mock('../services/tenant-settings.service', () => ({ tenantSettings: () => ({ getFailMode: async () => 'closed', getSecretsAction: async () => 'block', invalidate: () => {} }) }));
 
 async function appAs(role: 'tenant_admin' | 'tenant_auditor') {
@@ -76,6 +74,18 @@ async function appAs(role: 'tenant_admin' | 'tenant_auditor') {
 
 describe('rules routes', () => {
   beforeEach(() => { jest.clearAllMocks(); engine.list.mockResolvedValue([policy()]); });
+
+  it('shows what rules did from analytics, and still lists them when analytics is down', async () => {
+    const app = await appAs('tenant_auditor');
+    const body = (await app.inject({ method: 'GET', url: '/v1/rules' })).json();
+    expect(body).toMatchObject({ secrets: { stopped: 2, redacted: 1 }, cleaned: 4 });
+    expect(body.rules.find((r: any) => r.ruleId === 'r_kw').stopped).toBe(3);
+    expect(body.activityUnavailable).toBeUndefined();
+    activity.optional.mockResolvedValueOnce(null);
+    const down = (await app.inject({ method: 'GET', url: '/v1/rules' })).json();
+    expect(down).toMatchObject({ activityUnavailable: true, cleaned: 0 });
+    expect(down.rules.length).toBe(body.rules.length);
+  });
 
   it('lists rules with the fail mode', async () => {
     const app = await appAs('tenant_auditor');

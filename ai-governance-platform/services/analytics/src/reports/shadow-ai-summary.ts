@@ -1,5 +1,5 @@
-import { toolById, toolForDomain } from './ai-tools';
-import { ShadowAiPolicy } from './shadow-ai-policy';
+import { toolById, toolForDomain } from '@ai-governance/types';
+import { ShadowAiPolicy } from './tenant';
 
 export interface ShadowEvent {
   domain: string;
