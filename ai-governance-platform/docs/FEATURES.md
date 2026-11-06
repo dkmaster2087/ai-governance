@@ -45,6 +45,8 @@ to let requests through instead; those are flagged in their evidence record.
 | Models & keys | Models apps can reach (Amazon Bedrock or OpenAI), provider keys, prices for Spend; test a model |
 | Compliance | SOC 2, HIPAA, EU AI Act on/off, controls in place, which need a manual review |
 | Users | Roles, and how to add people in Cognito (local demo accounts in development) |
+| Activity | Every admin change and sign-in: who, what, when, from where; filter by changes, sign-ins, refused |
+| Log export (beta) | Send decisions, admin activity and sign-ins to Splunk, Datadog, Elastic, Sumo Logic or any OpenTelemetry or HTTPS collector; test button; retries and a list of undelivered batches |
 
 Spend, License and Settings use the same design.
 
@@ -71,13 +73,39 @@ enforce (for example "log every request") are listed separately on the Rules pag
 - For stopped requests only: about 60 characters either side of the trigger, with personal data masked; a
   personal-data trigger is stored only as its type (for example `[SSN]`).
 - The text of delivered prompts is never stored.
+- **Admin activity:** every change made through the dashboard or API (rules, keys, models, MCP servers,
+  approvals, connectors, sign-in settings, log export, tenant changes by a platform admin), successful or
+  refused for lack of permission: who (user ID, email, role), what (action and the IDs it touched, never the
+  form contents), when, IP address and browser, and the request ID. Kept 400 days, each record with a SHA-256
+  fingerprint and a copy in the audit bucket.
+- **Sign-ins:** dashboard sessions (once per sign-in), API keys refused because they were revoked, expired or
+  used for another company, and people signing in to MCP servers (success, failure, no access, agent allowed or
+  refused, signed out, a reused token). Wrong dashboard passwords are checked by Cognito and appear in CloudTrail,
+  not here.
+
+## Log export (beta)
+
+A company sends its records to its own tools from **Log export** in the dashboard (admins; auditors can look).
+
+- **Destinations:** HTTPS webhook (JSON batches signed with HMAC-SHA256 in `x-probaline-signature:
+  t=<unix time>,v1=<hex>` over `"<t>.<body>"`), Splunk HEC, and OpenTelemetry OTLP/HTTP logs with optional
+  headers (Datadog, Elastic, Grafana and other OTLP intakes). Microsoft Sentinel and syslog go through an
+  OpenTelemetry Collector for now. Up to five destinations.
+- **What to send:** decisions, admin activity, sign-ins (any mix). Every record has the same fields
+  (`probaline.log/1`: id, type, time, tenantId, action, outcome, actor, target, requestId, source, detail).
+  Prompts, answers and the stop excerpt are never sent.
+- **Delivery:** batches of up to 100, within about a minute; a failing destination is retried with backoff
+  (5 tries, about 15 minutes), then the batch is listed under **Not delivered** for 30 days to send again,
+  download or discard. Records from before a destination is added aren't sent.
+- **Secrets:** the address, HEC token, signing secret and headers are kept in the secret store; the dashboard
+  shows only the last four characters. A webhook signing secret is shown once and can be replaced.
 
 ## Access
 
 | Role | Can |
 |---|---|
 | Admin | Everything for their company |
-| Auditor | Read Gateway, Stopped and Evidence |
+| Auditor | Read Gateway, Stopped, Evidence and Activity |
 | User | Use AI through approved apps; no dashboard |
 | Platform admin | Manage tenants and licenses across companies |
 

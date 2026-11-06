@@ -188,6 +188,16 @@ aws --endpoint-url=$ENDPOINT dynamodb create-table \
     AttributeName=recordKey,KeyType=RANGE \
   --billing-mode PAY_PER_REQUEST || true
 
+for t in "activity eventKey" "log-export recordKey"; do
+  set -- $t
+  aws --endpoint-url=$ENDPOINT dynamodb create-table \
+    --region $REGION \
+    --table-name $PREFIX-$1-$STAGE \
+    --attribute-definitions AttributeName=tenantId,AttributeType=S AttributeName=$2,AttributeType=S \
+    --key-schema AttributeName=tenantId,KeyType=HASH AttributeName=$2,KeyType=RANGE \
+    --billing-mode PAY_PER_REQUEST || true
+done
+
 aws --endpoint-url=$ENDPOINT s3 mb s3://$PREFIX-audit-logs-$STAGE-$ACCOUNT --region $REGION || true
 aws --endpoint-url=$ENDPOINT s3 mb s3://$PREFIX-athena-results-$STAGE-$ACCOUNT --region $REGION || true
 

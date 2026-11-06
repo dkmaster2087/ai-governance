@@ -62,7 +62,9 @@ case "${1:-start}" in
     start_service analytics services/analytics 3003
     # MCP: local stand-in APIs run on http://localhost, which a deployed gateway refuses.
     # PUBLIC_GATEWAY_URL: the address agents and the sign-in flow use.
+    # Log export: local collectors run on http://127.0.0.1, and records go out within seconds instead of a minute.
     start_service gateway services/gateway 3000 AUTH_DEV_MODE=true MCP_ALLOW_PRIVATE_BACKENDS=true MCP_ALLOW_HTTP_BACKENDS=true PUBLIC_GATEWAY_URL=http://localhost:3000 \
+      LOG_EXPORT_ALLOW_HTTP=true LOG_EXPORT_ALLOW_PRIVATE_DESTINATIONS=true LOG_EXPORT_INTERVAL_MS=1000 LOG_EXPORT_SETTLE_MS=2000 LOG_EXPORT_RETRY_BASE_MS=1000 \
       POLICY_ENGINE_URL=http://localhost:3001 DATA_PROTECTION_URL=http://localhost:3002 ALLOWED_ORIGINS=http://localhost:5174,http://localhost:5173 \
       OPENAI_BASE_URL=http://localhost:4010/v1 PROXY_TARGET_OPENAI=http://localhost:4010 GLOBAL_RATE_LIMIT=2000
     if lsof -tiTCP:5173 -sTCP:LISTEN >/dev/null 2>&1; then echo "  website: port 5173 already in use, skipping"

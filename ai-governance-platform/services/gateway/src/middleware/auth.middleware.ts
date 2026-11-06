@@ -6,6 +6,7 @@ import { ApiKey, ApiKeyRepository, hashApiKey } from '../repositories/api-key.re
 import { getSecurityConfig } from '../config/security';
 import { Principal, isUserRole } from '../auth/principal';
 import { tenantSettings } from '../services/tenant-settings.service';
+import { SignInRecorder, signIns } from '../activity/sign-ins';
 
 const logger = createLogger('gateway:auth');
 
@@ -37,6 +38,8 @@ export interface UserTokenClaims {
   email?: string;
   'custom:tenantId'?: string;
   'custom:role'?: string;
+  /** When the person actually signed in (epoch seconds); the same across token refreshes. */
+  auth_time?: number;
 }
 
 export interface UserTokenVerifier {
@@ -55,6 +58,8 @@ export interface AuthDeps {
   userTokens?: UserTokenVerifier;
   devAuth: boolean;
   keyCacheTtlMs: number;
+  /** Where sign-ins and refused keys are recorded. */
+  signIns?: SignInRecorder;
 }
 
 function header(request: FastifyRequest, name: string): string | undefined {
@@ -163,6 +168,7 @@ export function createAuthPlugin(deps: AuthDeps) {
         request.tenantId = tenantId;
         request.userId = claims.sub;
         request.appId = header(request, 'x-app-id') ?? 'dashboard';
+        deps.signIns?.dashboardSession(request, homeTenantId, claims);
         return;
       }
 
@@ -174,12 +180,21 @@ export function createAuthPlugin(deps: AuthDeps) {
         logger.error('API key lookup failed', { error: (err as Error).message });
         return reply.status(503).send({ error: 'Authentication temporarily unavailable', code: 'AUTH_UNAVAILABLE' });
       }
-      if (!apiKey) return deny(reply, 401, 'INVALID_KEY', 'Invalid API key');
-      if (apiKey.status === 'revoked') return deny(reply, 401, 'KEY_REVOKED', 'API key has been revoked');
+      // An unknown key belongs to no tenant, so it can only be a log line (anyone can send one).
+      if (!apiKey) {
+        logger.info('Unknown API key refused', { requestId: request.correlationId, sourceIp: request.ip });
+        return deny(reply, 401, 'INVALID_KEY', 'Invalid API key');
+      }
+      if (apiKey.status === 'revoked') {
+        deps.signIns?.keyRefused(request, apiKey, 'KEY_REVOKED');
+        return deny(reply, 401, 'KEY_REVOKED', 'API key has been revoked');
+      }
       if (apiKey.status === 'expired' || (apiKey.expiresAt && new Date(apiKey.expiresAt) < new Date())) {
+        deps.signIns?.keyRefused(request, apiKey, 'KEY_EXPIRED');
         return deny(reply, 401, 'KEY_EXPIRED', 'API key has expired');
       }
       if (requestedTenant && requestedTenant !== apiKey.tenantId) {
+        deps.signIns?.keyRefused(request, apiKey, 'TENANT_MISMATCH');
         return deny(reply, 403, 'TENANT_MISMATCH', 'API key does not belong to this tenant');
       }
 
@@ -232,6 +247,7 @@ function defaultDeps(): AuthDeps {
     tenantStatus: (tenantId) => tenants.getStatus(tenantId),
     devAuth: config.devAuth,
     keyCacheTtlMs: config.keyCacheTtlMs,
+    signIns: signIns(),
   };
 }
 

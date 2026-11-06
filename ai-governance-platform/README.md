@@ -87,6 +87,11 @@ stages serve plain HTTP. See "Known gaps" in [docs/ARCHITECTURE.md](docs/ARCHITE
 | `MCP_ALLOW_HTTP_BACKENDS` | gateway | `true` allows plain-http APIs (local development only) |
 | `MCP_ALLOWED_ORIGINS` | gateway | Browser origins allowed to call MCP addresses (default: none; agents don't send one) |
 | `OBJECT_STORE`, `OBJECT_STORE_DIR`, `S3_ENDPOINT` | gateway | Audit archives and contact requests: `s3` (default; `S3_ENDPOINT` for MinIO and other S3-compatible stores) or `file` (a directory) |
+| `ACTIVITY_TABLE`, `LOG_EXPORT_TABLE` | gateway | DynamoDB tables for admin activity and sign-ins, and log export destinations |
+| `ACTIVITY_RETENTION_DAYS` | gateway | How long admin activity and sign-ins are kept (default 400) |
+| `LOG_EXPORT_WORKER` | gateway | `off` stops this gateway from sending records to companies' log destinations |
+| `LOG_EXPORT_INTERVAL_MS`, `LOG_EXPORT_SETTLE_MS`, `LOG_EXPORT_RETRY_BASE_MS`, `LOG_EXPORT_MAX_ATTEMPTS`, `LOG_EXPORT_BATCH_SIZE` | gateway | Log export timing: every 10 s, records at least 30 s old, retries from 30 s doubling, 5 tries, 100 per batch |
+| `LOG_EXPORT_ALLOW_PRIVATE_DESTINATIONS`, `LOG_EXPORT_ALLOW_HTTP` | gateway | `true` lets log export send to private addresses (self-hosted inside the company network) or plain http (local only) |
 | `AUTH_DEV_MODE` | gateway | Local demo sign-in only; refused outside dev stages |
 | `VITE_API_URL`, `VITE_DASHBOARD_URL` | website | Gateway and dashboard addresses |
 

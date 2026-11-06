@@ -29,6 +29,9 @@ import { mcpRoutes } from './routes/mcp.routes';
 import { mcpOauthRoutes } from './routes/mcp-oauth.routes';
 import { mcpApprovalRoutes } from './routes/mcp-approvals.routes';
 import { mcpConnectorRoutes } from './routes/mcp-connectors.routes';
+import { adminActivity } from './activity/admin-activity';
+import { activityRoutes } from './routes/activity.routes';
+import { logExportRoutes } from './routes/log-export.routes';
 
 export async function buildApp() {
   const securityConfig = getSecurityConfig();
@@ -62,6 +65,8 @@ export async function buildApp() {
   await app.register(requestTracing);
   await app.register(authMiddleware);
   await app.register(inputValidation);
+  // Every change a person makes is recorded as admin activity (one hook, not per route).
+  await app.register(adminActivity);
 
   // Routes
   await app.register(healthRoutes, { prefix: '/health' });
@@ -80,6 +85,8 @@ export async function buildApp() {
   await app.register(rulesRoutes, { prefix: '/v1' });
   await app.register(evidenceRoutes, { prefix: '/v1' });
   await app.register(policiesRoutes, { prefix: '/v1' });
+  await app.register(activityRoutes, { prefix: '/v1' });
+  await app.register(logExportRoutes, { prefix: '/v1' });
   // MCP servers: admin API under /v1/mcp/…, and the address agents connect to at /mcp/<tenant>/<server>.
   await app.register(mcpRoutes);
   await app.register(mcpOauthRoutes);

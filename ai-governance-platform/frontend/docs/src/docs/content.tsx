@@ -216,7 +216,7 @@ client = OpenAI(
       <>
         <Table head={['Role', 'Can']} rows={[
           ['Admin', 'Everything for their company: rules, decisions, models, API keys, users'],
-          ['Auditor', 'Read the Gateway, Stopped and Evidence pages; change nothing'],
+          ['Auditor', 'Read the Gateway, Stopped, Evidence and Activity pages; change nothing'],
           ['User', 'Use AI through approved apps; no dashboard access'],
         ]} />
         <Table head={['API key permission', 'Allows']} rows={[
@@ -226,6 +226,58 @@ client = OpenAI(
           [<C>mcp</C>, 'An AI agent using the tools on your MCP servers'],
         ]} />
         <P>A key belongs to one company; using it with another company’s ID is refused. Keys can be set to expire and revoked at any time.</P>
+      </>
+    ),
+  },
+  {
+    slug: 'logs',
+    title: 'Logs and SIEM export',
+    summary: 'Admin activity, sign-ins, and sending your records to Splunk, Datadog, Elastic or any collector.',
+    body: (
+      <>
+        <H2>Activity</H2>
+        <P>The <strong>Activity</strong> page lists every change made in Probaline (rules, API keys, models, MCP servers, approvals, connectors, sign-in settings, log export) and every sign-in, with who did it, from which address and browser, and whether it went through or was refused. Admins and auditors can see it. Records are kept 400 days; each has a SHA-256 fingerprint and an archive copy.</P>
+        <Table head={['Sign-in record', 'When']} rows={[
+          [<C>sign_in.dashboard</C>, 'Once per dashboard sign-in, the first time the gateway sees it'],
+          [<C>sign_in.api_key</C>, 'A revoked or expired key was used, or a key was used for another company (at most once a minute per key)'],
+          [<C>sign_in.mcp</C>, 'Someone signed in to your MCP servers through your identity provider: success, failure, or no access'],
+          [<><C>sign_in.mcp_agent_allowed</C>, <C>…_refused</C></>, 'The person allowed or refused an agent'],
+          [<C>sign_in.mcp_refresh_reused</C>, 'A sign-in token was used twice; the sign-in was ended'],
+        ]} />
+        <Note>Wrong dashboard passwords are checked by your sign-in provider, not Probaline. In AWS they are CloudTrail events from Amazon Cognito. Requests with unknown API keys can’t be tied to a company, so they aren’t listed.</Note>
+        <H2>Log export (beta)</H2>
+        <P>On <strong>Log export</strong>, an admin adds up to five destinations and chooses what each receives: <strong>decisions</strong> (every AI request and MCP tool call, allowed or stopped, and why), <strong>admin activity</strong> and <strong>sign-ins</strong>. Records go out in batches of up to 100 within about a minute. Prompts, answers and stop excerpts are never sent. Records from before a destination is added aren’t sent.</P>
+        <Table head={['Destination', 'Format', 'Use for']} rows={[
+          ['HTTPS webhook', 'POST of a JSON batch, signed', 'Your own endpoint, Sumo Logic HTTP source, any HTTP collector'],
+          ['Splunk HEC', <><C>/services/collector/event</C>, one event per line, <C>Authorization: Splunk &lt;token&gt;</C>, sourcetype <C>probaline:&lt;type&gt;</C></>, 'Splunk Enterprise, Splunk Cloud'],
+          ['OpenTelemetry', <>OTLP/HTTP JSON to <C>/v1/logs</C>, your headers</>, 'An OpenTelemetry Collector, Datadog, Elastic, Grafana; Microsoft Sentinel and syslog through a Collector'],
+        ]} />
+        <H2>Record fields</H2>
+        <P>Every record, whatever its type and destination, has the same fields (schema <C>probaline.log/1</C>):</P>
+        <Code>{`{
+  "schema": "probaline.log/1",
+  "id": "act_3f9c…",              // stable: use it to drop duplicates
+  "type": "admin_activity",        // decision | admin_activity | sign_in
+  "time": "2026-11-06T10:15:02.114Z",
+  "tenantId": "tenant_acme",
+  "action": "api_key.revoked",     // ai.request, mcp.tool_call, rule.created, sign_in.api_key…
+  "outcome": "success",            // decisions: allowed | stopped; others: success | denied | failure
+  "actor": { "type": "user", "id": "…", "email": "ana@acme.com", "role": "tenant_admin" },
+  "target": { "keyId": "key_9a1…" },
+  "requestId": "…",
+  "source": { "ip": "203.0.113.5", "userAgent": "…" },
+  "detail": { "status": 200, "recordHash": "…" }
+}`}</Code>
+        <H2>Checking the webhook signature</H2>
+        <P>A webhook batch is <C>{'{ "schema": "probaline.batch/1", "batchId", "sentAt", "count", "records": [ … ] }'}</C>. The <C>x-probaline-signature</C> header is <C>t=&lt;unix time&gt;,v1=&lt;hex&gt;</C>, where the hex is HMAC-SHA256 of <C>t.body</C> with your signing secret (shown once when you add the webhook; replace it any time). Refuse old timestamps.</P>
+        <Code>{`const [t, v1] = header.split(',').map((p) => p.split('=')[1]);
+const expected = crypto.createHmac('sha256', secret).update(\`\${t}.\${rawBody}\`).digest('hex');
+const ok = crypto.timingSafeEqual(Buffer.from(v1, 'hex'), Buffer.from(expected, 'hex'))
+  && Math.abs(Date.now() / 1000 - Number(t)) < 300;`}</Code>
+        <H2>Delivery</H2>
+        <P>Delivery is at least once. A destination that doesn’t answer 2xx is retried after 30 seconds, then 1, 2 and 4 minutes; after the fifth try the batch is listed under <strong>Not delivered</strong> for 30 days, where you can send it again, download it or discard it, and later records carry on. <strong>Send a test</strong> sends one sample record and shows the answer. Addresses must be https and public; tokens, headers and the address itself are kept in the secret store.</P>
+        <H2>Service logs (self-hosted)</H2>
+        <P>Probaline’s own services write one JSON object per line to stdout. In AWS they go to CloudWatch log groups <C>/ecs/&lt;prefix&gt;-&lt;service&gt;-&lt;stage&gt;</C> (kept a month). To send them to your SIEM, add a CloudWatch subscription filter on each log group to Amazon Data Firehose, which delivers to Splunk, Datadog, Elastic, Sumo Logic, an HTTP endpoint or S3 (Microsoft Sentinel reads from S3). Send CloudTrail the same way for Cognito sign-ins. Off AWS, collect stdout with an OpenTelemetry Collector or Fluent Bit.</P>
       </>
     ),
   },
@@ -351,6 +403,15 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           [<C>/oauth/:company/…</C>, 'Sign-in for MCP clients: register, authorize, token, revoke (OAuth 2.1 with PKCE)'],
           [<C>GET /.well-known/jwks.json</C>, 'The key that checks X-Probaline-Identity and Probaline’s sign-in tokens'],
         ]} />
+        <H2>Activity and log export (dashboard sign-in)</H2>
+        <Table head={['Endpoint', 'Purpose']} rows={[
+          [<C>GET /v1/activity</C>, 'Admin activity and sign-ins, newest first; filters category, outcome, from, to; page with next'],
+          [<C>GET /v1/log-export</C>, 'Destinations and how each is doing'],
+          [<C>POST /v1/log-export/destinations</C>, 'Add one: kind (webhook, splunk_hec, otlp_http), name, url, recordTypes, token, headers'],
+          [<C>PATCH · DELETE /v1/log-export/destinations/:id</C>, 'Change, pause or remove'],
+          [<C>POST /v1/log-export/destinations/:id/test</C>, 'Send a sample record now'],
+          [<C>GET /v1/log-export/dead-letters</C>, 'Batches that weren’t delivered; POST …/:id/retry or DELETE …/:id'],
+        ]} />
         <H2>Headers</H2>
         <Table head={['Header', 'Meaning']} rows={[
           [<C>Authorization: Bearer …</C>, 'Your Probaline API key (in proxy mode, the provider key)'],
@@ -394,6 +455,8 @@ npx cdk deploy --all --context stage=prod`}</Code>
           [<C>DATABASE_URL</C>, <><C>postgres://user:password@host:5432/db</C>; add <C>?sslmode=require</C> for TLS</>],
           [<C>PG_TABLE_PREFIX</C>, 'Optional prefix for table names, e.g. probaline_'],
           [<C>OBJECT_STORE</C>, <><C>s3</C> (default) or <C>file</C></>],
+          [<C>LOG_EXPORT_ALLOW_PRIVATE_DESTINATIONS</C>, <><C>true</C> lets log export reach a SIEM inside your network</>],
+          [<C>LOG_EXPORT_WORKER</C>, <><C>off</C> stops a gateway from sending log export batches</>],
         ]} />
         <Note>Provider API keys (for OpenAI and others) are still kept in AWS Secrets Manager, so a PostgreSQL deployment still needs it for now. Storing them encrypted in the database is next.</Note>
         <H2>From GitHub</H2>
