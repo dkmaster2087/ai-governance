@@ -15,8 +15,8 @@ describe('StorageStack', () => {
     template = Template.fromStack(stack);
   });
 
-  it('creates the 16 DynamoDB tables (9, plus 7 for MCP servers)', () => {
-    template.resourceCountIs('AWS::DynamoDB::Table', 16);
+  it('creates the 17 DynamoDB tables (10, plus 7 for MCP servers)', () => {
+    template.resourceCountIs('AWS::DynamoDB::Table', 17);
   });
 
   it('indexes audit records by tenant and time for the dashboard', () => {

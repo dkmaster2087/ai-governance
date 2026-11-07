@@ -403,11 +403,17 @@ node collector/dist/cli.js report --out ./results --company "Acme"
     body: (
       <>
         <H2>In your AWS account</H2>
-        <P>The repository includes AWS CDK stacks for the network, storage, sign-in and services. You’ll need a TLS certificate for the gateway’s public address.</P>
+        <P>The repository includes AWS CDK stacks for the network, storage, sign-in, image repositories, services, and the three sites (website, dashboard and docs, each behind CloudFront). The dashboard reaches the gateway on its own address under <C>/api</C>. You’ll need a TLS certificate and a public address for the gateway.</P>
         <Code>{`cd infra
 npm install
 npx cdk bootstrap
-npx cdk deploy --all --context stage=prod`}</Code>
+npx cdk deploy --all --context stage=prod \\
+  --context certificateArn=arn:aws:acm:… --context gatewayUrl=https://gateway.example.com`}</Code>
+        <P>Your own domains for the sites are optional: <C>websiteDomain</C>, <C>dashboardDomain</C> and <C>docsDomain</C>, with a certificate in us-east-1 (<C>cloudfrontCertificateArn</C>).</P>
+        <H2>The first people</H2>
+        <P>Make the platform’s first admin once, with the user pool ID the deployment prints:</P>
+        <Code>{`node scripts/create-platform-admin.mjs <user-pool-id> you@example.com "First" "Last"`}</Code>
+        <P>From then on, creating a company emails its first admin an invitation, and each company’s admins invite their own people from the <strong>Users</strong> page.</P>
         <H2>Services</H2>
         <Table head={['Service', 'Reachable from', 'What it does']} rows={[
           ['Gateway', 'The internet (load balancer)', 'Sign-in, every AI request and its checks, MCP servers, admin settings'],
@@ -426,8 +432,8 @@ npx cdk deploy --all --context stage=prod`}</Code>
         ]} />
         <Note>Provider API keys (for OpenAI and others) are still kept in AWS Secrets Manager, so a PostgreSQL deployment still needs it for now. Storing them encrypted in the database is next.</Note>
         <H2>From GitHub</H2>
-        <P>The <strong>Deploy</strong> workflow runs only when started by hand: Actions → Deploy → Run workflow, then choose the stage, or tear one down. A push never deploys. It signs in to AWS with a role (OIDC) and needs these repository secrets: <C>AWS_DEPLOY_ROLE_ARN</C>, <C>AWS_ACCOUNT_ID</C>, <C>WEBSITE_BUCKET_NAME</C> and <C>CLOUDFRONT_DISTRIBUTION_ID</C>. Add required reviewers to the <C>prod</C> environment.</P>
-        <Note>The first deploy to a new AWS account will fail: images are pushed before CDK creates their repositories. Until that’s fixed, deploy the infrastructure with CDK from your machine first.</Note>
+        <P>The <strong>Deploy</strong> workflow runs only when started by hand: Actions → Deploy → Run workflow, then choose the stage, or tear one down. A push never deploys. It creates the image repositories, pushes images tagged with the commit, deploys the stacks, then builds and uploads the three sites with the addresses the stacks report. It signs in to AWS with a role (OIDC) and needs the repository secrets <C>AWS_DEPLOY_ROLE_ARN</C> and <C>AWS_ACCOUNT_ID</C>. On the <C>prod</C> environment set the variables <C>GATEWAY_URL</C> and <C>CERTIFICATE_ARN</C> (and optionally the site domains and <C>CLOUDFRONT_CERTIFICATE_ARN</C>), and add required reviewers.</P>
+        <Note>Beta: this deploy passes its checks but hasn’t yet been run against a real AWS account.</Note>
         <H2>Checks on every change</H2>
         <P>The <strong>CI</strong> workflow runs on every push and pull request: all unit tests, every build, the CDK synth and a build of each container image. It never deploys and needs no secrets. The end-to-end suite isn’t in CI yet; run it locally (below).</P>
         <H2>Locally, for evaluation</H2>

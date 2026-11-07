@@ -1,6 +1,15 @@
 # Deploys to AWS. Started by hand only (Actions → Deploy → Run workflow); a push never deploys.
-# Needs the repository secrets AWS_DEPLOY_ROLE_ARN, AWS_ACCOUNT_ID, WEBSITE_BUCKET_NAME and
-# CLOUDFRONT_DISTRIBUTION_ID, and a GitHub environment per stage (add required reviewers to prod).
+#
+# Needs repository secrets AWS_DEPLOY_ROLE_ARN and AWS_ACCOUNT_ID, and a GitHub environment per stage
+# (add required reviewers to prod). Each environment may set these variables (all optional for dev; prod needs
+# GATEWAY_URL and CERTIFICATE_ARN):
+#   GATEWAY_URL                 https address of the gateway (its load balancer), e.g. https://gateway.acme.example
+#   CERTIFICATE_ARN             ACM certificate for the gateway's load balancer (same region)
+#   CLOUDFRONT_CERTIFICATE_ARN  ACM certificate in us-east-1 covering the three front-end names below
+#   WEBSITE_DOMAIN, DASHBOARD_DOMAIN, DOCS_DOMAIN   custom names for the front ends (CloudFront names otherwise)
+#
+# Order: image repositories → images (tagged with this commit) → all stacks → the three front ends, built with
+# the addresses and sign-in settings the stacks just created.
 name: Deploy
 
 on:
@@ -25,177 +34,218 @@ concurrency:
 env:
   NODE_VERSION: '20'
   AWS_REGION: us-east-1
+  PREFIX: ai-gov
 
 defaults:
   run:
     working-directory: ai-governance-platform
 
 jobs:
-  # ─── Build & Push Docker Images ───────────────────────────────────────────
-  build-and-push:
-    name: Build & Push — ${{ matrix.service }}
+  # ─── Image repositories first, so a new account works on the first run ─────
+  registry:
+    name: Image repositories — ${{ inputs.stage }}
     runs-on: ubuntu-latest
     if: ${{ !inputs.destroy }}
+    permissions: { id-token: write, contents: read }
+    environment: { name: '${{ inputs.stage }}' }
+    steps:
+      - uses: actions/checkout@v4
+      - uses: aws-actions/configure-aws-credentials@v4
+        with: { role-to-assume: '${{ secrets.AWS_DEPLOY_ROLE_ARN }}', aws-region: '${{ env.AWS_REGION }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm, cache-dependency-path: ai-governance-platform/package-lock.json }
+      - run: npm ci
+      - run: npm run build -w shared/types -w shared/utils -w infra
+      - name: CDK bootstrap (idempotent)
+        working-directory: ai-governance-platform/infra
+        run: npx cdk bootstrap
+        env: { CDK_DEFAULT_ACCOUNT: '${{ secrets.AWS_ACCOUNT_ID }}', CDK_DEFAULT_REGION: '${{ env.AWS_REGION }}' }
+      - name: Deploy the registry stack
+        working-directory: ai-governance-platform/infra
+        # Every stack is synthesized, so the same settings as the main deploy are needed here.
+        env:
+          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
+          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          GATEWAY_URL: ${{ vars.GATEWAY_URL }}
+          CERTIFICATE_ARN: ${{ vars.CERTIFICATE_ARN }}
+          CLOUDFRONT_CERTIFICATE_ARN: ${{ vars.CLOUDFRONT_CERTIFICATE_ARN }}
+          WEBSITE_DOMAIN: ${{ vars.WEBSITE_DOMAIN }}
+          DASHBOARD_DOMAIN: ${{ vars.DASHBOARD_DOMAIN }}
+          DOCS_DOMAIN: ${{ vars.DOCS_DOMAIN }}
+        run: |
+          ctx=(--context "stage=${{ inputs.stage }}" --context "imageTag=${{ github.sha }}")
+          [ -n "$GATEWAY_URL" ] && ctx+=(--context "gatewayUrl=$GATEWAY_URL")
+          [ -n "$CERTIFICATE_ARN" ] && ctx+=(--context "certificateArn=$CERTIFICATE_ARN")
+          [ -n "$CLOUDFRONT_CERTIFICATE_ARN" ] && ctx+=(--context "cloudfrontCertificateArn=$CLOUDFRONT_CERTIFICATE_ARN")
+          [ -n "$WEBSITE_DOMAIN" ] && ctx+=(--context "websiteDomain=$WEBSITE_DOMAIN")
+          [ -n "$DASHBOARD_DOMAIN" ] && ctx+=(--context "dashboardDomain=$DASHBOARD_DOMAIN")
+          [ -n "$DOCS_DOMAIN" ] && ctx+=(--context "docsDomain=$DOCS_DOMAIN")
+          npx cdk deploy "$PREFIX-registry-${{ inputs.stage }}" --exclusively --require-approval never "${ctx[@]}"
+
+  # ─── Build & push images, tagged with this commit ─────────────────────────
+  images:
+    name: Image — ${{ matrix.service }}
+    runs-on: ubuntu-latest
+    needs: registry
     strategy:
       matrix:
         service: [gateway, policy-engine, data-protection, analytics]
-    permissions:
-      id-token: write
-      contents: read
-    outputs:
-      image-tag: ${{ github.sha }}
+    permissions: { id-token: write, contents: read }
     steps:
       - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Login to Amazon ECR
-        id: ecr-login
+      - uses: aws-actions/configure-aws-credentials@v4
+        with: { role-to-assume: '${{ secrets.AWS_DEPLOY_ROLE_ARN }}', aws-region: '${{ env.AWS_REGION }}' }
+      - id: ecr-login
         uses: aws-actions/amazon-ecr-login@v2
-
-      - name: Build & push Docker image
-        env:
-          ECR_REGISTRY: ${{ steps.ecr-login.outputs.registry }}
-          STAGE: ${{ inputs.stage }}
+      - name: Build & push
+        env: { ECR_REGISTRY: '${{ steps.ecr-login.outputs.registry }}' }
         run: |
-          REPO="$ECR_REGISTRY/ai-gov-${{ matrix.service }}-$STAGE"
+          REPO="$ECR_REGISTRY/$PREFIX-${{ matrix.service }}-${{ inputs.stage }}"
           # The Dockerfiles build from the ai-governance-platform folder (npm workspaces)
           docker build -f "services/${{ matrix.service }}/Dockerfile" -t "$REPO:${{ github.sha }}" .
           docker push "$REPO:${{ github.sha }}"
-          docker tag "$REPO:${{ github.sha }}" "$REPO:latest"
-          docker push "$REPO:latest"
 
-  # ─── CDK Deploy ───────────────────────────────────────────────────────────
+  # ─── All stacks, running this commit's images ──────────────────────────────
   cdk-deploy:
-    name: CDK Deploy — ${{ inputs.stage }}
+    name: Stacks — ${{ inputs.stage }}
     runs-on: ubuntu-latest
-    needs: build-and-push
-    if: ${{ !inputs.destroy }}
-    permissions:
-      id-token: write
-      contents: read
-    environment:
-      name: ${{ inputs.stage }}
+    needs: images
+    permissions: { id-token: write, contents: read }
+    environment: { name: '${{ inputs.stage }}' }
+    outputs:
+      websiteUrl: ${{ steps.out.outputs.websiteUrl }}
+      dashboardUrl: ${{ steps.out.outputs.dashboardUrl }}
+      docsUrl: ${{ steps.out.outputs.docsUrl }}
+      websiteBucket: ${{ steps.out.outputs.websiteBucket }}
+      dashboardBucket: ${{ steps.out.outputs.dashboardBucket }}
+      docsBucket: ${{ steps.out.outputs.docsBucket }}
+      websiteDistributionId: ${{ steps.out.outputs.websiteDistributionId }}
+      dashboardDistributionId: ${{ steps.out.outputs.dashboardDistributionId }}
+      docsDistributionId: ${{ steps.out.outputs.docsDistributionId }}
+      userPoolId: ${{ steps.out.outputs.userPoolId }}
+      userPoolClientId: ${{ steps.out.outputs.userPoolClientId }}
     steps:
       - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: ai-governance-platform/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build shared packages and infra
-        run: npm run build -w shared/types -w shared/utils -w infra
-
-      - name: CDK Bootstrap (idempotent)
-        run: npx cdk bootstrap
+      - uses: aws-actions/configure-aws-credentials@v4
+        with: { role-to-assume: '${{ secrets.AWS_DEPLOY_ROLE_ARN }}', aws-region: '${{ env.AWS_REGION }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm, cache-dependency-path: ai-governance-platform/package-lock.json }
+      - run: npm ci
+      - run: npm run build -w shared/types -w shared/utils -w infra
+      - name: CDK deploy all stacks
         working-directory: ai-governance-platform/infra
         env:
           CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
           CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          GATEWAY_URL: ${{ vars.GATEWAY_URL }}
+          CERTIFICATE_ARN: ${{ vars.CERTIFICATE_ARN }}
+          CLOUDFRONT_CERTIFICATE_ARN: ${{ vars.CLOUDFRONT_CERTIFICATE_ARN }}
+          WEBSITE_DOMAIN: ${{ vars.WEBSITE_DOMAIN }}
+          DASHBOARD_DOMAIN: ${{ vars.DASHBOARD_DOMAIN }}
+          DOCS_DOMAIN: ${{ vars.DOCS_DOMAIN }}
+        run: |
+          ctx=(--context "stage=${{ inputs.stage }}" --context "imageTag=${{ github.sha }}")
+          [ -n "$GATEWAY_URL" ] && ctx+=(--context "gatewayUrl=$GATEWAY_URL")
+          [ -n "$CERTIFICATE_ARN" ] && ctx+=(--context "certificateArn=$CERTIFICATE_ARN")
+          [ -n "$CLOUDFRONT_CERTIFICATE_ARN" ] && ctx+=(--context "cloudfrontCertificateArn=$CLOUDFRONT_CERTIFICATE_ARN")
+          [ -n "$WEBSITE_DOMAIN" ] && ctx+=(--context "websiteDomain=$WEBSITE_DOMAIN")
+          [ -n "$DASHBOARD_DOMAIN" ] && ctx+=(--context "dashboardDomain=$DASHBOARD_DOMAIN")
+          [ -n "$DOCS_DOMAIN" ] && ctx+=(--context "docsDomain=$DOCS_DOMAIN")
+          npx cdk deploy --all --require-approval never "${ctx[@]}"
+      - name: Read the addresses and sign-in settings the stacks created
+        id: out
+        run: |
+          out() { aws cloudformation describe-stacks --stack-name "$1" --query "Stacks[0].Outputs[?OutputKey=='$2'].OutputValue" --output text; }
+          FRONT="$PREFIX-frontend-${{ inputs.stage }}"
+          AUTH="$PREFIX-auth-${{ inputs.stage }}"
+          for site in website dashboard docs; do
+            echo "${site}Url=$(out "$FRONT" "${site}Url")" >> "$GITHUB_OUTPUT"
+            echo "${site}Bucket=$(out "$FRONT" "${site}BucketName")" >> "$GITHUB_OUTPUT"
+            echo "${site}DistributionId=$(out "$FRONT" "${site}DistributionId")" >> "$GITHUB_OUTPUT"
+          done
+          echo "userPoolId=$(out "$AUTH" UserPoolId)" >> "$GITHUB_OUTPUT"
+          echo "userPoolClientId=$(out "$AUTH" UserPoolClientId)" >> "$GITHUB_OUTPUT"
 
-      - name: CDK Deploy all stacks
-        run: npx cdk deploy --all --require-approval never --context stage=${{ inputs.stage }}
-        working-directory: ai-governance-platform/infra
-        env:
-          CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
-          CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
-
-  # ─── Deploy Website to S3/CloudFront ──────────────────────────────────────
-  deploy-website:
-    name: Deploy Website
+  # ─── Website, dashboard and docs, built with their real settings ────────────
+  frontends:
+    name: Front end — ${{ matrix.site }}
     runs-on: ubuntu-latest
     needs: cdk-deploy
-    if: ${{ !inputs.destroy }}
-    permissions:
-      id-token: write
-      contents: read
+    strategy:
+      matrix:
+        site: [website, dashboard, docs]
+    permissions: { id-token: write, contents: read }
+    environment: { name: '${{ inputs.stage }}' }
     steps:
       - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: ai-governance-platform/package-lock.json
-
-      - name: Install & build website
+      - uses: aws-actions/configure-aws-credentials@v4
+        with: { role-to-assume: '${{ secrets.AWS_DEPLOY_ROLE_ARN }}', aws-region: '${{ env.AWS_REGION }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm, cache-dependency-path: ai-governance-platform/package-lock.json }
+      - run: npm ci
+      - name: Build
+        env:
+          SITE: ${{ matrix.site }}
+          WEBSITE_URL: ${{ needs.cdk-deploy.outputs.websiteUrl }}
+          DASHBOARD_URL: ${{ needs.cdk-deploy.outputs.dashboardUrl }}
+          GATEWAY_URL: ${{ vars.GATEWAY_URL }}
+          VITE_COGNITO_USER_POOL_ID: ${{ needs.cdk-deploy.outputs.userPoolId }}
+          VITE_COGNITO_CLIENT_ID: ${{ needs.cdk-deploy.outputs.userPoolClientId }}
         run: |
-          npm ci
-          npm run build -w frontend/website
-
-      - name: Sync to S3
+          if [ "$SITE" = dashboard ]; then
+            export VITE_AUTH_MODE=cognito
+            # Agents connect to the gateway itself; without a gateway address, through the dashboard's /api.
+            export VITE_GATEWAY_PUBLIC_URL="${GATEWAY_URL:-$DASHBOARD_URL/api}"
+          else
+            # The website's contact form goes through its own /api, so browsers stay on one origin.
+            export VITE_API_URL="$WEBSITE_URL/api" VITE_DASHBOARD_URL="$DASHBOARD_URL"
+          fi
+          node scripts/check-build-env.mjs "$SITE"
+          npm run build -w shared/types -w shared/utils
+          npm run build -w "frontend/$SITE"
+      - name: Upload and refresh the CDN
+        env:
+          BUCKET: ${{ needs.cdk-deploy.outputs[format('{0}Bucket', matrix.site)] }}
+          DISTRIBUTION: ${{ needs.cdk-deploy.outputs[format('{0}DistributionId', matrix.site)] }}
         run: |
-          aws s3 sync frontend/website/dist/ s3://${{ secrets.WEBSITE_BUCKET_NAME }} \
-            --delete \
-            --cache-control "public, max-age=31536000, immutable" \
-            --exclude "index.html"
-          aws s3 cp frontend/website/dist/index.html s3://${{ secrets.WEBSITE_BUCKET_NAME }}/index.html \
+          aws s3 sync "frontend/${{ matrix.site }}/dist/" "s3://$BUCKET" --delete \
+            --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
+          aws s3 cp "frontend/${{ matrix.site }}/dist/index.html" "s3://$BUCKET/index.html" \
             --cache-control "no-cache, no-store, must-revalidate"
-
-      - name: Invalidate CloudFront cache
-        run: |
-          aws cloudfront create-invalidation \
-            --distribution-id ${{ secrets.CLOUDFRONT_DISTRIBUTION_ID }} \
-            --paths "/*"
+          aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths "/*"
 
   # ─── Teardown (destroy all stacks) ────────────────────────────────────────
   cdk-destroy:
     name: CDK Destroy — ${{ inputs.stage }}
     runs-on: ubuntu-latest
     if: ${{ inputs.destroy == true }}
-    permissions:
-      id-token: write
-      contents: read
-    environment:
-      name: ${{ inputs.stage }}
+    permissions: { id-token: write, contents: read }
+    environment: { name: '${{ inputs.stage }}' }
     steps:
       - uses: actions/checkout@v4
-
-      - name: Configure AWS credentials (OIDC)
-        uses: aws-actions/configure-aws-credentials@v4
-        with:
-          role-to-assume: ${{ secrets.AWS_DEPLOY_ROLE_ARN }}
-          aws-region: ${{ env.AWS_REGION }}
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v4
-        with:
-          node-version: ${{ env.NODE_VERSION }}
-          cache: npm
-          cache-dependency-path: ai-governance-platform/package-lock.json
-
-      - name: Install dependencies
-        run: npm ci
-
-      - name: Build shared packages and infra
-        run: npm run build -w shared/types -w shared/utils -w infra
-
-      - name: CDK Destroy all stacks
-        run: npx cdk destroy --all --force --context stage=${{ inputs.stage }}
+      - uses: aws-actions/configure-aws-credentials@v4
+        with: { role-to-assume: '${{ secrets.AWS_DEPLOY_ROLE_ARN }}', aws-region: '${{ env.AWS_REGION }}' }
+      - uses: actions/setup-node@v4
+        with: { node-version: '${{ env.NODE_VERSION }}', cache: npm, cache-dependency-path: ai-governance-platform/package-lock.json }
+      - run: npm ci
+      - run: npm run build -w shared/types -w shared/utils -w infra
+      - name: CDK destroy all stacks
         working-directory: ai-governance-platform/infra
         env:
           CDK_DEFAULT_ACCOUNT: ${{ secrets.AWS_ACCOUNT_ID }}
           CDK_DEFAULT_REGION: ${{ env.AWS_REGION }}
+          GATEWAY_URL: ${{ vars.GATEWAY_URL }}
+          CERTIFICATE_ARN: ${{ vars.CERTIFICATE_ARN }}
+          CLOUDFRONT_CERTIFICATE_ARN: ${{ vars.CLOUDFRONT_CERTIFICATE_ARN }}
+          WEBSITE_DOMAIN: ${{ vars.WEBSITE_DOMAIN }}
+          DASHBOARD_DOMAIN: ${{ vars.DASHBOARD_DOMAIN }}
+          DOCS_DOMAIN: ${{ vars.DOCS_DOMAIN }}
+        run: |
+          ctx=(--context "stage=${{ inputs.stage }}" --context "imageTag=${{ github.sha }}")
+          [ -n "$GATEWAY_URL" ] && ctx+=(--context "gatewayUrl=$GATEWAY_URL")
+          [ -n "$CERTIFICATE_ARN" ] && ctx+=(--context "certificateArn=$CERTIFICATE_ARN")
+          [ -n "$CLOUDFRONT_CERTIFICATE_ARN" ] && ctx+=(--context "cloudfrontCertificateArn=$CLOUDFRONT_CERTIFICATE_ARN")
+          [ -n "$WEBSITE_DOMAIN" ] && ctx+=(--context "websiteDomain=$WEBSITE_DOMAIN")
+          [ -n "$DASHBOARD_DOMAIN" ] && ctx+=(--context "dashboardDomain=$DASHBOARD_DOMAIN")
+          [ -n "$DOCS_DOMAIN" ] && ctx+=(--context "docsDomain=$DOCS_DOMAIN")
+          npx cdk destroy --all --force "${ctx[@]}"

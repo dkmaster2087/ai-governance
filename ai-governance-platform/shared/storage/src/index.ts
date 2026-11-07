@@ -35,6 +35,8 @@ export const SPECS = {
     indexes: { 'tenantId-timestamp-index': { partitionKey: 'tenantId', sortKey: 'timestamp' } },
   }),
   metrics: (): CollectionSpec => ({ name: 'metrics', table: env('METRICS_TABLE', 'ai-governance-metrics'), partitionKey: 'tenantId', sortKey: 'period', ttlField: 'ttl' }),
+  /** Dashboard users per company (sign-in itself is Cognito's): lets a company list and manage its people. */
+  users: (): CollectionSpec => ({ name: 'users', table: env('USERS_TABLE', 'ai-gov-users-dev'), partitionKey: 'tenantId', sortKey: 'email' }),
   /** MCP servers created from the dashboard (one record each). */
   mcpServers: (): CollectionSpec => ({ name: 'mcp_servers', table: env('MCP_SERVERS_TABLE', 'ai-gov-mcp-servers-dev'), partitionKey: 'tenantId', sortKey: 'serverId' }),
   /** Backend APIs added to MCP servers. */

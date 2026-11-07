@@ -68,4 +68,13 @@ describe('analytics', () => {
     const usage = (await get('/internal/v1/platform/usage?days=7', as('tenant_platform', 'platform_admin'))).json();
     expect(usage.tenants.map((t: any) => t.tenantId).sort()).toEqual(['tenant_a', 'tenant_b']);
   });
+
+  it('gives the reporting agent its own summary and nothing else', async () => {
+    const agent = as('tenant_a', 'reporting_agent');
+    const summary = (await get('/internal/v1/reporting/summary', agent)).json();
+    expect(summary.usage).toMatchObject({ totalRequests: 3, blockedRequests: 1, activeUsers: 1 });
+    expect(summary.cost.totalCost).toBe(1.5);
+    expect((await get('/internal/v1/evidence', agent)).statusCode).toBe(403);
+    expect((await get('/internal/v1/reporting/summary', as('tenant_a', 'tenant_user'))).statusCode).toBe(403);
+  });
 });

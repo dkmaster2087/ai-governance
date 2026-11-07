@@ -4,6 +4,7 @@ import { AUTH_MODE, DEV_AUTH } from './auth-mode';
 import { createApiClient, setAuthHeaderProvider, setSessionTenant, UNAUTHORIZED_EVENT } from './http';
 import * as cognito from './cognito';
 import * as devAccounts from './dev-accounts';
+import { announceSignIn } from './users-api';
 
 export { AUTH_MODE } from './auth-mode';
 
@@ -151,6 +152,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
     setUser(base);
     setUser(await withTenantName(base));
+    void announceSignIn();
     return { success: true };
   }, []);
 

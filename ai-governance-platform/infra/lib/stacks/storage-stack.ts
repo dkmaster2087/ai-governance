@@ -13,6 +13,7 @@ export class StorageStack extends cdk.Stack {
   public readonly policiesTable: dynamodb.Table;
   public readonly metricsTable: dynamodb.Table;
   public readonly tenantsTable: dynamodb.Table;
+  public readonly usersTable: dynamodb.Table;
   public readonly complianceTable: dynamodb.Table;
   public readonly modelsTable: dynamodb.Table;
   public readonly apiKeysTable: dynamodb.Table;
@@ -51,6 +52,18 @@ export class StorageStack extends cdk.Stack {
     this.tenantsTable = new dynamodb.Table(this, 'TenantsTable', {
       tableName: `${prefix}-tenants-${stage}`,
       partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+      billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
+      encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
+      encryptionKey: kmsKey,
+      pointInTimeRecovery: true,
+      removalPolicy,
+    });
+
+    // Dashboard users per company (tenantId + email); sign-in itself is Cognito's
+    this.usersTable = new dynamodb.Table(this, 'UsersTable', {
+      tableName: `${prefix}-users-${stage}`,
+      partitionKey: { name: 'tenantId', type: dynamodb.AttributeType.STRING },
+      sortKey: { name: 'email', type: dynamodb.AttributeType.STRING },
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,

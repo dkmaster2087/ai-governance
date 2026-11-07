@@ -10,6 +10,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
+import type { ServiceName } from './registry-stack';
 
 interface ServicesStackProps extends cdk.StackProps {
   prefix: string;
@@ -23,6 +24,8 @@ interface ServicesStackProps extends cdk.StackProps {
   apiKeysTable: dynamodb.Table;
   alertsTable: dynamodb.Table;
   shadowAiTable: dynamodb.Table;
+  /** Image repositories (RegistryStack). */
+  repositories: Record<ServiceName, ecr.IRepository>;
   mcpTables?: {
     servers: dynamodb.Table; apis: dynamodb.Table; tools: dynamodb.Table;
     versions: dynamodb.Table; approvals: dynamodb.Table; oauth: dynamodb.Table; connectors: dynamodb.Table;
@@ -31,18 +34,23 @@ interface ServicesStackProps extends cdk.StackProps {
   modelsTable: dynamodb.Table;
   complianceTable: dynamodb.Table;
   tenantsTable: dynamodb.Table;
+  usersTable: dynamodb.Table;
 }
 
 export class ServicesStack extends cdk.Stack {
   public readonly gatewayService: ecs.FargateService;
   public readonly cluster: ecs.Cluster;
   public readonly loadBalancer: elbv2.ApplicationLoadBalancer;
+  private readonly repositories: Record<ServiceName, ecr.IRepository>;
+  private readonly imageTag: string;
 
   constructor(scope: Construct, id: string, props: ServicesStackProps) {
     super(scope, id, props);
+    this.repositories = props.repositories;
+    this.imageTag = this.node.tryGetContext('imageTag') || 'latest';
 
     const { prefix, stage, vpc, policiesTable, metricsTable, auditLogBucket } = props;
-    const { apiKeysTable, alertsTable, shadowAiTable, auditLogsTable, modelsTable, complianceTable, tenantsTable } = props;
+    const { apiKeysTable, alertsTable, shadowAiTable, auditLogsTable, modelsTable, complianceTable, tenantsTable, usersTable } = props;
 
     // ECS Cluster
     this.cluster = new ecs.Cluster(this, 'Cluster', {
@@ -181,6 +189,7 @@ export class ServicesStack extends cdk.Stack {
       environment: {
         ...commonEnv,
         TENANTS_TABLE: tenantsTable.tableName,
+        USERS_TABLE: usersTable.tableName,
         MODELS_TABLE: modelsTable.tableName,
         COMPLIANCE_TABLE: complianceTable.tableName,
         API_KEYS_TABLE: apiKeysTable.tableName,
@@ -199,7 +208,7 @@ export class ServicesStack extends cdk.Stack {
         POLICY_ENGINE_URL: `http://${internalAlb.loadBalancerDnsName}:3001`,
         DATA_PROTECTION_URL: `http://${internalAlb.loadBalancerDnsName}:3002`,
         ANALYTICS_URL: `http://${internalAlb.loadBalancerDnsName}:3003`,
-        ALLOWED_ORIGINS: '', // Set per environment
+        ALLOWED_ORIGINS: '', // None needed: browsers reach the gateway through CloudFront on the site's own address
         ...(gatewayUrl ? { PUBLIC_GATEWAY_URL: gatewayUrl } : {}),
         COGNITO_USER_POOL_ID: props.userPool.userPoolId,
         COGNITO_CLIENT_ID: props.userPoolClient.userPoolClientId,
@@ -222,6 +231,11 @@ export class ServicesStack extends cdk.Stack {
       })
     );
     auditLogBucket.grantWrite(this.gatewayService.taskDefinition.taskRole);
+    usersTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
+    // Inviting, re-roling, disabling and removing people's sign-in accounts.
+    props.userPool.grant(this.gatewayService.taskDefinition.taskRole,
+      'cognito-idp:AdminCreateUser', 'cognito-idp:AdminUpdateUserAttributes', 'cognito-idp:AdminDisableUser',
+      'cognito-idp:AdminEnableUser', 'cognito-idp:AdminDeleteUser', 'cognito-idp:AdminGetUser');
     tenantsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     modelsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     apiKeysTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
@@ -290,12 +304,7 @@ export class ServicesStack extends cdk.Stack {
   }): ecs.FargateService {
     const { id, name, prefix, stage, cluster, vpc, port, cpu, memory, environment, secrets } = config;
 
-    const repo = new ecr.Repository(this, `${id}Repo`, {
-      repositoryName: `${prefix}-${name}-${stage}`,
-      removalPolicy: stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
-      emptyOnDelete: stage !== 'prod',
-    });
-
+    const repo = this.repositories[name as ServiceName];
     const logGroup = new logs.LogGroup(this, `${id}Logs`, {
       logGroupName: `/ecs/${prefix}-${name}-${stage}`,
       retention: logs.RetentionDays.ONE_MONTH,
@@ -308,7 +317,8 @@ export class ServicesStack extends cdk.Stack {
     });
 
     taskDef.addContainer(`${id}Container`, {
-      image: ecs.ContainerImage.fromEcrRepository(repo, 'latest'),
+      // The image built from this commit (-c imageTag=<sha>): a new tag means a new task definition, so it rolls out.
+      image: ecs.ContainerImage.fromEcrRepository(repo, this.imageTag),
       portMappings: [{ containerPort: port }],
       environment,
       ...(secrets ? { secrets } : {}),

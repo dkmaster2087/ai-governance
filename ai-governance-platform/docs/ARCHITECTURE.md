@@ -142,16 +142,37 @@ case file. APIs inside a company network are reached through the connector (`con
 gateway over HTTPS; queued calls are kept, encrypted, in the shared database so any gateway instance can hand
 them out. Plan: [MCP.md](MCP.md).
 
+## Deployment (AWS)
+
+```
+Browser ──▶ CloudFront: website / dashboard / docs (private S3)
+              └─ /api/* ──▶ Gateway (public, HTTPS) ──▶ internal load balancer: policy engine, data protection,
+                                                       analytics (signed internal token)
+Images: ECR repositories in their own stack, tagged with the commit; a deploy rolls the services to that tag.
+People: Cognito. Company admins invite their people from the dashboard (the gateway creates the sign-in and
+Cognito emails the invitation); the platform's first admin is made once with scripts/create-platform-admin.mjs.
+```
+
+Browsers reach the gateway on the site's own address, so the gateway allows no other website by default
+(`ALLOWED_ORIGINS` empty), only the browser extension.
+
+## On-prem reporting (beta)
+
+An on-prem install can run the reporting agent (`services/reporting-agent`). Every few minutes it reads the
+last 24 hours' usage and cost from its own analytics (a signed internal token that can read only that summary)
+and framework status from its policy engine, and sends them with its license key to the platform's
+`/v1/reporting/ingest`. The platform keeps only the parts the company allows on its License page, for 13
+months; audit records never leave the install. If a part can't be read, nothing is sent rather than zeros. The
+agent's own API needs a signed internal token from an admin.
+
 ## Known gaps before production
 
 - CI runs unit tests, builds and image builds on every push, but not the end-to-end suite, which needs
   LocalStack. Deploying is manual only.
-- The first deploy to a new AWS account will fail: the deploy workflow pushes images before CDK creates the
-  image repositories, and the services stack starts containers from an image that doesn't exist yet. The
-  repositories need their own stack (or the services must start at zero tasks) before the first deploy.
-
-- Production deploys need `-c certificateArn=…` for HTTPS; the service Dockerfiles haven't been built on a
-  developer machine yet (CI builds them).
+- The full AWS deploy (repositories, images, stacks, three sites behind CloudFront) passes CDK synth and unit
+  tests but hasn't yet been run against a real AWS account.
+- Production deploys need `-c certificateArn=…` and `-c gatewayUrl=…` for HTTPS; the service Dockerfiles
+  haven't been built on a developer machine yet (CI builds them).
 - Secrets detection covers prompts only. A model that writes a credential into its answer isn't checked by it
   (the existing response scanner catches a few key formats).
 - Streamed answers are masked by the gateway's built-in patterns as they stream; the deeper data-protection

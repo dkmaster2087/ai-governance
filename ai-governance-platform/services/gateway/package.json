@@ -15,6 +15,7 @@
     "@ai-governance/types": "*",
     "@ai-governance/utils": "*",
     "@aws-sdk/client-bedrock-runtime": "^3.0.0",
+    "@aws-sdk/client-cognito-identity-provider": "^3.1164.0",
     "@aws-sdk/client-dynamodb": "^3.0.0",
     "@aws-sdk/client-s3": "^3.0.0",
     "@aws-sdk/client-secrets-manager": "^3.1159.0",

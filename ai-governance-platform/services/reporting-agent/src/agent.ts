@@ -1,11 +1,15 @@
 import axios from 'axios';
-import { createLogger } from '@ai-governance/utils';
+import { createLogger, INTERNAL_HEADER, internalKeyFromEnv, signInternal } from '@ai-governance/utils';
 
 const logger = createLogger('reporting-agent:core');
 
 export interface ReportingConfig {
   licenseKey: string;
-  saasEndpoint: string;       // e.g., https://platform.probaline.com/api/v1/reporting
+  /** The Probaline platform's reporting address, e.g. https://app.probaline.com/api/v1/reporting */
+  saasEndpoint: string;
+  /** This install's own services, on the internal network. */
+  analyticsUrl: string;
+  policyEngineUrl: string;
   tenantId: string;
   reportingInterval: number;  // seconds between reports (default 300 = 5 min)
   enabled: boolean;
@@ -13,6 +17,7 @@ export interface ReportingConfig {
     usageMetrics: boolean;
     costData: boolean;
     complianceStatus: boolean;
+    /** Always false: audit records never leave the company's deployment. Kept so old settings still parse. */
     auditLogs: boolean;
   };
 }
@@ -26,7 +31,6 @@ export interface ReportPayload {
     usageMetrics?: UsageMetrics;
     costData?: CostData;
     complianceStatus?: ComplianceStatus;
-    auditLogs?: AuditLogEntry[];
   };
 }
 
@@ -50,32 +54,33 @@ interface CostData {
 interface ComplianceStatus {
   enabledFrameworks: string[];
   frameworkStatus: { framework: string; status: string; passedControls: number; totalControls: number }[];
-  activePolicies: number;
-  totalRules: number;
-}
-
-interface AuditLogEntry {
-  requestId: string;
-  userId: string;
-  model: string;
-  decision: string;
-  timestamp: string;
-  tokens: number;
 }
 
 const AGENT_VERSION = '1.0.0';
-const DEFAULT_CONFIG: ReportingConfig = {
-  licenseKey: '',
-  saasEndpoint: 'http://localhost:3000/v1/reporting/ingest',
-  tenantId: '',
-  reportingInterval: 300,
-  enabled: false,
-  sync: { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: false },
-};
+const flag = (v: string | undefined, fallback: boolean) => (v === undefined || v === '' ? fallback : v === 'true');
+
+/** Settings come from the environment, so a deployment configures the agent without calling its API. */
+export function configFromEnv(env: NodeJS.ProcessEnv = process.env): ReportingConfig {
+  return {
+    licenseKey: env.PROBALINE_LICENSE_KEY ?? '',
+    saasEndpoint: (env.PROBALINE_REPORTING_URL ?? '').replace(/\/+$/, ''),
+    analyticsUrl: (env.ANALYTICS_URL ?? 'http://localhost:3003').replace(/\/+$/, ''),
+    policyEngineUrl: (env.POLICY_ENGINE_URL ?? 'http://localhost:3001').replace(/\/+$/, ''),
+    tenantId: env.TENANT_ID ?? '',
+    reportingInterval: Math.max(60, parseInt(env.REPORTING_INTERVAL_SECONDS ?? '300', 10) || 300),
+    enabled: flag(env.REPORTING_ENABLED, false),
+    sync: {
+      usageMetrics: flag(env.REPORT_USAGE, true),
+      costData: flag(env.REPORT_COST, true),
+      complianceStatus: flag(env.REPORT_COMPLIANCE, true),
+      auditLogs: false, // never sent: audit records stay inside the company's deployment
+    },
+  };
+}
 
 export class ReportingAgent {
   private static instance: ReportingAgent;
-  private config: ReportingConfig = { ...DEFAULT_CONFIG };
+  private config: ReportingConfig = configFromEnv();
   private intervalHandle: NodeJS.Timeout | null = null;
   private lastReportAt: string | null = null;
   private lastReportStatus: 'success' | 'failed' | 'pending' | null = null;
@@ -106,6 +111,7 @@ export class ReportingAgent {
   configure(updates: Partial<ReportingConfig>): void {
     this.config = { ...this.config, ...updates };
     if (updates.sync) this.config.sync = { ...this.config.sync, ...updates.sync };
+    this.config.sync.auditLogs = false;
     logger.info('Reporting config updated', { tenantId: this.config.tenantId, enabled: this.config.enabled });
 
     // Restart interval if running
@@ -117,8 +123,9 @@ export class ReportingAgent {
 
   /** Start the reporting loop */
   start(): void {
-    if (!this.config.enabled || !this.config.licenseKey) {
-      logger.info('Reporting agent not started (disabled or no license key)');
+    if (this.intervalHandle) return;
+    if (!this.config.enabled || !this.config.licenseKey || !this.config.saasEndpoint || !this.config.tenantId) {
+      logger.info('Reporting agent not started (disabled, or license key, platform address or company not set)');
       return;
     }
 
@@ -176,18 +183,19 @@ export class ReportingAgent {
       data: {},
     };
 
-    // Collect data based on sync config
-    if (this.config.sync.usageMetrics) {
-      payload.data.usageMetrics = await this.collectUsageMetrics();
-    }
-    if (this.config.sync.costData) {
-      payload.data.costData = await this.collectCostData();
-    }
-    if (this.config.sync.complianceStatus) {
-      payload.data.complianceStatus = await this.collectComplianceStatus();
-    }
-    if (this.config.sync.auditLogs) {
-      payload.data.auditLogs = await this.collectAuditLogs();
+    try {
+      // A report of zeros would look real, so a part that can't be read fails the whole report instead.
+      if (this.config.sync.usageMetrics || this.config.sync.costData) {
+        const s = await this.readSummary();
+        const period = { periodStart: s.periodStart, periodEnd: s.periodEnd };
+        if (this.config.sync.usageMetrics) payload.data.usageMetrics = { ...s.usage, ...period };
+        if (this.config.sync.costData) payload.data.costData = { ...s.cost, ...period };
+      }
+      if (this.config.sync.complianceStatus) payload.data.complianceStatus = await this.collectComplianceStatus();
+    } catch (err: any) {
+      this.lastReportStatus = 'failed';
+      logger.error('Could not collect the report', { error: err.message });
+      return;
     }
 
     try {
@@ -202,62 +210,26 @@ export class ReportingAgent {
     }
   }
 
-  // Data collectors — in production these query local DynamoDB/services
-  private async collectUsageMetrics(): Promise<UsageMetrics> {
-    // Query local gateway for metrics
-    try {
-      const { data } = await axios.get('http://localhost:3000/v1/cost/summary/' + this.config.tenantId, {
-        headers: { 'x-tenant-id': this.config.tenantId, authorization: 'Bearer test-key' },
-        timeout: 5000,
-      });
-      return {
-        totalRequests: data.totalRequests || 0,
-        blockedRequests: data.blockedRequests || 0,
-        activeUsers: data.activeUsers || 0,
-        modelBreakdown: data.modelBreakdown || [],
-        periodStart: new Date(Date.now() - 86400000).toISOString(),
-        periodEnd: new Date().toISOString(),
-      };
-    } catch {
-      return { totalRequests: 0, blockedRequests: 0, activeUsers: 0, modelBreakdown: [], periodStart: '', periodEnd: '' };
-    }
+  /** A token for this install's own services: on behalf of the company, limited to the reporting summary. */
+  private internalHeaders(audience: string) {
+    const token = signInternal({ tenantId: this.config.tenantId, userId: 'reporting-agent', role: 'reporting_agent' }, internalKeyFromEnv(), audience);
+    return { [INTERNAL_HEADER]: token };
   }
 
-  private async collectCostData(): Promise<CostData> {
-    try {
-      const { data } = await axios.get('http://localhost:3000/v1/cost/breakdown/' + this.config.tenantId, {
-        headers: { 'x-tenant-id': this.config.tenantId, authorization: 'Bearer test-key' },
-        timeout: 5000,
-      });
-      return {
-        totalCost: data.totalCost || 0,
-        costByModel: data.costByModel || [],
-        costByUser: data.costByUser || [],
-        periodStart: new Date(Date.now() - 86400000).toISOString(),
-        periodEnd: new Date().toISOString(),
-      };
-    } catch {
-      return { totalCost: 0, costByModel: [], costByUser: [], periodStart: '', periodEnd: '' };
-    }
+  /** Usage and cost for the last 24 hours, from this install's analytics. */
+  private async readSummary(): Promise<any> {
+    const { data } = await axios.get(`${this.config.analyticsUrl}/internal/v1/reporting/summary`, { headers: this.internalHeaders('analytics'), timeout: 15000 });
+    return data;
   }
 
+  /** Which frameworks are on and how many of their controls are met, without the controls themselves. */
   private async collectComplianceStatus(): Promise<ComplianceStatus> {
-    try {
-      const { data } = await axios.get('http://localhost:3001/v1/compliance/status/' + this.config.tenantId, { timeout: 5000 });
-      const frameworks = Array.isArray(data) ? data : [];
-      return {
-        enabledFrameworks: frameworks.filter((f: any) => f.status === 'enabled').map((f: any) => f.framework),
-        frameworkStatus: frameworks.map((f: any) => ({ framework: f.framework, status: f.status, passedControls: f.passedControls || 0, totalControls: f.totalControls || 0 })),
-        activePolicies: 0,
-        totalRules: 0,
-      };
-    } catch {
-      return { enabledFrameworks: [], frameworkStatus: [], activePolicies: 0, totalRules: 0 };
-    }
-  }
-
-  private async collectAuditLogs(): Promise<AuditLogEntry[]> {
-    // Only collected if tenant opts in
-    return [];
+    const { data } = await axios.get(`${this.config.policyEngineUrl}/v1/compliance/status/${encodeURIComponent(this.config.tenantId)}`, { timeout: 15000 });
+    const frameworks: any[] = Array.isArray(data) ? data : [];
+    const on = frameworks.filter((f) => f.status !== 'disabled');
+    return {
+      enabledFrameworks: on.map((f) => f.framework),
+      frameworkStatus: on.map((f) => ({ framework: f.framework, status: f.status, passedControls: f.passedControls ?? 0, totalControls: f.totalControls ?? 0 })),
+    };
   }
 }

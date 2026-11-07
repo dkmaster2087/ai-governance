@@ -28,4 +28,12 @@ describe('Health Routes', () => {
     expect(body.dependencies).toBeDefined();
     expect(Array.isArray(body.dependencies)).toBe(true);
   });
+
+  it('lets only known websites and the browser extension call from a browser', async () => {
+    const from = async (origin: string) =>
+      (await app.inject({ method: 'GET', url: '/health', headers: { origin } })).headers['access-control-allow-origin'];
+    expect(await from('https://evil.example')).toBeUndefined();
+    expect(await from('chrome-extension://abc')).toBe('chrome-extension://abc');
+    expect(await from('http://localhost:5174')).toBe('http://localhost:5174');
+  });
 });

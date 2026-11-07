@@ -42,7 +42,7 @@ export const hipaaPack: CompliancePack = {
       controlId: 'HIPAA-164.308-A3', framework: 'hipaa', title: 'Workforce Access Controls',
       description: 'Only authorized staff may use AI features that process PHI.',
       severity: 'critical', policyRuleType: 'access_control', automatable: true, mappedRuleIds: [],
-      coverage: { kind: 'platform', note: 'Requests need a scoped key or a signed-in user; models can be limited to roles and apps on the Models page.' },
+      coverage: { kind: 'platform', note: 'Requests need a scoped key or a signed-in user, and dashboard roles limit who can change settings. Limiting individual models to roles isn’t enforced yet.' },
     },
     {
       controlId: 'HIPAA-164.308-A6', framework: 'hipaa', title: 'Security Incident Procedures',

@@ -4,29 +4,34 @@ import { NetworkStack } from '../lib/stacks/network-stack';
 import { StorageStack } from '../lib/stacks/storage-stack';
 import { AuthStack } from '../lib/stacks/auth-stack';
 import { ServicesStack } from '../lib/stacks/services-stack';
+import { RegistryStack } from '../lib/stacks/registry-stack';
 
 describe('ServicesStack', () => {
   let template: Template;
 
   beforeAll(() => {
-    const app = new cdk.App({ context: { gatewayUrl: 'https://gateway.acme.example' } });
+    const app = new cdk.App({ context: { gatewayUrl: 'https://gateway.acme.example', imageTag: 'abc123' } });
     const env = { account: '123456789012', region: 'us-east-1' };
     const base = { env, prefix: 'ai-gov', stage: 'test' };
     const network = new NetworkStack(app, 'Net', base);
     const storage = new StorageStack(app, 'Store', base);
     const auth = new AuthStack(app, 'Auth', base);
+    const registry = new RegistryStack(app, 'Registry', base);
     const stack = new ServicesStack(app, 'Services', {
-      ...base, vpc: network.vpc, policiesTable: storage.policiesTable, metricsTable: storage.metricsTable,
+      ...base, vpc: network.vpc, repositories: registry.repositories, policiesTable: storage.policiesTable, metricsTable: storage.metricsTable,
       auditLogBucket: storage.auditLogBucket, userPool: auth.userPool, userPoolClient: auth.userPoolClient,
       apiKeysTable: storage.apiKeysTable, alertsTable: storage.alertsTable, shadowAiTable: storage.shadowAiTable,
       auditLogsTable: storage.auditLogsTable, modelsTable: storage.modelsTable, complianceTable: storage.complianceTable,
-      tenantsTable: storage.tenantsTable,
+      tenantsTable: storage.tenantsTable, usersTable: storage.usersTable,
     });
     template = Template.fromStack(stack);
   });
 
-  it('runs four services', () => {
+  it('runs four services, each on the image built from this commit', () => {
     template.resourceCountIs('AWS::ECS::Service', 4);
+    template.resourceCountIs('AWS::ECR::Repository', 0); // they live in the registry stack, created first
+    const defs = Object.values(template.findResources('AWS::ECS::TaskDefinition')) as any[];
+    for (const d of defs) expect(JSON.stringify(d.Properties.ContainerDefinitions[0].Image)).toContain(':abc123');
   });
 
   it('routes the gateway to the policy engine and data protection through the internal load balancer', () => {

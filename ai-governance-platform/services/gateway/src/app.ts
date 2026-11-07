@@ -26,6 +26,7 @@ import { rulesRoutes } from './routes/rules.routes';
 import { evidenceRoutes } from './routes/evidence.routes';
 import { policiesRoutes } from './routes/policies.routes';
 import { mcpRoutes } from './routes/mcp.routes';
+import { usersRoutes } from './routes/users.routes';
 import { mcpOauthRoutes } from './routes/mcp-oauth.routes';
 import { mcpApprovalRoutes } from './routes/mcp-approvals.routes';
 import { mcpConnectorRoutes } from './routes/mcp-connectors.routes';
@@ -44,10 +45,10 @@ export async function buildApp() {
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   });
   await app.register(cors, {
-    // The browser extension calls from a chrome-extension:// origin and authenticates with an API key.
-    origin: securityConfig.allowedOrigins.length > 0
-      ? (origin, cb) => cb(null, !origin || securityConfig.allowedOrigins.includes(origin) || origin.startsWith('chrome-extension://'))
-      : true,
+    // Deployed, the dashboard and website reach the gateway on their own address (CloudFront's /api), so no
+    // other website needs access: an empty ALLOWED_ORIGINS means none. The browser extension calls from a
+    // chrome-extension:// origin and authenticates with an API key. Requests without an origin aren't browsers.
+    origin: (origin, cb) => cb(null, !origin || securityConfig.allowedOrigins.includes(origin) || origin.startsWith('chrome-extension://')),
     credentials: true,
   });
   await app.register(rateLimit, {
@@ -80,6 +81,7 @@ export async function buildApp() {
   await app.register(rulesRoutes, { prefix: '/v1' });
   await app.register(evidenceRoutes, { prefix: '/v1' });
   await app.register(policiesRoutes, { prefix: '/v1' });
+  await app.register(usersRoutes, { prefix: '/v1' });
   // MCP servers: admin API under /v1/mcp/…, and the address agents connect to at /mcp/<tenant>/<server>.
   await app.register(mcpRoutes);
   await app.register(mcpOauthRoutes);

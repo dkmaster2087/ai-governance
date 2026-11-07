@@ -14,6 +14,8 @@ export interface Tenant {
   region: string;
   createdAt: string;
   settings?: { auditLogRetentionDays?: number; governanceFailMode?: 'open' | 'closed' };
+  /** Only on creation: whether the first admin was invited. */
+  adminInvite?: { status: 'sent' | 'recorded' | 'failed'; error?: string };
 }
 
 export interface TenantInput {

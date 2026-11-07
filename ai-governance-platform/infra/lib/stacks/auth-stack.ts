@@ -18,6 +18,11 @@ export class AuthStack extends cdk.Stack {
 
     // Cognito User Pool for SaaS multi-tenant auth
     this.userPool = new cognito.UserPool(this, 'UserPool', {
+      // Invitations sent when a company admin adds someone (or a company is created).
+      userInvitation: {
+        emailSubject: 'You’re invited to Probaline',
+        emailBody: 'You’ve been added to your company’s Probaline dashboard.<br><br>Sign in with your email, {username}, and this temporary password: <strong>{####}</strong><br>You’ll choose your own password the first time.',
+      },
       userPoolName: `${prefix}-users-${stage}`,
       selfSignUpEnabled: false, // Admin-controlled onboarding
       signInAliases: { email: true },

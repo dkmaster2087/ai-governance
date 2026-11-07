@@ -4,6 +4,7 @@ import { createLogger } from '@ai-governance/utils';
 import { randomUUID } from 'crypto';
 import { z } from 'zod';
 import { tenantSettings } from '../services/tenant-settings.service';
+import { userDirectory } from '../services/user-directory';
 import { ApiKeyRepository, generateApiKey, hashApiKey, LicenseInfo } from '../repositories/api-key.repository';
 import { GRACE_DAYS, LicenseKey, licenseState } from '../services/license-state';
 import { forgetApiKey } from '../middleware/auth.middleware';
@@ -22,6 +23,9 @@ const tenantFields = {
 };
 const tenantCreateSchema = z.object({
   ...tenantFields,
+  /** The first admin's name, for their invitation (taken from the email when not given). */
+  adminGivenName: z.string().trim().min(1).max(80).optional(),
+  adminFamilyName: z.string().trim().min(1).max(80).optional(),
   plan: tenantFields.plan.default('starter'),
   deploymentMode: tenantFields.deploymentMode.default('saas'),
   region: tenantFields.region.default('us-east-1'),
@@ -82,7 +86,23 @@ export async function tenantRoutes(app: FastifyInstance) {
 
     await tenants().put(tenant);
     logger.info('Tenant onboarded', { tenantId: tenant.tenantId, name: tenant.name });
-    return reply.status(201).send(tenant);
+
+    // Invite the company's first admin, so someone can sign in.
+    const local = body.adminEmail.split('@')[0].replace(/[._-]+/g, ' ').trim();
+    const cap = (s: string) => s.charAt(0).toUpperCase() + s.slice(1);
+    const [first, ...rest] = local.split(' ');
+    let adminInvite: { status: 'sent' | 'recorded' | 'failed'; error?: string };
+    try {
+      await userDirectory().invite({
+        tenantId: tenant.tenantId, email: body.adminEmail, role: 'tenant_admin',
+        givenName: body.adminGivenName ?? cap(first || 'Admin'), familyName: body.adminFamilyName ?? (cap(rest.join(' ')) || tenant.name),
+      }, request.userId);
+      adminInvite = { status: userDirectory().real ? 'sent' : 'recorded' };
+    } catch (err) {
+      logger.error('Could not invite the first admin', { tenantId: tenant.tenantId, error: (err as Error).message });
+      adminInvite = { status: 'failed', error: (err as Error).message };
+    }
+    return reply.status(201).send({ ...tenant, adminInvite });
   });
 
   // Update tenant

@@ -8,25 +8,18 @@ import { PLAN_LABEL, RUNS_LABEL, StatusPill, TenantForm } from '../components/ki
 
 /** What to do after a tenant exists: give their admin a way in, and a license. */
 export function NextSteps({ tenant, onClose }: { tenant: Tenant; onClose: () => void }) {
-  const pool = import.meta.env.VITE_COGNITO_USER_POOL_ID || '<user-pool-id>';
-  const command = [
-    `aws cognito-idp admin-create-user \\`,
-    `  --user-pool-id ${pool} \\`,
-    `  --username ${tenant.adminEmail} \\`,
-    `  --user-attributes Name=email,Value=${tenant.adminEmail} Name=email_verified,Value=true \\`,
-    `    Name=custom:tenantId,Value=${tenant.tenantId} Name=custom:role,Value=tenant_admin`,
-  ].join('\n');
+  const invite = tenant.adminInvite;
   return (
     <Panel className="px-6 py-5 border-2 border-ink flex flex-col gap-3">
       <p className="m-0 font-semibold">{tenant.name} is set up. Tenant ID <code className="font-mono">{tenant.tenantId}</code>.</p>
-      {usersManagedExternally ? (
-        <>
-          <p className="m-0 text-ink-soft">Next, create their admin in Cognito. They’ll get an email with a temporary password.</p>
-          <pre className="m-0 bg-canvas border border-line-subtle rounded-lg px-4 py-3 font-mono text-[12.5px] whitespace-pre-wrap [overflow-wrap:anywhere]">{command}</pre>
-        </>
-      ) : (
+      {!usersManagedExternally ? (
         <p className="m-0 text-ink-soft">Their admin can sign in locally as {tenant.adminEmail}.</p>
+      ) : invite?.status === 'failed' ? (
+        <p role="alert" className="m-0 text-stop-text font-semibold">Their admin, {tenant.adminEmail}, couldn’t be invited: {invite.error}. Open the company and invite them from its Users page.</p>
+      ) : (
+        <p className="m-0 text-ink-soft">{tenant.adminEmail} has been invited as their admin: they’ll get an email with a temporary password.</p>
       )}
+      <p className="m-0 text-ink-soft">They have 30 days before AI requests stop: issue a license and send them the key.</p>
       <div className="flex gap-2 flex-wrap">
         <ButtonLink to="/licenses">Issue a license</ButtonLink>
         <Button variant="secondary" onClick={onClose}>Done</Button>

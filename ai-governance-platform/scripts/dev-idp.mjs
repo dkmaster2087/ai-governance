@@ -9,7 +9,10 @@
  * lists demo people to choose from. POST /_disable?person=<id> makes the next refresh for them fail.
  */
 import http from 'node:http';
-import { createHash, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
+import { createHash, createPrivateKey, createPublicKey, generateKeyPairSync, randomBytes, sign } from 'node:crypto';
+import fs from 'node:fs';
+import path from 'node:path';
+import os from 'node:os';
 
 const port = Number(process.argv[2] || process.env.PORT || 4030);
 const issuer = `http://localhost:${port}`;
@@ -20,7 +23,14 @@ const PEOPLE = {
   priya: { sub: 'dev-priya', email: 'priya@democorp.com', name: 'Priya Shah', groups: ['HR', 'Payroll'] },
   max: { sub: 'dev-max', email: 'max@democorp.com', name: 'Max Weber', groups: ['Sales'] },
 };
-const { privateKey, publicKey } = generateKeyPairSync('rsa', { modulusLength: 2048 });
+// Keep the signing key across restarts, like a real provider: a gateway that cached it keeps working.
+const KEY_FILE = path.join(os.tmpdir(), 'probaline-dev-idp-key.pem');
+let privateKey;
+try { privateKey = createPrivateKey(fs.readFileSync(KEY_FILE)); } catch {
+  privateKey = generateKeyPairSync('rsa', { modulusLength: 2048 }).privateKey;
+  fs.writeFileSync(KEY_FILE, privateKey.export({ format: 'pem', type: 'pkcs8' }), { mode: 0o600 });
+}
+const publicKey = createPublicKey(privateKey);
 // A new key each start gets a new key ID, as real providers do, so clients fetch it instead of reusing a cached one.
 const KID = createHash('sha256').update(publicKey.export({ format: 'jwk' }).n).digest('base64url').slice(0, 16);
 const jwk = { ...publicKey.export({ format: 'jwk' }), kid: KID, use: 'sig', alg: 'RS256' };

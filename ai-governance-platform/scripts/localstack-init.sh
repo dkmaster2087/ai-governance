@@ -188,6 +188,17 @@ aws --endpoint-url=$ENDPOINT dynamodb create-table \
     AttributeName=recordKey,KeyType=RANGE \
   --billing-mode PAY_PER_REQUEST || true
 
+aws --endpoint-url=$ENDPOINT dynamodb create-table \
+  --region $REGION \
+  --table-name $PREFIX-users-$STAGE \
+  --attribute-definitions \
+    AttributeName=tenantId,AttributeType=S \
+    AttributeName=email,AttributeType=S \
+  --key-schema \
+    AttributeName=tenantId,KeyType=HASH \
+    AttributeName=email,KeyType=RANGE \
+  --billing-mode PAY_PER_REQUEST || true
+
 aws --endpoint-url=$ENDPOINT s3 mb s3://$PREFIX-audit-logs-$STAGE-$ACCOUNT --region $REGION || true
 aws --endpoint-url=$ENDPOINT s3 mb s3://$PREFIX-athena-results-$STAGE-$ACCOUNT --region $REGION || true
 

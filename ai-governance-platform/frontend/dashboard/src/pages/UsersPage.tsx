@@ -1,4 +1,7 @@
 import { useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { changeUser, CompanyUser, inviteUser, listUsers, removeUser, resendInvite } from '../lib/users-api';
+import { errorMessage } from '../lib/rules-api';
 import { useAuth, getTenantUsers, registerTenantAccount, deleteUserAccount, usersManagedExternally, UserRole, AuthUser } from '../lib/auth';
 import { Button, Note, Panel, SectionLabel } from '../components/kit/primitives';
 
@@ -10,19 +13,6 @@ const ROLES: Array<{ role: UserRole; label: string; can: string }> = [
   { role: 'tenant_user', label: 'User', can: 'Uses AI through approved apps. No dashboard.' },
 ];
 const roleLabel = (r: string) => ROLES.find((x) => x.role === r)?.label ?? r;
-
-function CopyBlock({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  return (
-    <div className="relative">
-      <pre className="m-0 bg-canvas border border-line-subtle rounded-lg px-4 py-3 pr-20 font-mono text-[12.5px] leading-relaxed whitespace-pre-wrap [overflow-wrap:anywhere]">{text}</pre>
-      <button type="button" className="absolute top-2 right-2 min-h-[32px] px-3 rounded-lg border border-line-strong bg-white text-sm"
-        onClick={async () => { try { await navigator.clipboard.writeText(text); setCopied(true); setTimeout(() => setCopied(false), 1500); } catch { /* unavailable */ } }}>
-        {copied ? 'Copied' : 'Copy'}
-      </button>
-    </div>
-  );
-}
 
 function RoleGuide() {
   return (
@@ -40,27 +30,95 @@ function RoleGuide() {
   );
 }
 
-/** Production: people are added in Cognito with two attributes. */
-function ManagedInCognito({ tenantId, tenantName }: { tenantId: string; tenantName: string }) {
-  const pool = import.meta.env.VITE_COGNITO_USER_POOL_ID || '<user-pool-id>';
-  const command = [
-    `aws cognito-idp admin-create-user \\`,
-    `  --user-pool-id ${pool} \\`,
-    `  --username jane@company.com \\`,
-    `  --user-attributes Name=email,Value=jane@company.com Name=email_verified,Value=true \\`,
-    `    Name=custom:tenantId,Value=${tenantId} Name=custom:role,Value=tenant_auditor`,
-  ].join('\n');
+const COMPANY_ROLES = ROLES.map((r) => r.role);
+const STATUS_LABEL: Record<CompanyUser['status'], string> = { invited: 'Invited', active: 'Active', disabled: 'Turned off' };
+
+function PersonRow({ u, me }: { u: CompanyUser; me?: string }) {
+  const qc = useQueryClient();
+  const [confirming, setConfirming] = useState(false);
+  const refresh = () => qc.invalidateQueries({ queryKey: ['company-users'] });
+  const change = useMutation({ mutationFn: (c: { role?: UserRole; enabled?: boolean }) => changeUser(u.email, c), onSuccess: refresh });
+  const remove = useMutation({ mutationFn: () => removeUser(u.email), onSuccess: refresh });
+  const resend = useMutation({ mutationFn: () => resendInvite(u.email) });
+  const isMe = u.email === me?.toLowerCase();
+  const error = change.error ?? remove.error ?? resend.error;
   return (
-    <div className="flex flex-col gap-6 max-w-[900px]">
-      <div>
-        <p className="m-0 text-[30px] leading-[1.15] font-bold tracking-[-0.02em]">People sign in through Amazon Cognito.</p>
-        <p className="m-0 mt-1.5 text-ink-muted text-[15px]">Add them there with two attributes: which company ({tenantName || tenantId}) and which role. They get an email with a temporary password.</p>
+    <li className="flex flex-wrap items-center gap-x-6 gap-y-2 px-6 py-4 border-b border-line-subtle last:border-b-0">
+      <div className="min-w-0 flex-1">
+        <div className="font-semibold">{u.givenName} {u.familyName}{isMe && <span className="ml-2 text-xs font-semibold px-2 py-0.5 rounded-full bg-ink-tint text-ink">You</span>}</div>
+        <div className="text-sm text-ink-muted">{u.email} · <span className={u.status === 'disabled' ? 'text-stop-text font-semibold' : ''}>{STATUS_LABEL[u.status]}</span>
+          {u.lastSignInAt ? ` · last signed in ${new Date(u.lastSignInAt).toLocaleDateString()}` : ''}</div>
       </div>
-      <Panel className="px-6 py-5 flex flex-col gap-3">
-        <SectionLabel>Add someone</SectionLabel>
-        <CopyBlock text={command} />
-        <p className="m-0 text-sm text-ink-muted">Change the email and role. To remove someone, disable or delete them in Cognito; their sign-in stops working at once.</p>
-      </Panel>
+      {isMe ? <span className="text-sm font-semibold w-32">{roleLabel(u.role)}</span> : (
+        <select aria-label={`Role for ${u.email}`} className="min-h-[38px] px-2 border border-line-strong rounded-lg bg-white w-32" value={u.role}
+          disabled={change.isPending} onChange={(e) => change.mutate({ role: e.target.value as UserRole })}>
+          {COMPANY_ROLES.map((r) => <option key={r} value={r}>{roleLabel(r)}</option>)}
+        </select>
+      )}
+      {!isMe && (
+        <div className="flex gap-2 flex-wrap justify-end">
+          {u.status === 'invited' && <Button variant="ghost" disabled={resend.isPending} onClick={() => resend.mutate()}>{resend.isSuccess ? 'Sent' : 'Resend invitation'}</Button>}
+          <Button variant="ghost" disabled={change.isPending} onClick={() => change.mutate({ enabled: u.status === 'disabled' })}>{u.status === 'disabled' ? 'Turn on' : 'Turn off'}</Button>
+          {confirming ? (
+            <>
+              <Button variant="secondary" disabled={remove.isPending} onClick={() => remove.mutate()}>Remove</Button>
+              <Button variant="ghost" onClick={() => setConfirming(false)}>Keep</Button>
+            </>
+          ) : <Button variant="ghost" aria-label={`Remove ${u.email}`} onClick={() => setConfirming(true)}>Remove</Button>}
+        </div>
+      )}
+      {error && <p role="alert" className="basis-full m-0 text-stop-text font-semibold">{errorMessage(error)}</p>}
+    </li>
+  );
+}
+
+/** A deployed dashboard: people are invited by email and sign in with Amazon Cognito. */
+function CompanyUsers({ tenantName, me }: { tenantName: string; me?: string }) {
+  const qc = useQueryClient();
+  const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['company-users'], queryFn: listUsers });
+  const [adding, setAdding] = useState(false);
+  const [form, setForm] = useState({ givenName: '', familyName: '', email: '', role: 'tenant_auditor' as UserRole });
+  const invite = useMutation({
+    mutationFn: () => inviteUser({ ...form, email: form.email.trim(), givenName: form.givenName.trim(), familyName: form.familyName.trim() }),
+    onSuccess: () => { setForm({ givenName: '', familyName: '', email: '', role: 'tenant_auditor' }); setAdding(false); qc.invalidateQueries({ queryKey: ['company-users'] }); },
+  });
+  const ready = form.givenName.trim() && form.familyName.trim() && form.email.trim() && !invite.isPending;
+  const people = data?.users ?? [];
+  return (
+    <div className="flex flex-col gap-6 max-w-[1000px]">
+      <div className="flex flex-wrap justify-between items-end gap-4">
+        <div>
+          <p className="m-0 text-[30px] leading-[1.15] font-bold tracking-[-0.02em]">{data ? `${people.length} ${people.length === 1 ? 'person' : 'people'} can sign in to ${tenantName}.` : 'People'}</p>
+          <p className="m-0 mt-1.5 text-ink-muted text-[15px]">People you add get an email invitation with a temporary password, and choose their own the first time they sign in.</p>
+        </div>
+        {!adding && <Button onClick={() => setAdding(true)}>Invite someone</Button>}
+      </div>
+      {adding && (
+        <Panel aria-label="Invite someone" className="px-6 py-5">
+          <SectionLabel className="mb-3">Invite someone</SectionLabel>
+          <form className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }} onSubmit={(e) => { e.preventDefault(); if (ready) invite.mutate(); }}>
+            <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">First name</span>
+              <input className={field} value={form.givenName} onChange={(e) => setForm({ ...form, givenName: e.target.value })} /></label>
+            <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Last name</span>
+              <input className={field} value={form.familyName} onChange={(e) => setForm({ ...form, familyName: e.target.value })} /></label>
+            <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Email</span>
+              <input className={field} type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} placeholder="jane@company.com" /></label>
+            <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Role</span>
+              <select className={field} value={form.role} onChange={(e) => setForm({ ...form, role: e.target.value as UserRole })}>
+                {ROLES.map((r) => <option key={r.role} value={r.role}>{r.label}</option>)}
+              </select></label>
+            {invite.isError && <p role="alert" className="m-0 col-span-full text-stop-text font-semibold">{errorMessage(invite.error)}</p>}
+            <div className="flex gap-2 col-span-full">
+              <Button type="submit" disabled={!ready}>{invite.isPending ? 'Sending…' : 'Send invitation'}</Button>
+              <Button type="button" variant="secondary" onClick={() => setAdding(false)}>Cancel</Button>
+            </div>
+          </form>
+        </Panel>
+      )}
+      {isError && <Panel className="px-6"><Note title="Couldn’t load people."><button type="button" className="underline font-semibold" onClick={() => refetch()}>Try again</button></Note></Panel>}
+      {isLoading && <Panel className="px-6 py-5"><p className="m-0 text-ink-muted">Loading…</p></Panel>}
+      {data && people.length === 0 && <Panel className="px-6"><Note title="No one yet." /></Panel>}
+      {people.length > 0 && <Panel><ul className="m-0 p-0 list-none">{people.map((u) => <PersonRow key={u.email} u={u} me={me} />)}</ul></Panel>}
       <RoleGuide />
     </div>
   );
@@ -158,6 +216,6 @@ export function UsersPage() {
   const tenantId = user?.tenantId || '';
   const tenantName = user?.tenantName || '';
   return usersManagedExternally
-    ? <ManagedInCognito tenantId={tenantId} tenantName={tenantName} />
+    ? <CompanyUsers tenantName={tenantName} me={user?.email} />
     : <DemoAccounts tenantId={tenantId} tenantName={tenantName} me={user?.email} />;
 }

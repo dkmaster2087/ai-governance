@@ -4,7 +4,8 @@ import { NetworkStack } from '../lib/stacks/network-stack';
 import { StorageStack } from '../lib/stacks/storage-stack';
 import { AuthStack } from '../lib/stacks/auth-stack';
 import { ServicesStack } from '../lib/stacks/services-stack';
-import { ApiStack } from '../lib/stacks/api-stack';
+import { RegistryStack } from '../lib/stacks/registry-stack';
+import { FrontendStack } from '../lib/stacks/frontend-stack';
 import { ObservabilityStack } from '../lib/stacks/observability-stack';
 
 const app = new cdk.App();
@@ -46,12 +47,16 @@ const observabilityStack = new ObservabilityStack(app, `${prefix}-observability-
   auditLogBucket: storageStack.auditLogBucket,
 });
 
+// 0. Image repositories (deployed first, before images are pushed)
+const registryStack = new RegistryStack(app, `${prefix}-registry-${stage}`, { env, prefix, stage });
+
 // 5. ECS Services
 const servicesStack = new ServicesStack(app, `${prefix}-services-${stage}`, {
   env,
   prefix,
   stage,
   vpc: networkStack.vpc,
+  repositories: registryStack.repositories,
   policiesTable: storageStack.policiesTable,
   metricsTable: storageStack.metricsTable,
   auditLogBucket: storageStack.auditLogBucket,
@@ -69,16 +74,12 @@ const servicesStack = new ServicesStack(app, `${prefix}-services-${stage}`, {
   modelsTable: storageStack.modelsTable,
   complianceTable: storageStack.complianceTable,
   tenantsTable: storageStack.tenantsTable,
+  usersTable: storageStack.usersTable,
 });
 
-// 6. API Gateway
-const apiStack = new ApiStack(app, `${prefix}-api-${stage}`, {
-  env,
-  prefix,
-  stage,
-  gatewayService: servicesStack.gatewayService,
-  userPool: authStack.userPool,
-});
+
+// 6. Website, dashboard and docs (CloudFront); /api/* goes to the gateway
+const frontendStack = new FrontendStack(app, `${prefix}-frontend-${stage}`, { env, prefix, stage, loadBalancer: servicesStack.loadBalancer });
 
 // Explicit dependency ordering
 storageStack.addDependency(networkStack);
@@ -86,7 +87,8 @@ authStack.addDependency(networkStack);
 observabilityStack.addDependency(storageStack);
 servicesStack.addDependency(storageStack);
 servicesStack.addDependency(authStack);
-apiStack.addDependency(servicesStack);
+servicesStack.addDependency(registryStack);
+frontendStack.addDependency(servicesStack);
 
 cdk.Tags.of(app).add('Project', 'ai-governance-platform');
 cdk.Tags.of(app).add('Stage', stage);
