@@ -51,6 +51,10 @@ export const SPECS = {
   mcpOauth: (): CollectionSpec => ({ name: 'mcp_oauth', table: env('MCP_OAUTH_TABLE', 'ai-gov-mcp-oauth-dev'), partitionKey: 'tenantId', sortKey: 'recordKey', ttlField: 'ttl' }),
   /** Connectors in companies' networks, and the calls waiting for them. */
   mcpConnectors: (): CollectionSpec => ({ name: 'mcp_connectors', table: env('MCP_CONNECTORS_TABLE', 'ai-gov-mcp-connectors-dev'), partitionKey: 'tenantId', sortKey: 'recordKey', ttlField: 'ttl' }),
+  /** Admin activity and sign-ins, keyed `<ISO time>#<id>` so a tenant's history is one ordered query. */
+  activity: (): CollectionSpec => ({ name: 'activity', table: env('ACTIVITY_TABLE', 'ai-gov-activity-dev'), partitionKey: 'tenantId', sortKey: 'eventKey', ttlField: 'ttl' }),
+  /** Log export: destinations (`dest#<id>`) and batches that could not be delivered (`dead#<time>#<id>`). */
+  logExport: (): CollectionSpec => ({ name: 'log_export', table: env('LOG_EXPORT_TABLE', 'ai-gov-log-export-dev'), partitionKey: 'tenantId', sortKey: 'recordKey', ttlField: 'ttl' }),
 };
 
 export type CollectionName = keyof typeof SPECS;

@@ -35,6 +35,8 @@ interface ServicesStackProps extends cdk.StackProps {
     servers: dynamodb.Table; apis: dynamodb.Table; tools: dynamodb.Table;
     versions: dynamodb.Table; approvals: dynamodb.Table; oauth: dynamodb.Table; connectors: dynamodb.Table;
   };
+  /** Admin activity and log export (gateway only). */
+  logTables?: { activity: dynamodb.Table; logExport: dynamodb.Table };
   auditLogsTable: dynamodb.Table;
   modelsTable: dynamodb.Table;
   complianceTable: dynamodb.Table;
@@ -210,6 +212,7 @@ export class ServicesStack extends cdk.Stack {
           MCP_OAUTH_TABLE: props.mcpTables.oauth.tableName,
           MCP_CONNECTORS_TABLE: props.mcpTables.connectors.tableName,
         } : {}),
+        ...(props.logTables ? { ACTIVITY_TABLE: props.logTables.activity.tableName, LOG_EXPORT_TABLE: props.logTables.logExport.tableName } : {}),
         AUDIT_LOGS_TABLE: auditLogsTable.tableName,
         POLICY_ENGINE_URL: internalUrl('policy-engine', 3001),
         DATA_PROTECTION_URL: internalUrl('data-protection', 3002),
@@ -263,6 +266,7 @@ export class ServicesStack extends cdk.Stack {
     alertsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     shadowAiTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     for (const t of Object.values(props.mcpTables ?? {})) t.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
+    for (const t of Object.values(props.logTables ?? {})) t.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     auditLogsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({

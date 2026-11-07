@@ -27,6 +27,10 @@ export class StorageStack extends cdk.Stack {
   public readonly mcpApprovalsTable: dynamodb.Table;
   public readonly mcpOauthTable: dynamodb.Table;
   public readonly mcpConnectorsTable: dynamodb.Table;
+  /** Admin activity and sign-ins (kept 400 days). */
+  public readonly activityTable: dynamodb.Table;
+  /** Log-export destinations, cursors and dead letters. */
+  public readonly logExportTable: dynamodb.Table;
   public readonly auditLogsTable: dynamodb.Table;
   public readonly auditLogBucket: s3.Bucket;
   /** The platform's own key: tables, the audit archive, and stored provider keys and API credentials. */
@@ -179,6 +183,11 @@ export class StorageStack extends cdk.Stack {
     this.mcpApprovalsTable = mcpTable('McpApprovalsTable', 'mcp-approvals', 'approvalId', true);
     this.mcpOauthTable = mcpTable('McpOauthTable', 'mcp-oauth', 'recordKey', true);
     this.mcpConnectorsTable = mcpTable('McpConnectorsTable', 'mcp-connectors', 'recordKey', true);
+
+    // Admin activity is evidence, so it can be restored in every stage, like audit records.
+    this.activityTable = mcpTable('ActivityTable', 'activity', 'eventKey', true);
+    (this.activityTable.node.defaultChild as dynamodb.CfnTable).pointInTimeRecoverySpecification = { pointInTimeRecoveryEnabled: true };
+    this.logExportTable = mcpTable('LogExportTable', 'log-export', 'recordKey', true);
 
     // Audit logs table (tenantId + requestId) with TTL for retention
     this.auditLogsTable = new dynamodb.Table(this, 'AuditLogsTable', {

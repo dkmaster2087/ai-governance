@@ -16,6 +16,7 @@ import { consentPage, messagePage } from '../mcp/pages';
 import { mcpStore } from '../mcp/store';
 import { withDefaults } from '../mcp/types';
 import { liveConfig } from '../mcp/versions';
+import { signIns } from '../activity/sign-ins';
 
 /**
  * OAuth 2.1 for MCP clients (Claude, ChatGPT, Cursor, VS Code…), so people can connect agents as themselves.
@@ -249,7 +250,10 @@ export async function mcpOauthRoutes(app: FastifyInstance, opts: { oidc?: OidcCl
     const [tenantId, rid] = (q.state ?? '').split('.');
     const req = tenantId && rid ? await records().get({ tenantId, recordKey: `req#${rid}` }) : null;
     if (!req || req.person) return html(reply, 400, messagePage('This sign-in has expired', 'Start connecting the agent again.'));
-    if (q.error) return html(reply, 400, messagePage('Sign-in didn’t finish', String(q.error_description ?? q.error).slice(0, 200)));
+    if (q.error) {
+      signIns().mcp(request, tenantId, 'sign_in.mcp', 'failure', undefined, { reason: String(q.error).slice(0, 80), client: String(req.clientName ?? '').slice(0, 80) });
+      return html(reply, 400, messagePage('Sign-in didn’t finish', String(q.error_description ?? q.error).slice(0, 200)));
+    }
     const cfg = await signIn(tenantId);
     if (!cfg || !q.code) return html(reply, 400, messagePage('Sign-in didn’t finish', 'Start connecting the agent again.'));
     const base = publicBase(request);
@@ -263,6 +267,7 @@ export async function mcpOauthRoutes(app: FastifyInstance, opts: { oidc?: OidcCl
       idpRefresh = tokens.refreshToken;
     } catch (err) {
       logger.warn('Sign-in failed', { tenantId, error: (err as Error).message });
+      signIns().mcp(request, tenantId, 'sign_in.mcp', 'failure', undefined, { reason: (err as Error).message.slice(0, 160), client: String(req.clientName ?? '').slice(0, 80) });
       return html(reply, 401, messagePage('Sign-in didn’t work', err instanceof OidcError ? err.message : 'Your company’s sign-in couldn’t be checked.'));
     }
 
@@ -272,8 +277,12 @@ export async function mcpOauthRoutes(app: FastifyInstance, opts: { oidc?: OidcCl
       const server = await mcpStore.getServer(tenantId, serverId);
       const caller: Caller = { kind: 'person', id: `person:${person.sub}`, userId: person.email ?? person.sub, appId: req.clientName, email: person.email, groups: person.groups };
       const refusal = !server ? 'This MCP server no longer exists.' : connectRefusal((await liveConfig(withDefaults(server))).config, caller);
-      if (refusal) return html(reply, 403, messagePage('No access', refusal));
+      if (refusal) {
+        signIns().mcp(request, tenantId, 'sign_in.mcp', 'denied', person, { reason: 'no_access', serverId, client: String(req.clientName ?? '').slice(0, 80) });
+        return html(reply, 403, messagePage('No access', refusal));
+      }
     }
+    signIns().mcp(request, tenantId, 'sign_in.mcp', 'success', person, { client: String(req.clientName ?? '').slice(0, 80), ...(serverId ? { serverId } : {}) });
 
     const token = random(24);
     await records().update({ tenantId, recordKey: `req#${rid}` }, {
@@ -299,6 +308,7 @@ export async function mcpOauthRoutes(app: FastifyInstance, opts: { oidc?: OidcCl
     if (body.decision !== 'allow') {
       back.searchParams.set('error', 'access_denied');
       back.searchParams.set('error_description', 'The person didn’t allow the agent');
+      signIns().mcp(request, tenantId, 'sign_in.mcp_agent_refused', 'denied', req.person, { client: String(req.clientName ?? '').slice(0, 80) });
       return reply.redirect(back.href, 303);
     }
     const code = random(32);
@@ -306,7 +316,8 @@ export async function mcpOauthRoutes(app: FastifyInstance, opts: { oidc?: OidcCl
       tenantId, recordKey: `code#${sha(code)}`, status: 'new', clientId: req.clientId, clientName: req.clientName, redirectUri: req.redirectUri,
       codeChallenge: req.codeChallenge, resource: req.resource, person: req.person, ...(req.idpRefresh ? { idpRefresh: req.idpRefresh } : {}), ttl: now() + CODE_SECONDS,
     });
-    logger.info('Agent allowed', { tenantId, clientId: req.clientId, person: req.person.email ?? req.person.sub, resource: req.resource });
+    logger.info('Agent allowed', { tenantId, clientId: req.clientId, resource: req.resource });
+    signIns().mcp(request, tenantId, 'sign_in.mcp_agent_allowed', 'success', req.person, { client: String(req.clientName ?? '').slice(0, 80), resource: String(req.resource).slice(0, 200) });
     back.searchParams.set('code', code);
     return reply.redirect(back.href, 303);
   });
@@ -360,7 +371,8 @@ export async function mcpOauthRoutes(app: FastifyInstance, opts: { oidc?: OidcCl
       if (!used) {
         // A refresh token used twice: someone else may have it. End the whole sign-in.
         await records().put({ ...familyKey, status: 'revoked', ttl: old.sessionEndsAt });
-        logger.warn('Refresh token reused; sign-in ended', { tenantId, clientId: old.clientId, person: old.person?.email });
+        logger.warn('Refresh token reused; sign-in ended', { tenantId, clientId: old.clientId });
+        signIns().mcp(request, tenantId, 'sign_in.mcp_refresh_reused', 'denied', old.person, { client: String(old.clientName ?? '').slice(0, 80) });
         return oauthError(reply, 'invalid_grant', 'This refresh token was already used; sign in again');
       }
       if (old.sessionEndsAt <= now()) return oauthError(reply, 'invalid_grant', 'The sign-in has expired; sign in again');
@@ -376,7 +388,8 @@ export async function mcpOauthRoutes(app: FastifyInstance, opts: { oidc?: OidcCl
           person = fresh;
           if (tokens.refreshToken) idpRefresh = await keys().encrypt(tokens.refreshToken);
         } catch (err) {
-          logger.info('Identity provider refused a refresh', { tenantId, person: person.email, error: (err as Error).message });
+          logger.info('Identity provider refused a refresh', { tenantId, error: (err as Error).message });
+          signIns().mcp(request, tenantId, 'sign_in.mcp_refresh', 'denied', person, { reason: (err as Error).message.slice(0, 160) });
           return oauthError(reply, 'invalid_grant', 'Your company’s sign-in no longer accepts this session; sign in again');
         }
       }
@@ -390,7 +403,10 @@ export async function mcpOauthRoutes(app: FastifyInstance, opts: { oidc?: OidcCl
     const b = (request.body ?? {}) as Record<string, string>;
     if (b.token) {
       const old = await records().get({ tenantId, recordKey: `refresh#${sha(b.token)}` });
-      if (old) await records().put({ tenantId, recordKey: `family#${old.family}`, status: 'revoked', ttl: old.sessionEndsAt });
+      if (old) {
+        await records().put({ tenantId, recordKey: `family#${old.family}`, status: 'revoked', ttl: old.sessionEndsAt });
+        signIns().mcp(request, tenantId, 'sign_in.mcp_signed_out', 'success', old.person, { client: String(old.clientName ?? '').slice(0, 80) });
+      }
     }
     return reply.status(200).send({});
   });

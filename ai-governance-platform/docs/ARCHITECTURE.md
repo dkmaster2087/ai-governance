@@ -96,6 +96,8 @@ tenants via `X-Tenant-Id`; everyone else is limited to their own.
 | `GET /v1/evidence…` | Evidence page and exports (built by analytics) |
 | `GET /v1/cost/…` | Spend (built by analytics) |
 | `GET/POST /v1/api-keys…` | API keys page |
+| `GET /v1/activity` | Activity page (admin changes and sign-ins, newest first) |
+| `GET/POST/PATCH/DELETE /v1/log-export…` | Log export page: destinations, test, new signing secret, undelivered batches |
 | `GET /v1/platform/usage`, `/v1/tenants…`, `/health/deep` | Platform-admin pages (platform admins only, except health) |
 
 ## Reports (analytics service)
@@ -136,6 +138,50 @@ S3-compatible store) or a directory, chosen by `OBJECT_STORE`. Design and limits
 | Audit records (expire) | `audit-logs` / `audit_logs`, + archive file | `tenantId-timestamp-index` |
 | Shadow-AI events (30-day expiry) | `shadow-ai` / `shadow_ai` | by tenant, newest first |
 | Metrics (expire) | `metrics` | by tenant and period prefix |
+| Admin activity and sign-ins (400-day expiry), + archive file | `activity` | by tenant, sorted by `<time>#<id>` |
+| Log destinations (secrets in Secrets Manager) and undelivered batches (30-day expiry) | `log-export` / `log_export` | by tenant; `dest#…` and `dead#…` |
+
+## Logs
+
+| Kind | Where | Kept | Who sees it |
+|---|---|---|---|
+| Service logs (JSON lines from `createLogger`) | stdout → CloudWatch log group `/ecs/<prefix>-<service>-<stage>` | 1 month | the operator |
+| Decisions | `audit_logs` + one file per record in the audit bucket | the tenant's retention setting* | tenant: Evidence, log export |
+| Admin activity and sign-ins | `activity` + one file per record in the audit bucket (`activity/<tenant>/<date>/`) | 400 days (`ACTIVITY_RETENTION_DAYS`) | tenant: Activity, log export |
+| Dashboard password checks | Cognito → CloudTrail | per the account's trail | the operator |
+
+\* Not yet enforced on stored records; see Known gaps.
+
+**Admin activity** is recorded by one gateway hook (`src/activity/admin-activity.ts`) on every POST, PUT,
+PATCH or DELETE by a signed-in user, mapped from the route to an action name (`rule.created`,
+`api_key.revoked`…; routes not in the map are recorded as `<area>.changed`). It stores route IDs and the
+created record's ID, never bodies. Successful changes, refusals (401/403) and server errors are recorded; a
+rejected form (400/404/409) changed nothing and isn't. A platform admin's change to a tenant is recorded on
+that tenant. **Sign-ins** are recorded by the auth middleware (a dashboard session once per Cognito
+`auth_time`; refused revoked, expired or wrong-tenant keys, at most once a minute per key) and by the MCP
+sign-in routes. Unknown API keys can't be tied to a tenant, so they are only a service log line.
+
+**Log export** (`src/log-export/`): a sender in each gateway wakes every 10 seconds, takes a lease on each
+destination, reads decisions (`tenantId-timestamp-index`) and activity newer than the destination's cursor and
+at least 30 seconds old, sends a batch, and moves the cursor. Nothing extra is written on the request path.
+Delivery is at least once (records carry stable IDs to de-duplicate). Failures are retried at 30 s, 1, 2 and
+4 minutes, then the batch becomes a dead letter and the cursor moves on. Outbound calls use the same guard as
+MCP backends (https only, no private or metadata addresses, no redirects, 10-second timeout).
+`LOG_EXPORT_WORKER=off` stops a gateway from sending.
+
+### Sending service logs to a SIEM (operator, self-hosted)
+
+The tenant log export covers the records a company owns. For the services' own logs in a self-hosted or
+in-account deployment, use AWS directly:
+
+- **CloudWatch subscription filter → Amazon Data Firehose** on each `/ecs/<prefix>-<service>-<stage>` log
+  group. Firehose delivers to Splunk (HEC), Datadog, Elastic, Sumo Logic, New Relic, an HTTP endpoint or S3.
+  One filter per log group (pattern `""` for everything, or `{ $.level = "error" }`).
+- **Microsoft Sentinel:** its AWS S3 connector reads CloudTrail and logs that Firehose writes to S3.
+- **Cognito sign-ins** (including failed passwords) are CloudTrail events from `cognito-idp.amazonaws.com`;
+  send the trail the same way.
+- **Off AWS:** run the services under any log driver; their stdout is one JSON object per line, ready for an
+  OpenTelemetry Collector (`filelog` receiver) or Fluent Bit.
 
 ## Websites
 
@@ -155,7 +201,9 @@ S3-compatible store) or a directory, chosen by `OBJECT_STORE`. Design and limits
   back, what the model received and what the case file says. Covers clean prompts, personal-data removal in
   prompts and replies, blocked-word, approved-model and personal-data rules, rule changes taking effect,
   tenant separation, missing/fake/revoked keys, suspended tenants, proxy mode, and fail closed/open with the
-  checks down. Start the local stack (`scripts/dev-local.sh start`), then `npm run test:e2e`. Not in CI yet
+  checks down. Also [tests/e2e/log-export.test.mjs](../tests/e2e/log-export.test.mjs): admin changes and a
+  revoked key show on Activity, and a local collector receives signed webhook batches, Splunk HEC events and
+  OTLP logs; a failing destination is retried, set aside, and sent again. Start the local stack (`scripts/dev-local.sh start`), then `npm run test:e2e`. Not in CI yet
   (needs LocalStack there). Locally, personal data is found by patterns only; Amazon Comprehend runs only in AWS.
 
 ## Deployment modes
@@ -281,3 +329,7 @@ hardware is in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md) (E5, E6).
   under Secrets Manager's default key until they're saved again.
 - The web firewall's per-address limit sees CloudFront's addresses for dashboard traffic, so it's set high
   (3000 per 5 minutes); per-key limits are what bound each app.
+- Logs: service log lines don't carry the request ID automatically, and there is no access log line per
+  request. Some MCP log lines carry people's emails.
+- Log export (beta): formats follow each vendor's published intake but haven't been tried against the real
+  products.

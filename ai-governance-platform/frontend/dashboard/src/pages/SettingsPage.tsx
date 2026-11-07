@@ -91,6 +91,14 @@ export function SettingsPage() {
       </Panel>
 
       <Panel className="px-7 py-5">
+        <SectionLabel className="mb-1">Logs and audit trail</SectionLabel>
+        <p className="m-0 py-2 text-ink-muted">
+          See every change and sign-in on <Link to="/activity" className="font-semibold text-ink">Activity</Link>.
+          Send decisions, admin activity and sign-ins to Splunk, Datadog, Elastic or any OpenTelemetry or HTTPS collector from <Link to="/log-export" className="font-semibold text-ink">Log export</Link> (Beta).
+        </p>
+      </Panel>
+
+      <Panel className="px-7 py-5">
         <SectionLabel className="mb-1">Browser extension</SectionLabel>
         <p className="m-0 py-2 text-ink-muted">Push these through Chrome policy (Google Admin, Intune or Jamf), with an API key that has only the browser extension permission from <Link to="/keys" className="font-semibold text-ink">API keys</Link>.</p>
         <CopyRow label="tenantId" value={tenantId} />

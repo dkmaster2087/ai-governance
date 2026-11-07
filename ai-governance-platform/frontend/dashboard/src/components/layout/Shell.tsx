@@ -33,6 +33,8 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
       { label: 'Spend', href: '/cost' },
       { label: 'Compliance', href: '/compliance' },
       { label: 'Users', href: '/users' },
+      { label: 'Activity', href: '/activity' },
+      { label: 'Log export', href: '/log-export' },
       { label: 'License', href: '/license' },
       { label: 'Settings', href: '/settings' },
     ],
@@ -44,7 +46,7 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
       { label: 'Evidence', href: '/evidence' },
       { label: 'Approvals', href: '/mcp/approvals' },
     ],
-    more: [],
+    more: [{ label: 'Activity', href: '/activity' }],
   },
   platform_admin: {
     primary: [
@@ -59,7 +61,7 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
 };
 
 /** These pages render their own headline instead of the plain page title. */
-const REDESIGNED = new Set(['/gateway', '/stopped', '/shadow-ai', '/rules', '/evidence', '/keys', '/mcp']);
+const REDESIGNED = new Set(['/gateway', '/stopped', '/shadow-ai', '/rules', '/evidence', '/keys', '/mcp', '/activity', '/log-export']);
 
 /** The logo is also the way home. */
 function Logo({ to }: { to: string }) {

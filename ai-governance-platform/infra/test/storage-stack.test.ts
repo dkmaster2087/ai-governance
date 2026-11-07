@@ -15,8 +15,14 @@ describe('StorageStack', () => {
     template = Template.fromStack(stack);
   });
 
-  it('creates the 17 DynamoDB tables (10, plus 7 for MCP servers)', () => {
-    template.resourceCountIs('AWS::DynamoDB::Table', 17);
+  it('creates the 19 DynamoDB tables (10, 7 for MCP servers, activity and log export)', () => {
+    template.resourceCountIs('AWS::DynamoDB::Table', 19);
+  });
+
+  it('keeps admin activity restorable in every stage', () => {
+    template.hasResourceProperties('AWS::DynamoDB::Table', {
+      TableName: Match.stringLikeRegexp('-activity-'), PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }, TimeToLiveSpecification: { AttributeName: 'ttl', Enabled: true },
+    });
   });
 
   it('indexes audit records by tenant and time for the dashboard', () => {

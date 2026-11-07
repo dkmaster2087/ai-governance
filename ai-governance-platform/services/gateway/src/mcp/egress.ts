@@ -47,11 +47,11 @@ export function checkBaseUrl(raw: string): URL {
 }
 
 /** DNS lookup that refuses private addresses (unless allowed), used for every connection. */
-function guardedLookup(hostname: string, options: dns.LookupOptions, cb: (err: NodeJS.ErrnoException | null, address: string | dns.LookupAddress[], family?: number) => void) {
+function guardedLookup(hostname: string, options: dns.LookupOptions, cb: (err: NodeJS.ErrnoException | null, address: string | dns.LookupAddress[], family?: number) => void, privateOk = allowPrivate()) {
   dns.lookup(hostname, { ...options, all: true }, (err, addresses) => {
     if (err) return cb(err, '', 0);
     const list = addresses as dns.LookupAddress[];
-    if (!allowPrivate() && list.some((a) => isPrivateAddress(a.address))) {
+    if (!privateOk && list.some((a) => isPrivateAddress(a.address))) {
       return cb(Object.assign(new Error(`${hostname} resolves to a private address`), { code: 'EPRIVATE' }), '', 0);
     }
     if (options.all) return cb(null, list);
@@ -63,6 +63,8 @@ export interface BackendResponse { status: number; contentType: string; body: st
 
 export function callBackend(o: {
   url: URL; method: string; headers: Record<string, string>; body?: string; timeoutMs?: number; maxBytes: number; contentType?: string;
+  /** Override the MCP setting for private addresses (log export has its own switch). */
+  allowPrivate?: boolean;
 }): Promise<BackendResponse> {
   const started = Date.now();
   const lib = o.url.protocol === 'https:' ? https : http;
@@ -70,7 +72,7 @@ export function callBackend(o: {
     const req = lib.request(o.url, {
       method: o.method,
       headers: { ...o.headers, ...(o.body !== undefined ? { 'content-type': o.contentType ?? 'application/json', 'content-length': String(Buffer.byteLength(o.body)) } : {}) },
-      lookup: guardedLookup as any,
+      lookup: ((h: string, opts: dns.LookupOptions, cb: any) => guardedLookup(h, opts, cb, o.allowPrivate ?? allowPrivate())) as any,
       timeout: o.timeoutMs ?? 15_000,
     }, (res) => {
       const status = res.statusCode ?? 0;

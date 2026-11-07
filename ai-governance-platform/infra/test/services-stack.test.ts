@@ -23,6 +23,7 @@ describe('ServicesStack', () => {
       apiKeysTable: storage.apiKeysTable, alertsTable: storage.alertsTable, shadowAiTable: storage.shadowAiTable,
       auditLogsTable: storage.auditLogsTable, modelsTable: storage.modelsTable, complianceTable: storage.complianceTable,
       tenantsTable: storage.tenantsTable, usersTable: storage.usersTable,
+      logTables: { activity: storage.activityTable, logExport: storage.logExportTable },
     });
     template = Template.fromStack(stack);
   });
@@ -44,6 +45,13 @@ describe('ServicesStack', () => {
     // No key in plain environment variables.
     expect(JSON.stringify(defs)).not.toMatch(/"Name":"INTERNAL_(SIGNING|TRUSTED)_KEYS?","Value"/);
     template.hasResourceProperties('AWS::CloudFormation::CustomResource', { SigningSecret: Match.anyValue(), TrustedSecret: Match.anyValue() });
+  });
+
+  it('gives the gateway the activity and log-export tables', () => {
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([Match.objectLike({ Name: 'GatewayContainer', Environment: Match.arrayWith([
+        Match.objectLike({ Name: 'ACTIVITY_TABLE' }), Match.objectLike({ Name: 'LOG_EXPORT_TABLE' })]) })]),
+    });
   });
 
   it('has the gateway store provider keys and API credentials under the platform\'s own key', () => {
