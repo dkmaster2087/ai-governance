@@ -417,11 +417,16 @@ npx cdk deploy --all --context stage=prod \\
         <H2>Services</H2>
         <Table head={['Service', 'Reachable from', 'What it does']} rows={[
           ['Gateway', 'The internet (load balancer)', 'Sign-in, every AI request and its checks, MCP servers, admin settings'],
-          ['Policy engine', 'Inside the network only', 'Your rules and compliance packs'],
-          ['Data protection', 'Inside the network only', 'Finds and removes personal data'],
+          ['Policy engine', 'Inside the network only', 'Your rules and compliance packs. It answers only requests the gateway signs'],
+          ['Data protection', 'Inside the network only', 'Finds and removes personal data. It answers only requests the gateway signs'],
           ['Analytics', 'Inside the network only', 'Every report built from history: summaries, spend, evidence search, the platform view. It answers only requests the gateway signs, and never sits on the request path'],
         ]} />
-        <P>If analytics is down, AI traffic is unaffected: reports say they’re unavailable until it’s back. The key the gateway signs with, <C>INTERNAL_SERVICE_KEY</C>, is generated in Secrets Manager by the deployment; when self-hosting another way, give the gateway and analytics the same random value of at least 32 characters.</P>
+        <P>If analytics is down, AI traffic is unaffected: reports say they’re unavailable until it’s back. The key the gateway signs with, <C>INTERNAL_SERVICE_KEY</C>, is generated in Secrets Manager by the deployment; when self-hosting another way, give the gateway, policy engine, data protection and analytics the same random value of at least 32 characters. The internal services won’t start without it.</P>
+        <H2>Protection and alarms</H2>
+        <P>The deployment puts AWS WAF in front of the gateway: a per-address rate limit, AWS’s reputation list, and AWS’s rules for headers, paths and queries. Rules that inspect request bodies only count, because prompts are large and full of code; the gateway inspects bodies itself. Turn it off with <C>--context waf=false</C>. Each API key’s calls a minute are enforced across every gateway instance.</P>
+        <P>Alarms (gateway errors, policy violation spikes, slow requests, a dependency failing) are emailed to the address you give with <C>--context alarmEmail=…</C>.</P>
+        <H2>Evidence retention</H2>
+        <P>Each company’s evidence is deleted when its retention period ends: the searchable record expires on its own, and a daily job removes the archive copy. A company admin can place a <strong>legal hold</strong> from Settings, with a reason; while it’s on, nothing is deleted.</P>
         <H2>Database</H2>
         <P>Records are stored in DynamoDB by default, which is what the AWS deployment creates. PostgreSQL 12 or later works too: set <C>STORAGE_BACKEND=postgres</C> and <C>DATABASE_URL</C> on the gateway, policy engine and analytics. Tables are created on first start; no migration step. Files (audit archives) go to S3 or any S3-compatible store (<C>S3_ENDPOINT</C>), or to a directory with <C>OBJECT_STORE=file</C> and <C>OBJECT_STORE_DIR</C>.</P>
         <Table head={['Setting', 'Values']} rows={[

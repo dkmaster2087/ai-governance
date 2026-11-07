@@ -171,7 +171,8 @@ export async function buildApp(opts: { key: string }) {
     const tenantId = tenantOf(request);
     const item = await collection<AuditLog & Record<string, unknown>>('auditLogs').get({ tenantId, requestId });
     if (!item) return bad(reply, 'NOT_FOUND', 'No record for that request', 404);
-    return buildEvidenceRecord(item, (await tenantView(tenantId)).retentionDays);
+    const view = await tenantView(tenantId);
+    return buildEvidenceRecord(item, view.retentionDays, view.legalHold);
   });
 
   // ── Shadow AI, rules, MCP ───────────────────────────────────────────────────────────────────

@@ -72,6 +72,7 @@ jobs:
           WEBSITE_DOMAIN: ${{ vars.WEBSITE_DOMAIN }}
           DASHBOARD_DOMAIN: ${{ vars.DASHBOARD_DOMAIN }}
           DOCS_DOMAIN: ${{ vars.DOCS_DOMAIN }}
+          ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
         run: |
           ctx=(--context "stage=${{ inputs.stage }}" --context "imageTag=${{ github.sha }}")
           [ -n "$GATEWAY_URL" ] && ctx+=(--context "gatewayUrl=$GATEWAY_URL")
@@ -80,6 +81,7 @@ jobs:
           [ -n "$WEBSITE_DOMAIN" ] && ctx+=(--context "websiteDomain=$WEBSITE_DOMAIN")
           [ -n "$DASHBOARD_DOMAIN" ] && ctx+=(--context "dashboardDomain=$DASHBOARD_DOMAIN")
           [ -n "$DOCS_DOMAIN" ] && ctx+=(--context "docsDomain=$DOCS_DOMAIN")
+          [ -n "$ALARM_EMAIL" ] && ctx+=(--context "alarmEmail=$ALARM_EMAIL")
           npx cdk deploy "$PREFIX-registry-${{ inputs.stage }}" --exclusively --require-approval never "${ctx[@]}"
 
   # ─── Build & push images, tagged with this commit ─────────────────────────
@@ -143,6 +145,7 @@ jobs:
           WEBSITE_DOMAIN: ${{ vars.WEBSITE_DOMAIN }}
           DASHBOARD_DOMAIN: ${{ vars.DASHBOARD_DOMAIN }}
           DOCS_DOMAIN: ${{ vars.DOCS_DOMAIN }}
+          ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
         run: |
           ctx=(--context "stage=${{ inputs.stage }}" --context "imageTag=${{ github.sha }}")
           [ -n "$GATEWAY_URL" ] && ctx+=(--context "gatewayUrl=$GATEWAY_URL")
@@ -151,6 +154,7 @@ jobs:
           [ -n "$WEBSITE_DOMAIN" ] && ctx+=(--context "websiteDomain=$WEBSITE_DOMAIN")
           [ -n "$DASHBOARD_DOMAIN" ] && ctx+=(--context "dashboardDomain=$DASHBOARD_DOMAIN")
           [ -n "$DOCS_DOMAIN" ] && ctx+=(--context "docsDomain=$DOCS_DOMAIN")
+          [ -n "$ALARM_EMAIL" ] && ctx+=(--context "alarmEmail=$ALARM_EMAIL")
           npx cdk deploy --all --require-approval never "${ctx[@]}"
       - name: Read the addresses and sign-in settings the stacks created
         id: out
@@ -240,6 +244,7 @@ jobs:
           WEBSITE_DOMAIN: ${{ vars.WEBSITE_DOMAIN }}
           DASHBOARD_DOMAIN: ${{ vars.DASHBOARD_DOMAIN }}
           DOCS_DOMAIN: ${{ vars.DOCS_DOMAIN }}
+          ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
         run: |
           ctx=(--context "stage=${{ inputs.stage }}" --context "imageTag=${{ github.sha }}")
           [ -n "$GATEWAY_URL" ] && ctx+=(--context "gatewayUrl=$GATEWAY_URL")
@@ -248,4 +253,5 @@ jobs:
           [ -n "$WEBSITE_DOMAIN" ] && ctx+=(--context "websiteDomain=$WEBSITE_DOMAIN")
           [ -n "$DASHBOARD_DOMAIN" ] && ctx+=(--context "dashboardDomain=$DASHBOARD_DOMAIN")
           [ -n "$DOCS_DOMAIN" ] && ctx+=(--context "docsDomain=$DOCS_DOMAIN")
+          [ -n "$ALARM_EMAIL" ] && ctx+=(--context "alarmEmail=$ALARM_EMAIL")
           npx cdk destroy --all --force "${ctx[@]}"

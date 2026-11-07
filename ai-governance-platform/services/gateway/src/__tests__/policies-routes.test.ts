@@ -55,7 +55,7 @@ describe('policy and compliance routes', () => {
 
   it('enables a pack for the caller, recording who did it', async () => {
     await (await appAs('tenant_admin')).inject({ method: 'POST', url: '/v1/compliance/enable/tenant_acme/hipaa' });
-    expect(engine.compliance).toHaveBeenCalledWith('post', '/enable/tenant_acme/hipaa', { enabledBy: 'u1' });
+    expect(engine.compliance).toHaveBeenCalledWith('tenant_acme', 'post', '/enable/tenant_acme/hipaa', { enabledBy: 'u1' });
   });
 
   it('rejects odd framework names', async () => {

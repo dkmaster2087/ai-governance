@@ -4,15 +4,25 @@ import * as s3 from 'aws-cdk-lib/aws-s3';
 import * as athena from 'aws-cdk-lib/aws-athena';
 import * as glue from 'aws-cdk-lib/aws-glue';
 import * as iam from 'aws-cdk-lib/aws-iam';
+import * as sns from 'aws-cdk-lib/aws-sns';
+import * as subs from 'aws-cdk-lib/aws-sns-subscriptions';
+import * as cwActions from 'aws-cdk-lib/aws-cloudwatch-actions';
+import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import { Construct } from 'constructs';
 
 interface ObservabilityStackProps extends cdk.StackProps {
   prefix: string;
   stage: string;
   auditLogBucket: s3.Bucket;
+  /** The gateway's public load balancer, for the 5xx alarm. */
+  loadBalancer?: elbv2.IApplicationLoadBalancer;
+  /** Who is emailed when an alarm goes off. */
+  alarmEmail?: string;
 }
 
 export class ObservabilityStack extends cdk.Stack {
+  public readonly alarmTopic: sns.Topic;
+
   constructor(scope: Construct, id: string, props: ObservabilityStackProps) {
     super(scope, id, props);
 
@@ -51,22 +61,24 @@ export class ObservabilityStack extends cdk.Stack {
       )
     );
 
-    // Alarms
+    // Alarms go to this topic; an operator email is subscribed when given (-c alarmEmail=…).
+    this.alarmTopic = new sns.Topic(this, 'AlarmTopic', { topicName: `${prefix}-alarms-${stage}`, displayName: `Probaline ${stage} alarms` });
+    if (props.alarmEmail) this.alarmTopic.addSubscription(new subs.EmailSubscription(props.alarmEmail));
+    new cdk.CfnOutput(this, 'AlarmTopicArn', { value: this.alarmTopic.topicArn });
+
+    // The gateway's own errors (5xx from its targets), on its load balancer.
     const gatewayErrorAlarm = new cloudwatch.Alarm(this, 'GatewayErrorAlarm', {
       alarmName: `${prefix}-gateway-errors-${stage}`,
-      metric: new cloudwatch.Metric({
-        namespace: 'AWS/ApplicationELB',
-        metricName: 'HTTPCode_Target_5XX_Count',
-        statistic: 'Sum',
-        period: cdk.Duration.minutes(5),
-      }),
+      metric: props.loadBalancer
+        ? props.loadBalancer.metrics.httpCodeTarget(elbv2.HttpCodeTarget.TARGET_5XX_COUNT, { statistic: 'Sum', period: cdk.Duration.minutes(5) })
+        : new cloudwatch.Metric({ namespace: 'AWS/ApplicationELB', metricName: 'HTTPCode_Target_5XX_Count', statistic: 'Sum', period: cdk.Duration.minutes(5) }),
       threshold: 10,
       evaluationPeriods: 2,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
 
     // Policy violation spike alarm
-    new cloudwatch.Alarm(this, 'PolicyViolationAlarm', {
+    const policyViolationAlarm = new cloudwatch.Alarm(this, 'PolicyViolationAlarm', {
       alarmName: `${prefix}-policy-violations-${stage}`,
       metric: new cloudwatch.Metric({
         namespace: `${prefix}/${stage}`,
@@ -80,7 +92,7 @@ export class ObservabilityStack extends cdk.Stack {
     });
 
     // High latency alarm
-    new cloudwatch.Alarm(this, 'HighLatencyAlarm', {
+    const highLatencyAlarm = new cloudwatch.Alarm(this, 'HighLatencyAlarm', {
       alarmName: `${prefix}-high-latency-${stage}`,
       metric: new cloudwatch.Metric({
         namespace: `${prefix}/${stage}`,
@@ -94,7 +106,7 @@ export class ObservabilityStack extends cdk.Stack {
     });
 
     // Circuit breaker open alarm
-    new cloudwatch.Alarm(this, 'CircuitBreakerAlarm', {
+    const circuitBreakerAlarm = new cloudwatch.Alarm(this, 'CircuitBreakerAlarm', {
       alarmName: `${prefix}-circuit-open-${stage}`,
       metric: new cloudwatch.Metric({
         namespace: `${prefix}/${stage}`,
@@ -106,6 +118,11 @@ export class ObservabilityStack extends cdk.Stack {
       evaluationPeriods: 1,
       treatMissingData: cloudwatch.TreatMissingData.NOT_BREACHING,
     });
+
+    for (const alarm of [gatewayErrorAlarm, policyViolationAlarm, highLatencyAlarm, circuitBreakerAlarm]) {
+      alarm.addAlarmAction(new cwActions.SnsAction(this.alarmTopic));
+      alarm.addOkAction(new cwActions.SnsAction(this.alarmTopic));
+    }
 
     // Glue Database for Athena queries on audit logs
     const glueDatabase = new glue.CfnDatabase(this, 'AuditLogsDatabase', {

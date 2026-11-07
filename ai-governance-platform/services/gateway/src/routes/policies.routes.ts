@@ -61,22 +61,24 @@ export async function policiesRoutes(app: FastifyInstance) {
   });
 
   // ── Compliance packs ──────────────────────────────────────────────────
-  app.get('/compliance/packs', { preHandler: requireAccess(TENANT_READ) }, async () => engine.compliance('get', '/packs'));
+  app.get('/compliance/packs', { preHandler: requireAccess(TENANT_READ) }, async (request) => engine.compliance(request.tenantId, 'get', '/packs'));
 
   app.get('/compliance/packs/:framework', { preHandler: requireAccess(TENANT_READ) }, async (request, reply) => {
     const { framework } = request.params as { framework: string };
     if (!FRAMEWORK.test(framework)) return reply.status(404).send({ error: 'Unknown framework', code: 'NOT_FOUND' });
-    return engine.compliance('get', `/packs/${framework}`);
+    return engine.compliance(request.tenantId, 'get', `/packs/${framework}`);
   });
 
-  app.get('/compliance/status/:tenantId', { preHandler: [requireAccess(TENANT_READ), requireTenantParam] }, async (request) =>
-    engine.compliance('get', `/status/${encodeURIComponent((request.params as { tenantId: string }).tenantId)}`));
+  app.get('/compliance/status/:tenantId', { preHandler: [requireAccess(TENANT_READ), requireTenantParam] }, async (request) => {
+    const { tenantId } = request.params as { tenantId: string };
+    return engine.compliance(tenantId, 'get', `/status/${encodeURIComponent(tenantId)}`);
+  });
 
   const change = (method: 'post' | 'delete', action: 'enable' | 'disable' | 'assess' | 'sync') =>
     async (request: { params: unknown; userId: string }, reply: { status: (n: number) => { send: (b: unknown) => unknown } }) => {
       const { tenantId, framework } = request.params as { tenantId: string; framework: string };
       if (!FRAMEWORK.test(framework)) return reply.status(404).send({ error: 'Unknown framework', code: 'NOT_FOUND' });
-      return engine.compliance(method, `/${action}/${encodeURIComponent(tenantId)}/${framework}`, action === 'enable' ? { enabledBy: request.userId } : undefined);
+      return engine.compliance(tenantId, method, `/${action}/${encodeURIComponent(tenantId)}/${framework}`, action === 'enable' ? { enabledBy: request.userId } : undefined);
     };
   app.post('/compliance/enable/:tenantId/:framework', { preHandler: [requireAccess(TENANT_ADMIN), requireTenantParam] }, change('post', 'enable') as never);
   app.delete('/compliance/disable/:tenantId/:framework', { preHandler: [requireAccess(TENANT_ADMIN), requireTenantParam] }, change('delete', 'disable') as never);

@@ -1,6 +1,7 @@
 import axios, { AxiosError } from 'axios';
 import { Policy } from '@ai-governance/types';
 import { AppError } from '@ai-governance/utils';
+import { signedFor } from './internal';
 
 /**
  * Policy management calls to the internal policy engine. The gateway always supplies the tenant from
@@ -22,14 +23,14 @@ export class PolicyAdminClient {
 
   async list(tenantId: string): Promise<Policy[]> {
     try {
-      const { data } = await axios.get<Policy[]>(`${this.baseUrl}/v1/policies/${encodeURIComponent(tenantId)}`, { timeout: 5000 });
+      const { data } = await axios.get<Policy[]>(`${this.baseUrl}/v1/policies/${encodeURIComponent(tenantId)}`, { timeout: 5000, headers: signedFor('policy-engine', tenantId) });
       return data;
     } catch (err) { this.rethrow(err); }
   }
 
   async create(tenantId: string, policy: Omit<Policy, 'policyId' | 'createdAt' | 'updatedAt' | 'tenantId'>): Promise<Policy> {
     try {
-      const { data } = await axios.post<Policy>(`${this.baseUrl}/v1/policies`, { ...policy, tenantId }, { timeout: 5000 });
+      const { data } = await axios.post<Policy>(`${this.baseUrl}/v1/policies`, { ...policy, tenantId }, { timeout: 5000, headers: signedFor('policy-engine', tenantId) });
       return data;
     } catch (err) { this.rethrow(err); }
   }
@@ -39,23 +40,23 @@ export class PolicyAdminClient {
       await axios.put(
         `${this.baseUrl}/v1/policies/${encodeURIComponent(tenantId)}/${encodeURIComponent(policy.policyId)}`,
         { ...policy, tenantId },
-        { timeout: 5000 }
+        { timeout: 5000, headers: signedFor('policy-engine', tenantId) }
       );
     } catch (err) { this.rethrow(err); }
   }
 
   async remove(tenantId: string, policyId: string): Promise<unknown> {
     try {
-      const { data } = await axios.delete(`${this.baseUrl}/v1/policies/${encodeURIComponent(tenantId)}/${encodeURIComponent(policyId)}`, { timeout: 5000 });
+      const { data } = await axios.delete(`${this.baseUrl}/v1/policies/${encodeURIComponent(tenantId)}/${encodeURIComponent(policyId)}`, { timeout: 5000, headers: signedFor('policy-engine', tenantId) });
       return data;
     } catch (err) { this.rethrow(err); }
   }
 
   /** Compliance calls, always under the given tenant. */
-  async compliance(method: 'get' | 'post' | 'delete', path: string, body?: unknown): Promise<unknown> {
+  async compliance(tenantId: string, method: 'get' | 'post' | 'delete', path: string, body?: unknown): Promise<unknown> {
     try {
       // A POST always carries a JSON body: without one, the engine refuses it as an unknown content type.
-      const { data } = await axios.request({ method, url: `${this.baseUrl}/v1/compliance${path}`, data: body ?? (method === 'post' ? {} : undefined), timeout: 10000 });
+      const { data } = await axios.request({ method, url: `${this.baseUrl}/v1/compliance${path}`, data: body ?? (method === 'post' ? {} : undefined), timeout: 10000, headers: signedFor('policy-engine', tenantId) });
       return data;
     } catch (err) {
       const e = err as { response?: { status?: number; data?: { error?: string } } };

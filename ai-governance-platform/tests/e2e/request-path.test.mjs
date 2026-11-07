@@ -867,3 +867,21 @@ describe('reports come from the analytics service', () => {
     assert.equal((await call('GET', '/v1/gateway/summary', { headers: adminOf(A) })).status, 200);
   });
 });
+
+describe('internal services and evidence retention', () => {
+  test('the policy engine and data protection refuse anything the gateway didn\'t sign', async () => {
+    for (const [port, path] of [[3001, `/v1/policies/${A}`], [3002, '/v1/protect/request']]) {
+      const res = await fetch(`http://localhost:${port}${path}`, { method: path.includes('protect') ? 'POST' : 'GET', headers: { 'content-type': 'application/json' }, body: path.includes('protect') ? JSON.stringify({ tenantId: A, messages: [] }) : undefined });
+      assert.equal(res.status, 401, `${port}${path}`);
+    }
+  });
+
+  test('a company admin places a legal hold with a reason, and releases it', async () => {
+    const url = `/v1/tenants/${A}/legal-hold`;
+    assert.equal((await call('PUT', url, { headers: adminOf(A), body: { on: true } })).status, 400);
+    const placed = await call('PUT', url, { headers: adminOf(A), body: { on: true, reason: 'E2E matter' } });
+    assert.equal(placed.status, 200, JSON.stringify(placed.body));
+    assert.equal((await call('GET', `/v1/tenants/${A}`, { headers: adminOf(A) })).body.settings.legalHold.on, true);
+    assert.equal((await call('PUT', url, { headers: adminOf(A), body: { on: false } })).body.legalHold.on, false);
+  });
+});

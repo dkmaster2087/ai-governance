@@ -1,4 +1,5 @@
 import { createLogger } from '@ai-governance/utils';
+import { OPS, opsMetrics } from './cloudwatch';
 
 const logger = createLogger('gateway:circuit-breaker');
 
@@ -81,6 +82,7 @@ export class CircuitBreaker {
     this.lastFailureTime = Date.now();
 
     if (this.failureCount >= this.options.failureThreshold) {
+      if (this.state !== 'open') opsMetrics.count(OPS.CIRCUIT_OPEN);
       this.state = 'open';
       logger.warn('Circuit opened, service unavailable', {
         name: this.options.name,

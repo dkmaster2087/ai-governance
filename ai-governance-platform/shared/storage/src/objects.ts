@@ -1,6 +1,6 @@
 import { promises as fs } from 'fs';
 import path from 'path';
-import { GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
+import { DeleteObjectsCommand, GetObjectCommand, ListObjectsV2Command, PutObjectCommand, S3Client } from '@aws-sdk/client-s3';
 import { StorageError } from './types';
 
 /** Files such as audit archives: S3 (or any S3-compatible store), a local directory, or memory. */
@@ -9,6 +9,8 @@ export interface ObjectStore {
   put(key: string, body: string | Buffer, contentType?: string): Promise<void>;
   get(key: string): Promise<Buffer | null>;
   list(prefix: string): Promise<string[]>;
+  /** Delete everything under a prefix (e.g. one day's archive); returns how many objects were deleted. */
+  deletePrefix(prefix: string): Promise<number>;
 }
 
 function checkKey(key: string): string {
@@ -48,6 +50,14 @@ export class S3ObjectStore implements ObjectStore {
     } while (token);
     return keys;
   }
+
+  async deletePrefix(prefix: string) {
+    const keys = await this.list(checkKey(prefix));
+    for (let i = 0; i < keys.length; i += 1000) {
+      await this.s3.send(new DeleteObjectsCommand({ Bucket: this.bucket, Delete: { Objects: keys.slice(i, i + 1000).map((Key) => ({ Key })), Quiet: true } }));
+    }
+    return keys.length;
+  }
 }
 
 /** A directory on disk (a mounted volume on-premises or in Kubernetes). */
@@ -84,6 +94,14 @@ export class FileObjectStore implements ObjectStore {
     await walk(this.dir, '');
     return out.sort();
   }
+
+  async deletePrefix(prefix: string) {
+    const keys = await this.list(checkKey(prefix));
+    for (const k of keys) await fs.rm(this.file(k), { force: true });
+    // A prefix ending in "/" is a folder (one day's archive): remove it too.
+    if (prefix.endsWith('/')) await fs.rm(this.file(prefix), { recursive: true, force: true }).catch(() => undefined);
+    return keys.length;
+  }
 }
 
 export class MemoryObjectStore implements ObjectStore {
@@ -92,4 +110,9 @@ export class MemoryObjectStore implements ObjectStore {
   async put(key: string, body: string | Buffer) { this.objects.set(checkKey(key), Buffer.from(body)); }
   async get(key: string) { return this.objects.get(checkKey(key)) ?? null; }
   async list(prefix: string) { return [...this.objects.keys()].filter((k) => k.startsWith(prefix)).sort(); }
+  async deletePrefix(prefix: string) {
+    const keys = await this.list(checkKey(prefix));
+    for (const k of keys) this.objects.delete(k);
+    return keys.length;
+  }
 }

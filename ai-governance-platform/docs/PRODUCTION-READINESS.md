@@ -66,7 +66,7 @@ loaded live as a company admin and as the platform admin, and the deploy, CI and
 1. **Make it deployable** (A1–A6, B1): **built** (2026-11-06); not yet run against a real AWS account. Ends
    with a real environment where a platform admin creates a company, its admin is invited, signs in, and the
    company's AI traffic flows.
-2. **Close the security settings** (B2–B5, C1, C3): about 1 week.
+2. **Close the security settings** (B2–B5, C1, C3): **built** (2026-11-06); not yet run against a real AWS account.
 3. **Finish what looks built** (C2, C4–C8): about 2 weeks.
 4. **Run it with confidence** (D1–D5, B6, C9): about 1 week, partly in parallel.
 
@@ -89,4 +89,18 @@ model access limits that aren't enforced.
 Tests: gateway 247, analytics 37, reporting agent 12, policy engine 44, infra 27, dashboard 76, storage 14,
 utils 26; end-to-end 36 of 36 on DynamoDB (twice in a row) and on PostgreSQL. The stand-in identity provider
 used by the end-to-end suite now keeps its signing key across restarts, so back-to-back runs pass.
+
+## Step 2: what was done
+
+| # | Done | Still to check |
+|---|---|---|
+| B2 | AWS WAF on the public load balancer: per-address rate limit (default 3000 per 5 minutes), AWS reputation list, AWS common and known-bad-input rules. Rules that inspect bodies only count, because prompts are large and full of code. | Watch the counted rules' hits in a real environment before deciding whether any should block. |
+| B3 | Policy engine and data protection answer only requests the gateway signs for them, and refuse a request naming a different company than the token; they refuse to start without the key. The reporting agent may read framework status only. The seed script now goes through the gateway. | — |
+| B4 | Per-key and per-MCP-caller limits counted in the shared database, so they hold across gateway instances; `429` with `Retry-After` and `X-RateLimit-*` headers. | One database write per call: measure under load (D4). |
+| B5 | The gateway's provider keys and API credentials are encrypted with the platform's KMS key. | Secrets saved earlier keep the default key until saved again. |
+| C1 | Records expire per the company's retention period; a daily sweep deletes archive days past it; changing the period re-dates existing records; a legal hold (Settings page, company admins, with a reason) stops all deletion and shows on each case file. | The sweep on a real S3 bucket. |
+| C3 | The gateway publishes policy violations, latency and circuit breakers to CloudWatch; the 5xx alarm now watches the gateway's load balancer; every alarm goes to an SNS topic emailed to `alarmEmail`. | Confirm an alarm email arrives. |
+
+Tests: gateway 254, policy engine 46, data protection 7, analytics 37, reporting agent 12, infra 31, dashboard
+76, storage 14, utils 26; end-to-end 38 of 38 on DynamoDB and on PostgreSQL.
 

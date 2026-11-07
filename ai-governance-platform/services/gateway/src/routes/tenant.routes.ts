@@ -9,6 +9,7 @@ import { ApiKeyRepository, generateApiKey, hashApiKey, LicenseInfo } from '../re
 import { GRACE_DAYS, LicenseKey, licenseState } from '../services/license-state';
 import { forgetApiKey } from '../middleware/auth.middleware';
 import { requireAccess, requireTenantParam, PLATFORM_ADMIN, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
+import { reapplyRetention } from '../services/retention';
 
 const logger = createLogger('gateway:tenants');
 
@@ -121,7 +122,26 @@ export async function tenantRoutes(app: FastifyInstance) {
     if (!updated) return reply.status(404).send({ error: 'Tenant not found', code: 'NOT_FOUND' });
 
     tenantSettings().invalidate(tenantId);
+    if (body.auditLogRetentionDays !== undefined) {
+      // Re-date the company's existing records in the background; new ones use the new period at once.
+      reapplyRetention(tenantId).catch((err) => logger.error('Could not apply the new retention period', { tenantId, error: (err as Error).message }));
+    }
     return reply.send({ tenantId, ...body, updatedAt });
+  });
+
+  // Legal hold: while on, nothing of the company's evidence is deleted. Its own admins can set it.
+  app.put('/tenants/:tenantId/legal-hold', { preHandler: [requireAccess(TENANT_ADMIN), requireTenantParam] }, async (request, reply) => {
+    const { tenantId } = request.params as { tenantId: string };
+    const parsed = z.object({ on: z.boolean(), reason: z.string().trim().max(300).optional() }).safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: 'Send on (true or false) and a reason', code: 'INVALID_HOLD' });
+    if (parsed.data.on && !parsed.data.reason) return reply.status(400).send({ error: 'Say why evidence is being held (for example the matter or case)', code: 'REASON_REQUIRED' });
+    const by = request.principal?.kind === 'user' ? request.principal.email ?? request.userId : request.userId;
+    const legalHold = { on: parsed.data.on, since: new Date().toISOString(), by, reason: parsed.data.reason ?? '' };
+    const updated = await tenants().update({ tenantId }, { set: { 'settings.legalHold': legalHold, updatedAt: legalHold.since }, ifExists: true });
+    if (!updated) return reply.status(404).send({ error: 'Tenant not found', code: 'NOT_FOUND' });
+    logger.info(parsed.data.on ? 'Legal hold placed' : 'Legal hold released', { tenantId, by, reason: legalHold.reason });
+    reapplyRetention(tenantId).catch((err) => logger.error('Could not apply the legal hold to existing records', { tenantId, error: (err as Error).message }));
+    return reply.send({ legalHold });
   });
 
   // Suspend tenant

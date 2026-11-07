@@ -7,6 +7,7 @@ import { getSecurityConfig } from '../config/security';
 import { Principal, isUserRole } from '../auth/principal';
 import { tenantSettings } from '../services/tenant-settings.service';
 import { LicenseStatus, licenseState } from '../services/license-state';
+import { RateCounter, rateCounter } from '../services/rate-counter';
 
 const logger = createLogger('gateway:auth');
 
@@ -56,6 +57,8 @@ export interface AuthDeps {
   /** License state; once a company's grace period is over, its AI traffic is refused. */
   licenseStatus?: (tenantId: string) => Promise<LicenseStatus | null>;
   userTokens?: UserTokenVerifier;
+  /** Per-key limits, shared by every gateway instance. */
+  rate?: Pick<RateCounter, 'hit'>;
   devAuth: boolean;
   keyCacheTtlMs: number;
 }
@@ -194,6 +197,7 @@ export function createAuthPlugin(deps: AuthDeps) {
         tenantId: apiKey.tenantId,
         keyId: apiKey.keyId,
         scopes: apiKey.scopes?.length ? apiKey.scopes : ['chat', 'models'],
+        rateLimit: apiKey.rateLimit,
         userId,
         appId,
       };
@@ -222,6 +226,18 @@ export function createAuthPlugin(deps: AuthDeps) {
       const status = await deps.licenseStatus(request.tenantId);
       if (status?.state === 'lapsed') return reply.status(403).send(licenseEnded(status));
     });
+
+    // Each key's calls a minute (set when the key is made).
+    app.addHook('preHandler', async (request, reply) => {
+      const p = request.principal;
+      if (!p || p.kind !== 'api_key' || !deps.rate || !p.rateLimit) return;
+      const r = await deps.rate.hit(p.tenantId, `key#${p.keyId}`, p.rateLimit);
+      reply.header('x-ratelimit-limit', String(r.limit)).header('x-ratelimit-remaining', String(r.remaining));
+      if (!r.allowed) {
+        return reply.status(429).header('retry-after', String(r.retryAfter))
+          .send({ error: `This key may make ${r.limit} calls a minute; try again in ${r.retryAfter} seconds`, code: 'RATE_LIMITED' });
+      }
+    });
   });
 }
 
@@ -243,6 +259,7 @@ function defaultDeps(): AuthDeps {
     userTokens,
     tenantStatus: (tenantId) => tenants.getStatus(tenantId),
     licenseStatus: (tenantId) => licenseState().get(tenantId),
+    rate: rateCounter(),
     devAuth: config.devAuth,
     keyCacheTtlMs: config.keyCacheTtlMs,
   };

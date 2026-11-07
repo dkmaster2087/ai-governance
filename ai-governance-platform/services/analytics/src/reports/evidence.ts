@@ -82,6 +82,8 @@ export interface EvidenceRecord {
     responseFingerprint?: string;
     recordedAt: string;
     keptUntil: string;
+    /** On legal hold: kept past keptUntil until the hold is released. */
+    onHold?: boolean;
     triggeredRules: string[];
   };
   usage?: { inputTokens: number; outputTokens: number; estimatedCost: number; latencyMs: number };
@@ -96,7 +98,7 @@ const PROVIDER_NAMES: Record<string, string> = {
  * log actually recorded.
  */
 /** A tool call through one of the company's MCP servers, told as its own story. */
-function buildMcpRecord(log: AuditLog, retentionDays: number): EvidenceRecord {
+function buildMcpRecord(log: AuditLog, retentionDays: number, onHold = false): EvidenceRecord {
   const m = log.metadata ?? {};
   const outcome = outcomeOf(log);
   const server = m.mcpServer ?? 'an MCP server';
@@ -138,13 +140,14 @@ function buildMcpRecord(log: AuditLog, retentionDays: number): EvidenceRecord {
       ...(log.responseHash ? { responseFingerprint: log.responseHash } : {}),
       recordedAt: log.timestamp,
       keptUntil: new Date(Date.parse(log.timestamp) + retentionDays * 86_400_000).toISOString(),
+      ...(onHold ? { onHold: true } : {}),
       triggeredRules: log.triggeredRules ?? [],
     },
   };
 }
 
-export function buildEvidenceRecord(log: AuditLog, retentionDays: number): EvidenceRecord {
-  if (log.metadata?.kind === 'mcp_tool_call') return buildMcpRecord(log, retentionDays);
+export function buildEvidenceRecord(log: AuditLog, retentionDays: number, onHold = false): EvidenceRecord {
+  if (log.metadata?.kind === 'mcp_tool_call') return buildMcpRecord(log, retentionDays, onHold);
   const outcome = outcomeOf(log);
   const provider = PROVIDER_NAMES[log.provider] ?? log.provider;
   const rules = log.triggeredRules ?? [];
@@ -210,6 +213,7 @@ export function buildEvidenceRecord(log: AuditLog, retentionDays: number): Evide
       ...(log.responseHash ? { responseFingerprint: log.responseHash } : {}),
       recordedAt: log.timestamp,
       keptUntil: new Date(Date.parse(log.timestamp) + retentionDays * 86_400_000).toISOString(),
+      ...(onHold ? { onHold: true } : {}),
       triggeredRules: rules,
     },
     ...(outcome !== 'stopped'

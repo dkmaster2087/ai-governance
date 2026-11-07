@@ -1,5 +1,7 @@
 import { buildApp } from './app';
 import { createLogger } from '@ai-governance/utils';
+import { scheduleRetention } from './services/retention';
+import { opsMetrics } from './services/cloudwatch';
 
 const logger = createLogger('gateway');
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -10,6 +12,8 @@ async function main() {
   try {
     await app.listen({ port: PORT, host: HOST });
     logger.info('Gateway service started', { port: PORT });
+    scheduleRetention();
+    opsMetrics.start();
   } catch (err) {
     logger.error('Failed to start gateway', { error: err });
     process.exit(1);

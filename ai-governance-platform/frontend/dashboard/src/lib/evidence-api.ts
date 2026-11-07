@@ -35,7 +35,7 @@ export interface EvidenceRecord {
   reason?: string;
   excerpt?: { before: string; hit: string; after: string };
   steps: Array<{ label: string; detail: string; kind: 'neutral' | 'stopped' | 'cleaned' | 'skipped' | 'delivered' }>;
-  proof: { promptFingerprint: string; responseFingerprint?: string; recordedAt: string; keptUntil: string; triggeredRules: string[] };
+  proof: { promptFingerprint: string; responseFingerprint?: string; recordedAt: string; keptUntil: string; onHold?: boolean; triggeredRules: string[] };
   usage?: { inputTokens: number; outputTokens: number; estimatedCost: number; latencyMs: number };
 }
 

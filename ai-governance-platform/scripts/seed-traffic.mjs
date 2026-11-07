@@ -24,21 +24,17 @@ if (!models.json.some?.((m) => m.modelId === 'gpt-4o-mini')) {
   console.log('model config', created.status);
 }
 
-// 1b. Two extra demo rules so the Stopped page shows several causes (policy engine is internal on :3001).
-const POLICY = process.env.POLICY_ENGINE_URL || 'http://localhost:3001';
-const existing = await (await fetch(`${POLICY}/v1/policies/${TENANT}`)).json();
-if (!existing.some((p) => p.name === 'Demo rules')) {
-  await fetch(`${POLICY}/v1/policies`, {
-    method: 'POST', headers: { 'content-type': 'application/json' },
-    body: JSON.stringify({
-      tenantId: TENANT, name: 'Demo rules', description: 'Sample rules for local development', enabled: true, createdBy: 'seed',
+// 1b. Two extra demo rules so the Stopped page shows several causes (through the gateway, as the dashboard does).
+const existing = (await call('GET', '/v1/policies', admin)).json;
+if (!(Array.isArray(existing) ? existing : existing.policies ?? []).some((p) => p.name === 'Demo rules')) {
+  const added = await call('POST', '/v1/policies', admin, {
+      name: 'Demo rules', description: 'Sample rules for local development', enabled: true, createdBy: 'seed',
       rules: [
         { ruleId: 'rule_ssn', type: 'pii_detection', action: 'block', priority: 1, enabled: true, description: 'Stop Social Security numbers', config: { piiTypes: ['SSN'] } },
         { ruleId: 'rule_codenames', type: 'data_classification', action: 'block', priority: 2, enabled: true, description: 'Stop unreleased project codenames', config: { patterns: ['project\\s+(phoenix|atlas)'] } },
       ],
-    }),
   });
-  console.log('added demo rules');
+  console.log('added demo rules', added.status);
 }
 
 // 2. One API key per app, so traffic is attributed to real app names.

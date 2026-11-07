@@ -136,7 +136,7 @@ export class GatewayService {
     // scan above has already masked the response, so continue and record it.
     let filteredResponse: NormalizedAIResponse;
     try {
-      filteredResponse = await this.dataProtectionClient.filterResponse(scannedResponse);
+      filteredResponse = await this.dataProtectionClient.filterResponse(scannedResponse, input.tenantId);
     } catch (err) {
       if (!(err instanceof GovernanceUnavailableError)) throw err;
       logger.warn('Response filtering unavailable, using in-process scan only', { requestId: prep.requestId });

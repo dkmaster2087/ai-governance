@@ -39,14 +39,6 @@ const authStack = new AuthStack(app, `${prefix}-auth-${stage}`, {
   stage,
 });
 
-// 4. Observability (CloudWatch dashboards, Athena)
-const observabilityStack = new ObservabilityStack(app, `${prefix}-observability-${stage}`, {
-  env,
-  prefix,
-  stage,
-  auditLogBucket: storageStack.auditLogBucket,
-});
-
 // 0. Image repositories (deployed first, before images are pushed)
 const registryStack = new RegistryStack(app, `${prefix}-registry-${stage}`, { env, prefix, stage });
 
@@ -60,6 +52,7 @@ const servicesStack = new ServicesStack(app, `${prefix}-services-${stage}`, {
   policiesTable: storageStack.policiesTable,
   metricsTable: storageStack.metricsTable,
   auditLogBucket: storageStack.auditLogBucket,
+  storageKey: storageStack.storageKey,
   userPool: authStack.userPool,
   userPoolClient: authStack.userPoolClient,
   apiKeysTable: storageStack.apiKeysTable,
@@ -77,6 +70,17 @@ const servicesStack = new ServicesStack(app, `${prefix}-services-${stage}`, {
   usersTable: storageStack.usersTable,
 });
 
+
+// 4. Observability (CloudWatch dashboards, Athena)
+const observabilityStack = new ObservabilityStack(app, `${prefix}-observability-${stage}`, {
+  env,
+  prefix,
+  stage,
+  auditLogBucket: storageStack.auditLogBucket,
+  loadBalancer: servicesStack.loadBalancer,
+  // Where alarms are emailed: -c alarmEmail=ops@example.com (optional; the topic can be subscribed to later)
+  alarmEmail: app.node.tryGetContext('alarmEmail'),
+});
 
 // 6. Website, dashboard and docs (CloudFront); /api/* goes to the gateway
 const frontendStack = new FrontendStack(app, `${prefix}-frontend-${stage}`, { env, prefix, stage, loadBalancer: servicesStack.loadBalancer });

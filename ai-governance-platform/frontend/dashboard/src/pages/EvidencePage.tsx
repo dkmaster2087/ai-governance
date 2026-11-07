@@ -110,7 +110,7 @@ function CaseFile({ requestId }: { requestId: string }) {
       <section aria-label="Proof" className="grid gap-4 pt-4 border-t border-line-subtle" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))' }}>
         <div><div className="text-xs text-ink-muted">Request ID</div><div className="font-mono text-xs mt-0.5 [overflow-wrap:anywhere]">{r.requestId}</div></div>
         <div><div className="text-xs text-ink-muted">Prompt fingerprint (SHA-256)</div><div className="font-mono text-xs mt-0.5 [overflow-wrap:anywhere]" title={r.proof.promptFingerprint}>{r.proof.promptFingerprint.slice(0, 16)}…</div></div>
-        <div><div className="text-xs text-ink-muted">Kept until</div><div className="mt-0.5">{new Date(r.proof.keptUntil).toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' })}</div></div>
+        <div><div className="text-xs text-ink-muted">Kept until</div><div className="mt-0.5">{new Date(r.proof.keptUntil).toLocaleDateString([], { day: 'numeric', month: 'long', year: 'numeric' })}{r.proof.onHold && <span className="text-ink-muted"> · on legal hold, kept until released</span>}</div></div>
         {r.reason && <div><div className="text-xs text-ink-muted">Rule</div><div className="mt-0.5"><Link to="/rules" className="font-semibold text-ink hover:text-stop">{r.reason}</Link></div></div>}
         {r.usage && <div><div className="text-xs text-ink-muted">Usage</div><div className="mt-0.5">{r.usage.inputTokens + r.usage.outputTokens} tokens · ${r.usage.estimatedCost.toFixed(4)}</div></div>}
       </section>

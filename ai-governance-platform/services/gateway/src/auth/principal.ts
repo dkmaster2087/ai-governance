@@ -21,6 +21,8 @@ export type Principal =
       tenantId: string;
       keyId: string;
       scopes: string[];
+      /** Calls a minute this key may make (counted across every gateway instance). */
+      rateLimit?: number;
       userId: string;
       appId: string;
     }

@@ -9,8 +9,10 @@ import * as cognito from 'aws-cdk-lib/aws-cognito';
 import * as logs from 'aws-cdk-lib/aws-logs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+import * as kms from 'aws-cdk-lib/aws-kms';
 import { Construct } from 'constructs';
 import type { ServiceName } from './registry-stack';
+import { GatewayFirewall } from '../constructs/gateway-firewall';
 
 interface ServicesStackProps extends cdk.StackProps {
   prefix: string;
@@ -19,6 +21,8 @@ interface ServicesStackProps extends cdk.StackProps {
   policiesTable: dynamodb.Table;
   metricsTable: dynamodb.Table;
   auditLogBucket: s3.Bucket;
+  /** Encrypts the provider keys and API credentials the gateway stores in Secrets Manager. */
+  storageKey?: kms.IKey;
   userPool: cognito.UserPool;
   userPoolClient: cognito.UserPoolClient;
   apiKeysTable: dynamodb.Table;
@@ -74,6 +78,12 @@ export class ServicesStack extends cdk.Stack {
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
     });
 
+    // Web firewall on the public load balancer (-c waf=false turns it off, e.g. for a throwaway stage).
+    if (this.node.tryGetContext('waf') !== 'false') {
+      const rate = Number(this.node.tryGetContext('wafRatePerFiveMinutes')) || undefined;
+      new GatewayFirewall(this, 'Firewall', { prefix, stage, loadBalancer: this.loadBalancer, ratePerFiveMinutes: rate });
+    }
+
     // Shared environment variables
     const commonEnv = {
       AWS_REGION: this.region,
@@ -83,6 +93,16 @@ export class ServicesStack extends cdk.Stack {
       AUDIT_LOG_BUCKET: auditLogBucket.bucketName,
       COMPREHEND_ENABLED: 'true',
     };
+
+    // The key internal requests are signed and checked with. Generated here, held in Secrets Manager, and
+    // given only to Probaline's own services: the gateway signs; policy engine, data protection and analytics check.
+    const internalKey = new secretsmanager.Secret(this, 'InternalServiceKey', {
+      secretName: `${prefix}/${stage}/internal-service-key`,
+      description: 'Signs requests from the gateway to internal services',
+      generateSecretString: { passwordLength: 64, excludePunctuation: true },
+      removalPolicy: stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+    });
+    const internalKeySecret = { INTERNAL_SERVICE_KEY: ecs.Secret.fromSecretsManager(internalKey) };
 
     // --- Policy Engine Service ---
     const policyEngineService = this.createService({
@@ -97,6 +117,7 @@ export class ServicesStack extends cdk.Stack {
       memory: 1024,
       // Rules check approved models and company settings, and count requests for rate limits.
       environment: { ...commonEnv, TENANTS_TABLE: tenantsTable.tableName, MODELS_TABLE: modelsTable.tableName, COMPLIANCE_TABLE: complianceTable.tableName },
+      secrets: internalKeySecret,
     });
     policiesTable.grantReadWriteData(policyEngineService.taskDefinition.taskRole);
     for (const t of [tenantsTable, modelsTable]) t.grantReadData(policyEngineService.taskDefinition.taskRole);
@@ -114,6 +135,7 @@ export class ServicesStack extends cdk.Stack {
       cpu: 512,
       memory: 1024,
       environment: commonEnv,
+      secrets: internalKeySecret,
     });
     dataProtectionService.taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
@@ -122,15 +144,6 @@ export class ServicesStack extends cdk.Stack {
       })
     );
 
-    // The key the gateway signs internal requests with, and analytics checks them with. Generated here, held
-    // in Secrets Manager, and given only to those two services.
-    const internalKey = new secretsmanager.Secret(this, 'InternalServiceKey', {
-      secretName: `${prefix}/${stage}/internal-service-key`,
-      description: 'Signs requests from the gateway to internal services',
-      generateSecretString: { passwordLength: 64, excludePunctuation: true },
-      removalPolicy: stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
-    });
-    const internalKeySecret = { INTERNAL_SERVICE_KEY: ecs.Secret.fromSecretsManager(internalKey) };
 
     // --- Analytics Service: every report built from history. Reads only; never on the request path. ---
     const analyticsService = this.createService({
@@ -213,6 +226,9 @@ export class ServicesStack extends cdk.Stack {
         COGNITO_USER_POOL_ID: props.userPool.userPoolId,
         COGNITO_CLIENT_ID: props.userPoolClient.userPoolClientId,
         PROVIDER_KEYS_SECRET_PREFIX: providerKeysPrefix,
+        // Operational metrics for the CloudWatch alarms (same namespace the observability stack watches).
+        METRICS_NAMESPACE: `${prefix}/${stage}`,
+        ...(props.storageKey ? { PROVIDER_KEYS_KMS_KEY_ID: props.storageKey.keyArn } : {}),
         GOVERNANCE_FAIL_MODE: 'closed',
       },
     });
@@ -230,7 +246,11 @@ export class ServicesStack extends cdk.Stack {
         resources: [`arn:aws:secretsmanager:${this.region}:${this.account}:secret:${providerKeysPrefix}/*`],
       })
     );
-    auditLogBucket.grantWrite(this.gatewayService.taskDefinition.taskRole);
+    // Writes archive copies, and lists and deletes days past each company's retention period.
+    auditLogBucket.grantReadWrite(this.gatewayService.taskDefinition.taskRole);
+    auditLogBucket.grantDelete(this.gatewayService.taskDefinition.taskRole);
+    // Secrets Manager encrypts and decrypts those secrets with the platform's key on the gateway's behalf.
+    props.storageKey?.grantEncryptDecrypt(this.gatewayService.taskDefinition.taskRole);
     usersTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     // Inviting, re-roling, disabling and removing people's sign-in accounts.
     props.userPool.grant(this.gatewayService.taskDefinition.taskRole,

@@ -208,7 +208,7 @@ export class ToolCaller {
     let masked = false;
     if (!server.returnPersonalData) {
       try {
-        const filtered = await this.protection.filterResponse({ requestId, provider: 'mcp' as never, modelId: request.modelId, content: r.body, inputTokens: 0, outputTokens: 0, latencyMs: 0, finishReason: 'stop', timestamp: '' });
+        const filtered = await this.protection.filterResponse({ requestId, provider: 'mcp' as never, modelId: request.modelId, content: r.body, inputTokens: 0, outputTokens: 0, latencyMs: 0, finishReason: 'stop', timestamp: '' }, request.tenantId);
         masked = filtered.content !== r.body;
         text = filtered.content;
       } catch {

@@ -75,7 +75,11 @@ Production needs:
 - a TLS certificate for the gateway's public listener (`--context certificateArn=arn:aws:acm:…`) and its public
   address (`--context gatewayUrl=https://…`);
 - optionally your own domains for the sites: `--context websiteDomain=… dashboardDomain=… docsDomain=…` with a
-  certificate in us-east-1 (`--context cloudfrontCertificateArn=…`).
+  certificate in us-east-1 (`--context cloudfrontCertificateArn=…`);
+- an email for alarms (`--context alarmEmail=ops@…`); AWS asks that address to confirm.
+
+The web firewall is on by default (`--context waf=false` turns it off; `--context wafRatePerFiveMinutes=…`
+changes the per-address limit, default 3000).
 
 Without a certificate, non-production stages serve plain HTTP. See "Known gaps" in
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
@@ -99,7 +103,9 @@ node scripts/create-platform-admin.mjs <user-pool-id> you@example.com "First" "L
 | `STORAGE_BACKEND` | gateway, policy engine, analytics | `dynamodb` (default), `postgres` or `memory` |
 | `DATABASE_URL`, `PG_TABLE_PREFIX` | same | PostgreSQL connection (`?sslmode=require` for TLS) and optional table prefix |
 | `MCP_SERVERS_TABLE`, `MCP_APIS_TABLE`, `MCP_TOOLS_TABLE`, `MCP_VERSIONS_TABLE`, `MCP_APPROVALS_TABLE`, `MCP_OAUTH_TABLE`, `MCP_CONNECTORS_TABLE` | gateway | DynamoDB tables for MCP servers (set by CDK) |
-| `INTERNAL_SERVICE_KEY` | gateway, analytics, reporting agent | Key internal requests are signed with (at least 32 characters; from Secrets Manager in AWS) |
+| `INTERNAL_SERVICE_KEY` | gateway, policy engine, data protection, analytics, reporting agent | Key internal requests are signed with (at least 32 characters; from Secrets Manager in AWS). The internal services refuse to start without it |
+| `PROVIDER_KEYS_KMS_KEY_ID` | gateway | KMS key that new provider keys and API credentials are encrypted with (set by CDK to the platform's key) |
+| `METRICS_NAMESPACE` | gateway | Publish alarm metrics to CloudWatch under this namespace (set by CDK; off when unset) |
 | `ALLOWED_ORIGINS` | gateway | Other websites allowed to call the gateway from a browser (comma-separated). Empty means none; the deployed sites don't need any, and the browser extension is always allowed |
 | `USERS_TABLE` | gateway | The company people table (set by CDK). With `COGNITO_USER_POOL_ID` set, inviting someone creates their sign-in and emails them |
 | `ANALYTICS_URL` | gateway | Where analytics is (set by CDK; local default `http://localhost:3003`) |
@@ -142,3 +148,4 @@ Variables on each GitHub environment (`dev`, `staging`, `prod`), all optional ou
 | `CERTIFICATE_ARN` | Certificate for the gateway's listener (required in production) |
 | `WEBSITE_DOMAIN`, `DASHBOARD_DOMAIN`, `DOCS_DOMAIN` | Your own domains for the sites |
 | `CLOUDFRONT_CERTIFICATE_ARN` | us-east-1 certificate covering those domains |
+| `ALARM_EMAIL` | Who is emailed when an alarm goes off |

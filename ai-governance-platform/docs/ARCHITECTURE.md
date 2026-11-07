@@ -165,6 +165,26 @@ and framework status from its policy engine, and sends them with its license key
 months; audit records never leave the install. If a part can't be read, nothing is sent rather than zeros. The
 agent's own API needs a signed internal token from an admin.
 
+## Security and retention
+
+- **Internal services** (policy engine, data protection, analytics) answer only requests signed with
+  `INTERNAL_SERVICE_KEY` for their own name, and refuse a request that names a different company than the
+  token. They refuse to start without the key.
+- **Rate limits**: each API key's calls a minute, and each MCP caller's, are counted in the shared database, so
+  the limit holds across every gateway instance (`429` with `Retry-After`). If the counters can't be reached,
+  traffic isn't stopped by them; the per-address limit and the web firewall still apply.
+- **Web firewall** (AWS WAF) on the public load balancer: a per-address rate limit, AWS's reputation list, and
+  AWS's common and known-bad-input rules for headers, paths and queries. Their body rules only count: prompts
+  are large and full of code, and the gateway inspects bodies itself.
+- **Secrets** (provider keys, API credentials) are encrypted with the platform's own KMS key.
+- **Retention**: each searchable record carries an expiry from its company's retention period. A daily sweep
+  (one gateway instance claims each day) deletes the archive's day folders past that period; S3 removes the
+  old versions 30 days later. Changing the period re-dates existing records. A **legal hold**, placed by a
+  company admin with a reason, removes the expiry from every record and stops the sweep until released.
+- **Alarms**: the gateway publishes policy violations, request latency and circuit breakers to CloudWatch
+  (embedded metric format, once a minute). Alarms on those and on the gateway's 5xx errors go to an SNS topic,
+  emailed to `-c alarmEmail=…`.
+
 ## Known gaps before production
 
 - CI runs unit tests, builds and image builds on every push, but not the end-to-end suite, which needs
@@ -180,8 +200,9 @@ agent's own API needs a signed internal token from an admin.
   through when split across chunks.
 - A revoked API key stops working at once on the gateway instance that revoked it; other instances drop
   their cached copy within a minute.
-- MCP servers (beta): rate limits are counted per gateway instance; the gateway's signing key isn't rotated
-  yet; sign-in needs `PUBLIC_GATEWAY_URL` set (without it, addresses come from request headers); approval
+- MCP servers (beta): the gateway's signing key isn't rotated yet; sign-in needs `PUBLIC_GATEWAY_URL` set (without it, addresses come from request headers); approval
   waits and connector calls poll the database, which adds load and a little latency.
-- Policy engine and data protection have no service-to-service authentication yet; they rely on being
-  reachable only inside the VPC (analytics already checks a signed token from the gateway).
+- Provider keys and API credentials saved before the platform key was set (`PROVIDER_KEYS_KMS_KEY_ID`) stay
+  under Secrets Manager's default key until they're saved again.
+- The web firewall's per-address limit sees CloudFront's addresses for dashboard traffic, so it's set high
+  (3000 per 5 minutes); per-key limits are what bound each app.

@@ -3,3 +3,4 @@ export * from './crypto';
 export * from './tokens';
 export * from './errors';
 export * from './internal-auth';
+export * from './internal-guard';

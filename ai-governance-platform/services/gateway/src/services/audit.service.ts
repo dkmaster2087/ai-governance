@@ -3,6 +3,8 @@ import { hashContent, estimateCost, createLogger } from '@ai-governance/utils';
 import { collection, objects } from '@ai-governance/storage';
 import { ModelConfigRepository } from '../repositories/model-config.repository';
 import { redactSecrets } from './secret-detector';
+import { expiryOf, retentionOf } from './retention';
+import { OPS, opsMetrics } from './cloudwatch';
 
 const logger = createLogger('gateway:audit');
 
@@ -96,6 +98,9 @@ export class AuditService {
 
   /** The queryable record. */
   private async writeToDynamoDB(log: AuditLog): Promise<void> {
-    await collection('auditLogs').put({ ...log, dateKey: log.timestamp.slice(0, 10) });
+    if (log.eventType === 'request_blocked') opsMetrics.count(OPS.POLICY_VIOLATIONS);
+    // Each record carries its own expiry, from the company's retention period (none while on legal hold).
+    const ttl = expiryOf(log.timestamp, await retentionOf(log.tenantId));
+    await collection('auditLogs').put({ ...log, dateKey: log.timestamp.slice(0, 10), ...(ttl ? { ttl } : {}) });
   }
 }

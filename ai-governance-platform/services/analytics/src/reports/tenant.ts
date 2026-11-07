@@ -12,6 +12,8 @@ export interface TenantView {
   secretsActive: boolean;
   /** How long case files are kept, for the "kept until" line on each. */
   retentionDays: number;
+  /** A legal hold: nothing is deleted while it's on. */
+  legalHold: boolean;
   shadowAi: ShadowAiPolicy;
 }
 
@@ -19,12 +21,13 @@ const DEFAULT_RETENTION_DAYS = 365;
 
 export async function tenantView(tenantId: string): Promise<TenantView> {
   const t = await collection('tenants').get({ tenantId });
-  const settings = (t?.settings ?? {}) as { secretsAction?: string; auditLogRetentionDays?: number };
+  const settings = (t?.settings ?? {}) as { secretsAction?: string; auditLogRetentionDays?: number; legalHold?: { on?: boolean } };
   const shadow = (t?.shadowAi ?? {}) as Partial<ShadowAiPolicy>;
   return {
     exists: !!t,
     secretsActive: settings.secretsAction !== 'off',
     retentionDays: Number(settings.auditLogRetentionDays) > 0 ? Number(settings.auditLogRetentionDays) : DEFAULT_RETENTION_DAYS,
+    legalHold: settings.legalHold?.on === true,
     shadowAi: { mode: shadow.mode === 'block' ? 'block' : 'monitor', decisions: { ...(shadow.decisions ?? {}) } },
   };
 }

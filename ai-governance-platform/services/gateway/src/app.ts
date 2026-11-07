@@ -30,6 +30,7 @@ import { usersRoutes } from './routes/users.routes';
 import { mcpOauthRoutes } from './routes/mcp-oauth.routes';
 import { mcpApprovalRoutes } from './routes/mcp-approvals.routes';
 import { mcpConnectorRoutes } from './routes/mcp-connectors.routes';
+import { OPS, opsMetrics } from './services/cloudwatch';
 
 export async function buildApp() {
   const securityConfig = getSecurityConfig();
@@ -58,6 +59,14 @@ export async function buildApp() {
 
   // Error handler: set before any routes so every plugin inherits it.
   app.setErrorHandler(errorHandler);
+
+  // End-to-end time of AI requests and tool calls, for the latency alarm.
+  app.addHook('onResponse', async (request, reply) => {
+    const path = request.url.split('?')[0];
+    if (request.method === 'POST' && (path === '/v1/chat/completions' || path.startsWith('/v1/proxy/') || path.startsWith('/mcp/'))) {
+      opsMetrics.time(OPS.REQUEST_LATENCY, reply.elapsedTime);
+    }
+  });
 
   // Auth & validation
   await app.register(requestTracing);

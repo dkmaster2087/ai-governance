@@ -39,3 +39,11 @@ export async function activateTenant(tenantId: string, callerTenantId = sessionT
   const { data } = await gatewayApi.post(`/v1/tenants/${tenantId}/activate`, {}, { headers: headers(callerTenantId) });
   return data;
 }
+
+export interface LegalHold { on: boolean; since: string; by: string; reason: string }
+
+/** Place or release a legal hold: while on, none of the company's evidence is deleted. */
+export async function setLegalHold(tenantId: string, on: boolean, reason?: string): Promise<{ legalHold: LegalHold }> {
+  const { data } = await gatewayApi.put(`/v1/tenants/${encodeURIComponent(tenantId)}/legal-hold`, { on, ...(reason ? { reason } : {}) }, { headers: headers(tenantId) });
+  return data;
+}

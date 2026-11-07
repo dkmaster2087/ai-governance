@@ -29,6 +29,8 @@ export class StorageStack extends cdk.Stack {
   public readonly mcpConnectorsTable: dynamodb.Table;
   public readonly auditLogsTable: dynamodb.Table;
   public readonly auditLogBucket: s3.Bucket;
+  /** The platform's own key: tables, the audit archive, and stored provider keys and API credentials. */
+  public readonly storageKey: kms.Key;
   public readonly athenaBucket: s3.Bucket;
 
   constructor(scope: Construct, id: string, props: StorageStackProps) {
@@ -47,6 +49,7 @@ export class StorageStack extends cdk.Stack {
       description: 'AI Governance Platform storage encryption key',
       removalPolicy,
     });
+    this.storageKey = kmsKey;
 
     // Tenants table
     this.tenantsTable = new dynamodb.Table(this, 'TenantsTable', {
@@ -215,6 +218,13 @@ export class StorageStack extends cdk.Stack {
         {
           id: 'TransitionToGlacier',
           transitions: [{ storageClass: s3.StorageClass.GLACIER, transitionAfter: cdk.Duration.days(90) }],
+        },
+        {
+          // The gateway deletes each company's archive days once its retention period ends (versioning keeps
+          // the old version): remove those old versions 30 days later, and the markers left behind.
+          id: 'RemoveDeletedArchives',
+          noncurrentVersionExpiration: cdk.Duration.days(30),
+          expiredObjectDeleteMarker: true,
         },
       ],
       removalPolicy,

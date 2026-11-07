@@ -19,6 +19,7 @@ import { credentialsInUse, liveConfig, publishVersion, restoreVersion } from '..
 import { personFromToken } from './mcp-oauth.routes';
 import { licenseState } from '../services/license-state';
 import { licenseEnded } from '../middleware/auth.middleware';
+import { rateCounter } from '../services/rate-counter';
 
 const logger = createLogger('gateway:mcp-routes');
 const MAX_TOOLS_PER_API = 300;
@@ -71,22 +72,10 @@ export const mcpPath = (s: Pick<McpServer, 'tenantId' | 'serverId'>) => `/mcp/${
 /** What the dashboard sees of an API: never the credential. */
 const apiView = (a: McpApi) => ({ ...a, auth: a.auth.type === 'none' ? { type: 'none' } : { type: a.auth.type, ...(a.auth.type === 'header' ? { header: a.auth.header } : {}), hint: a.auth.hint } });
 
-/** A simple per-instance limit: calls per minute per caller per server. */
-class MinuteLimiter {
-  private windows = new Map<string, { minute: number; count: number }>();
-  allow(key: string, limit: number): boolean {
-    const minute = Math.floor(Date.now() / 60_000);
-    const w = this.windows.get(key);
-    if (!w || w.minute !== minute) { this.windows.set(key, { minute, count: 1 }); if (this.windows.size > 50_000) this.windows.clear(); return true; }
-    return ++w.count <= limit;
-  }
-}
-
 export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCaller; credentials?: McpCredentialStore; connectors?: ConnectorService } = {}) {
   const caller = opts.caller ?? new ToolCaller();
   const credentials = opts.credentials ?? new McpCredentialStore();
   const connectors = () => opts.connectors ?? connectorService();
-  const limiter = new MinuteLimiter();
 
   async function loadServer(request: FastifyRequest, reply: FastifyReply) {
     const { serverId } = request.params as { serverId: string };
@@ -358,8 +347,9 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
     const live = await liveConfig(server);
     const refusal = connectRefusal(live.config, who);
     if (refusal) return bad(reply, 'FORBIDDEN', refusal, 403);
-    if (!limiter.allow(`${tenantId}:${serverId}:${who.id}`, live.config.limits.callsPerMinute)) {
-      return reply.status(429).header('retry-after', '60').send({ error: 'Too many calls; try again in a minute', code: 'RATE_LIMITED' });
+    const rate = await rateCounter().hit(tenantId, `mcp#${serverId}#${who.id}`, live.config.limits.callsPerMinute);
+    if (!rate.allowed) {
+      return reply.status(429).header('retry-after', String(rate.retryAfter)).send({ error: `Too many calls; try again in ${rate.retryAfter} seconds`, code: 'RATE_LIMITED' });
     }
 
     const msg = request.body as any;
