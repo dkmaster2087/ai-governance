@@ -63,6 +63,7 @@ npm test                                  # all packages
 cd infra
 npm install
 npx cdk bootstrap
+node ../scripts/internal-pki.mjs aws --prefix ai-gov --stage dev   # certificates for mutual TLS, once
 npx cdk deploy --all --context stage=dev
 ```
 
@@ -103,7 +104,9 @@ node scripts/create-platform-admin.mjs <user-pool-id> you@example.com "First" "L
 | `STORAGE_BACKEND` | gateway, policy engine, analytics | `dynamodb` (default), `postgres` or `memory` |
 | `DATABASE_URL`, `PG_TABLE_PREFIX` | same | PostgreSQL connection (`?sslmode=require` for TLS) and optional table prefix |
 | `MCP_SERVERS_TABLE`, `MCP_APIS_TABLE`, `MCP_TOOLS_TABLE`, `MCP_VERSIONS_TABLE`, `MCP_APPROVALS_TABLE`, `MCP_OAUTH_TABLE`, `MCP_CONNECTORS_TABLE` | gateway | DynamoDB tables for MCP servers (set by CDK) |
-| `INTERNAL_SERVICE_KEY` | gateway, policy engine, data protection, analytics, reporting agent | Key internal requests are signed with (at least 32 characters; from Secrets Manager in AWS). The internal services refuse to start without it |
+| `INTERNAL_SIGNING_KEY` | gateway, reporting agent | The private key internal requests are signed with, as JSON `{"iss","privateKey"}` (`scripts/internal-keys.mjs`; Secrets Manager in AWS) |
+| `INTERNAL_TRUSTED_KEYS` | policy engine, data protection, analytics, reporting agent | Public keys accepted, as a JSON list; two during a rotation. The services refuse to start without it |
+| `INTERNAL_TLS_CA`, `INTERNAL_TLS_CERT`, `INTERNAL_TLS_KEY` | all services | Mutual TLS between services: the install's CA and this service's certificate and key, as PEM (`scripts/internal-pki.mjs`). Required in production |
 | `PROVIDER_KEYS_KMS_KEY_ID` | gateway | KMS key that new provider keys and API credentials are encrypted with (set by CDK to the platform's key) |
 | `METRICS_NAMESPACE` | gateway | Publish alarm metrics to CloudWatch under this namespace (set by CDK; off when unset) |
 | `ALLOWED_ORIGINS` | gateway | Other websites allowed to call the gateway from a browser (comma-separated). Empty means none; the deployed sites don't need any, and the browser extension is always allowed |

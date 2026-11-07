@@ -322,15 +322,17 @@ node collector/dist/cli.js report --out ./results --company "Acme"
         <P>It never calls cloud metadata addresses or follows redirects, and logs only host, method and status. Answers through a connector are capped at 250 KB.</P>
         <H2>What happens on every call</H2>
         <Table head={['Step', 'What Probaline does']} rows={[
-          ['Who', 'A signed-in person (token for this server only, 15 minutes) or an API key with the mcp permission, allowed on this server'],
+          ['Who', 'A signed-in person (token for this server only, 15 minutes) or an API key with the mcp permission, allowed on this server. Suspended companies and ended licenses are refused'],
+          ['Limits', 'The server must be published and not paused; calls a minute per caller'],
           ['Arguments', 'Checked against the tool’s schema; unknown fields refused'],
-          ['Secrets', 'A key, token or password in the arguments stops the call'],
-          ['Company rules', 'Your words, patterns and personal-data rules, as for prompts'],
+          ['Secrets', 'A key, token or password in the arguments stops the call, even if prompts are set to redact'],
+          ['Company rules', 'Your words, patterns, personal-data and rate-limit rules, on the arguments as sent. A rule set to block stops the call before your API sees it. Approved-model rules don’t apply to tool calls'],
           ['Approval', 'For tools that change data and need it: waits for a person'],
           ['The API call', 'Only to the registered address, with Probaline’s credential and X-Probaline-Identity; no redirects; private addresses only through a connector or a self-hosted gateway'],
           ['The result', 'Personal data removed; text that tries to instruct the agent flagged; cut at the size limit'],
           ['Evidence', 'A case file per call: who, which agent, which tool, the checks, the approval, the API’s answer code; results are kept only as a fingerprint'],
         ]} />
+        <P>If the rules can’t be checked, your company’s fail mode decides, as for prompts: <strong>closed</strong> (the default) makes no call; <strong>open</strong> makes it and marks the case file. A stopped call tells the agent <C>Stopped by Probaline</C> with the reason and a request ID you can find in Evidence.</P>
         <H2>For your API’s team: who asked</H2>
         <P>Every call carries <C>X-Probaline-Identity</C>, a token Probaline signs (ES256, five minutes) for your API’s address. It names the person and their groups (or the key), the server, the tool and the request ID. Check it with the key at <C>https://&lt;gateway&gt;/.well-known/jwks.json</C> if your API applies its own per-person rules.</P>
         <P>Tool calls appear in Evidence and on each server’s page, not in the Gateway picture, which shows prompts to AI models.</P>
@@ -407,6 +409,7 @@ node collector/dist/cli.js report --out ./results --company "Acme"
         <Code>{`cd infra
 npm install
 npx cdk bootstrap
+node ../scripts/internal-pki.mjs aws --prefix ai-gov --stage prod   # certificates, once
 npx cdk deploy --all --context stage=prod \\
   --context certificateArn=arn:aws:acm:… --context gatewayUrl=https://gateway.example.com`}</Code>
         <P>Your own domains for the sites are optional: <C>websiteDomain</C>, <C>dashboardDomain</C> and <C>docsDomain</C>, with a certificate in us-east-1 (<C>cloudfrontCertificateArn</C>).</P>
@@ -421,7 +424,7 @@ npx cdk deploy --all --context stage=prod \\
           ['Data protection', 'Inside the network only', 'Finds and removes personal data. It answers only requests the gateway signs'],
           ['Analytics', 'Inside the network only', 'Every report built from history: summaries, spend, evidence search, the platform view. It answers only requests the gateway signs, and never sits on the request path'],
         ]} />
-        <P>If analytics is down, AI traffic is unaffected: reports say they’re unavailable until it’s back. The key the gateway signs with, <C>INTERNAL_SERVICE_KEY</C>, is generated in Secrets Manager by the deployment; when self-hosting another way, give the gateway, policy engine, data protection and analytics the same random value of at least 32 characters. The internal services won’t start without it.</P>
+        <P>If analytics is down, AI traffic is unaffected: reports say they’re unavailable until it’s back. Services trust each other in two ways. Mutual TLS: each install has its own certificate authority and each service a certificate naming it, so every internal connection is encrypted and only Probaline’s own services can call. And a signed token naming the company: only the gateway holds the private key; the internal services hold only public keys. The AWS deployment makes both. Self-hosting another way, run <C>node scripts/internal-pki.mjs local &lt;dir&gt;</C> for the certificates and <C>node scripts/internal-keys.mjs new gateway</C> for the keys, and set <C>INTERNAL_TLS_*</C>, <C>INTERNAL_SIGNING_KEY</C> (gateway only) and <C>INTERNAL_TRUSTED_KEYS</C>. The services won’t start without them.</P>
         <H2>Protection and alarms</H2>
         <P>The deployment puts AWS WAF in front of the gateway: a per-address rate limit, AWS’s reputation list, and AWS’s rules for headers, paths and queries. Rules that inspect request bodies only count, because prompts are large and full of code; the gateway inspects bodies itself. Turn it off with <C>--context waf=false</C>. Each API key’s calls a minute are enforced across every gateway instance.</P>
         <P>Alarms (gateway errors, policy violation spikes, slow requests, a dependency failing) are emailed to the address you give with <C>--context alarmEmail=…</C>.</P>

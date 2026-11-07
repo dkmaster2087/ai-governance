@@ -1,13 +1,13 @@
 import http from 'http';
 import { AddressInfo } from 'net';
-import { INTERNAL_HEADER, verifyInternal } from '@ai-governance/utils';
+import { INTERNAL_HEADER, newInternalKey, trustedKeysFrom, verifyInternal } from '@ai-governance/utils';
 import { PolicyAdminClient } from '../clients/policy-admin.client';
 
-const KEY = 'x'.repeat(40);
+const PAIR = newInternalKey('gateway');
 
 describe('policy engine client', () => {
   it('sends compliance actions with a JSON body, which the engine requires, and names refusals as refusals', async () => {
-    process.env.INTERNAL_SERVICE_KEY = KEY;
+    process.env.INTERNAL_SIGNING_KEY = JSON.stringify(PAIR.signing);
     const seen: Array<{ url: string; type?: string; body: string; token?: string }> = [];
     const engine = http.createServer((req, res) => {
       let body = '';
@@ -25,9 +25,9 @@ describe('policy engine client', () => {
     await expect(client.compliance('t1', 'post', '/sync/t1/hipaa')).resolves.toEqual({ ok: true });
     await expect(client.compliance('t1', 'post', '/assess/t1/hipaa')).resolves.toEqual({ ok: true });
     expect(seen.map((s) => [s.type, s.body])).toEqual([['application/json', '{}'], ['application/json', '{}']]);
-    expect(verifyInternal(seen[0].token!, KEY, 'policy-engine')).toMatchObject({ tenantId: 't1', role: 'gateway' });
+    expect(verifyInternal(seen[0].token!, trustedKeysFrom([PAIR.trusted]), 'policy-engine')).toMatchObject({ tenantId: 't1', role: 'gateway' });
     await expect(client.compliance('t1', 'post', '/broken')).rejects.toMatchObject({ code: 'POLICY_ENGINE_REFUSED' });
     await new Promise((r) => engine.close(r));
-    delete process.env.INTERNAL_SERVICE_KEY;
+    delete process.env.INTERNAL_SIGNING_KEY;
   });
 });

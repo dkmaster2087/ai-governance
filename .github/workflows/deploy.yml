@@ -91,7 +91,11 @@ jobs:
     needs: registry
     strategy:
       matrix:
-        service: [gateway, policy-engine, data-protection, analytics]
+        include:
+          - { service: gateway, port: 3000 }
+          - { service: policy-engine, port: 3001 }
+          - { service: data-protection, port: 3002 }
+          - { service: analytics, port: 3003 }
     permissions: { id-token: write, contents: read }
     steps:
       - uses: actions/checkout@v4
@@ -103,9 +107,20 @@ jobs:
         env: { ECR_REGISTRY: '${{ steps.ecr-login.outputs.registry }}' }
         run: |
           REPO="$ECR_REGISTRY/$PREFIX-${{ matrix.service }}-${{ inputs.stage }}"
-          # The Dockerfiles build from the ai-governance-platform folder (npm workspaces)
-          docker build -f "services/${{ matrix.service }}/Dockerfile" -t "$REPO:${{ github.sha }}" .
+          # One recipe for every service, built from the ai-governance-platform folder (npm workspaces):
+          # bytecode on a distroless image, no source shipped.
+          docker build -f services/Dockerfile --build-arg SERVICE=${{ matrix.service }} --build-arg PORT=${{ matrix.port }} -t "$REPO:${{ github.sha }}" .
           docker push "$REPO:${{ github.sha }}"
+          echo "IMAGE=$REPO@$(docker inspect --format='{{index .RepoDigests 0}}' "$REPO:${{ github.sha }}" | cut -d@ -f2)" >> "$GITHUB_ENV"
+      # A software bill of materials for each image, and a signature (keyless, tied to this workflow run),
+      # so anyone running the image can check it came from this repository unchanged.
+      - uses: anchore/sbom-action@v0
+        with: { image: '${{ env.IMAGE }}', format: spdx-json, output-file: sbom.spdx.json, upload-artifact: true }
+      - uses: sigstore/cosign-installer@v3
+      - name: Sign the image and attach its bill of materials
+        run: |
+          cosign sign --yes "$IMAGE"
+          cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$IMAGE"
 
   # ─── All stacks, running this commit's images ──────────────────────────────
   cdk-deploy:
@@ -134,6 +149,8 @@ jobs:
         with: { node-version: '${{ env.NODE_VERSION }}', cache: npm, cache-dependency-path: ai-governance-platform/package-lock.json }
       - run: npm ci
       - run: npm run build -w shared/types -w shared/utils -w infra
+      - name: Internal service certificates (made once, kept in Secrets Manager)
+        run: node scripts/internal-pki.mjs aws --prefix "$PREFIX" --stage "${{ inputs.stage }}" --region "$AWS_REGION"
       - name: CDK deploy all stacks
         working-directory: ai-governance-platform/infra
         env:

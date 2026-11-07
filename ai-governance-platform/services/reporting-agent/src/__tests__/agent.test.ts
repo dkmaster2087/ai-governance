@@ -1,9 +1,9 @@
 import http from 'http';
 import { AddressInfo } from 'net';
-import { INTERNAL_HEADER, verifyInternal } from '@ai-governance/utils';
+import { INTERNAL_HEADER, newInternalKey, trustedKeysFrom, verifyInternal } from '@ai-governance/utils';
 import { ReportingAgent, configFromEnv } from '../agent';
 
-const KEY = 'k'.repeat(40);
+const PAIR = newInternalKey('reporting-agent');
 
 describe('ReportingAgent', () => {
   let agent: ReportingAgent;
@@ -104,7 +104,7 @@ describe('ReportingAgent', () => {
     let analyticsDown = false;
 
     beforeAll(async () => {
-      process.env.INTERNAL_SERVICE_KEY = KEY;
+      process.env.INTERNAL_SIGNING_KEY = JSON.stringify(PAIR.signing);
       server = http.createServer((req, res) => {
         let raw = '';
         req.on('data', (c) => (raw += c));
@@ -133,7 +133,7 @@ describe('ReportingAgent', () => {
       await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()));
       base = `http://127.0.0.1:${(server.address() as AddressInfo).port}`;
     });
-    afterAll(() => { server.close(); delete process.env.INTERNAL_SERVICE_KEY; });
+    afterAll(() => { server.close(); delete process.env.INTERNAL_SIGNING_KEY; });
     beforeEach(() => { seen.length = 0; analyticsDown = false; });
 
     const configured = async () => {
@@ -151,7 +151,9 @@ describe('ReportingAgent', () => {
       await agent.report();
       expect(agent.getStatus()).toMatchObject({ lastReportStatus: 'success', reportCount: 1 });
       const summary = seen.find((s) => s.path.endsWith('/reporting/summary'))!;
-      expect(verifyInternal(summary.headers[INTERNAL_HEADER] as string, KEY, 'analytics')).toMatchObject({ tenantId: 'tenant_x', role: 'reporting_agent' });
+      expect(verifyInternal(summary.headers[INTERNAL_HEADER] as string, trustedKeysFrom([PAIR.trusted]), 'analytics')).toMatchObject({ tenantId: 'tenant_x', role: 'reporting_agent' });
+      const compliance = seen.find((s) => s.path.startsWith('/policy/v1/compliance/status/'))!;
+      expect(verifyInternal(compliance.headers[INTERNAL_HEADER] as string, trustedKeysFrom([PAIR.trusted]), 'policy-engine')).toMatchObject({ tenantId: 'tenant_x', role: 'reporting_agent' });
       const sent = seen.find((s) => s.path === '/platform/ingest')!.body;
       expect(sent).toMatchObject({
         licenseKey: 'PBL-1', tenantId: 'tenant_x',

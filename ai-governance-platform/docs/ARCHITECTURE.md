@@ -40,6 +40,47 @@ IDE ──▶ corporate proxy ──▶ Gateway /v1/proxy/:provider/*  ──▶
 The gateway extracts text from OpenAI and Anthropic formats, including content-block arrays and the Anthropic
 `system` field, then forwards the original request.
 
+## Request path (AI agents, MCP)
+
+Agents connect to `POST /mcp/<tenant>/<server>` (MCP over streamable HTTP, JSON-RPC). Every step runs in this
+order, and a call that fails a step never reaches the company's API.
+
+```
+Agent ──POST /mcp/:tenant/:server──▶ Gateway (:3000)
+                                       ├─ 1. Origin: browsers on other sites refused (403)
+                                       ├─ 2. Who
+                                       │     API key: mcp permission, key belongs to this tenant, tenant not
+                                       │       suspended, license not ended, the key's own calls a minute
+                                       │     person: Probaline sign-in token for this server only (15 minutes),
+                                       │       tenant not suspended, license not ended; else 401 + where to sign in
+                                       ├─ 3. Server: published (drafts are 404), not paused (503)
+                                       ├─ 4. Access list: this key, or this person or one of their groups (403)
+                                       ├─ 5. Calls a minute for this caller on this server (429)
+                                       ├─ 6. tools/call: only tools switched on and, for people, allowed to their groups
+                                       ├─ 7. Arguments checked against the tool's schema
+                                       ├─ 8. Secrets in the arguments stop the call (unless the tenant turned secrets off)
+                                       ├─ 9. Policy engine (:3001, mutual TLS + signed token) evaluates the tenant's rules
+                                       │       on the arguments: words, patterns, personal data, rate limits
+                                       │       └─ a rule with action "block" stops the call
+                                       ├─ 10. Writes that need approval wait for a named approver
+                                       ├─ 11. The API: registered address only, Probaline's credential,
+                                       │       X-Probaline-Identity (signed, 5 minutes); no redirects; private
+                                       │       addresses only through a connector or a self-hosted gateway
+                                       ├─ 12. Result: data protection (:3002) removes personal data (unless the server
+                                       │       is set to return it); instruction-like text flagged; size cap
+                                       └─ 13. Case file for every call, stopped or delivered
+```
+
+- Rules see the arguments as sent; they're never rewritten. A stopped call says `Stopped by Probaline: <reason>`
+  with a request ID, and its case file keeps a masked excerpt.
+- Model rules (approved models) don't apply to tool calls; tool calls aren't model traffic.
+- If the policy engine can't answer, the tenant's fail mode decides: `closed` (default) makes no call;
+  `open` makes it and marks the case file `governanceDegraded`. If data protection can't answer, the gateway's
+  own scanner masks the result instead.
+- Tested in `services/gateway/src/__tests__/mcp.test.ts` and `mcp-phase2.test.ts`, and end to end in
+  `tests/e2e/request-path.test.mjs` (a word rule and a personal-data rule stop calls before the API; a suspended
+  company's agent is refused).
+
 ## Dashboard and admin APIs
 
 The dashboard talks only to the gateway. Users sign in with Cognito (ID token, `custom:tenantId`,
@@ -69,9 +110,9 @@ Dashboard ──▶ Gateway: who is this, may they see it? ──▶ Analytics (
                  (HS256, 60 s: company, user, role)          company from the token, reads history
 ```
 
-- Analytics answers nothing without a token the gateway signed with `INTERNAL_SERVICE_KEY` (generated in
-  Secrets Manager by CDK and given only to those two services). The company always comes from the token,
-  never from the address, so a request for one company can't read another's data even from inside the VPC.
+- Analytics answers nothing without a token the gateway signed, over mutual TLS (see "Trust between
+  services"). The company always comes from the token, never from the address, so a request for one company
+  can't read another's data even from inside the VPC.
 - Analytics only reads (audit records, tenants, shadow AI events); it has no write access.
 - Off the request path: if analytics is down, reports answer `503 ANALYTICS_UNAVAILABLE`, the Rules and MCP
   pages load without their counts, the Health page shows it under **Reports**, and prompts are unaffected.
@@ -167,9 +208,7 @@ agent's own API needs a signed internal token from an admin.
 
 ## Security and retention
 
-- **Internal services** (policy engine, data protection, analytics) answer only requests signed with
-  `INTERNAL_SERVICE_KEY` for their own name, and refuse a request that names a different company than the
-  token. They refuse to start without the key.
+- **Internal services** (policy engine, data protection, analytics): see "Trust between services" below.
 - **Rate limits**: each API key's calls a minute, and each MCP caller's, are counted in the shared database, so
   the limit holds across every gateway instance (`429` with `Retry-After`). If the counters can't be reached,
   traffic isn't stopped by them; the per-address limit and the web firewall still apply.
@@ -184,6 +223,42 @@ agent's own API needs a signed internal token from an admin.
 - **Alarms**: the gateway publishes policy violations, request latency and circuit breakers to CloudWatch
   (embedded metric format, once a minute). Alarms on those and on the gateway's 5xx errors go to an SNS topic,
   emailed to `-c alarmEmail=…`.
+
+## Trust between services
+
+Every call from the gateway to the policy engine, data protection or analytics carries two proofs:
+
+| | Proves | How |
+|---|---|---|
+| Mutual TLS | *Which service* is calling, and encrypts the connection | Each install has its own private certificate authority; each service a certificate naming it (`scripts/internal-pki.mjs`). Internal services serve only TLS and refuse callers without a certificate from that CA, or from a service that may not call them. The caller checks it reached the service it meant to. |
+| Signed token | *For which company and person*, for 60 seconds | ES256. Only the gateway holds the private key (`INTERNAL_SIGNING_KEY`); internal services hold public keys (`INTERNAL_TRUSTED_KEYS`), so a compromised internal service can't make tokens. A request naming another company than its token is refused. |
+
+- An on-prem install's reporting agent has its own key pair and certificate. Its key can sign only
+  reporting-agent tokens, and its certificate may carry only those; it may read only framework status and its
+  24-hour summary.
+- On AWS, services reach each other by private DNS name (Cloud Map, `<service>.<prefix>-<stage>.internal`)
+  and connect directly; there is no internal load balancer, which couldn't carry the caller's certificate.
+  Each internal service's security group admits only the gateway's.
+- Keys and certificates live in Secrets Manager. CDK makes the signing keys on first deploy; the Deploy
+  workflow runs `scripts/internal-pki.mjs aws` to make the CA and certificates before deploying.
+- **Rotating keys**: add the new public key to `INTERNAL_TRUSTED_KEYS` next to the old one and restart the
+  internal services, then give the gateway the new private key, then remove the old public key
+  (`scripts/internal-keys.mjs new gateway` makes a pair). **Renewing certificates** (yearly):
+  `scripts/internal-pki.mjs aws … --renew`, then redeploy.
+- Without TLS settings the services fall back to plain HTTP for tests, and refuse to start that way when
+  `NODE_ENV=production` (as every image sets).
+
+## What ships in the images
+
+Each service image (`services/Dockerfile`) holds the service bundled into one file and compiled to V8
+bytecode, plus a small loader, on a distroless Node image: no TypeScript or JavaScript source, no source maps,
+no `node_modules`, no npm, no shell, running as a non-root user. Bytecode runs only on the Node that compiled
+it, so it's compiled inside the runtime image itself. CI checks each image contains only the bytecode; the
+Deploy workflow signs each image (Sigstore, keyless) and attaches its software bill of materials.
+
+This makes reading the product slow and expensive, not impossible: on hardware a customer controls, a
+determined reverse engineer can still study bytecode. The plan for keeping the most valuable parts off their
+hardware is in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md) (E5, E6).
 
 ## Known gaps before production
 

@@ -34,24 +34,16 @@ describe('ServicesStack', () => {
     for (const d of defs) expect(JSON.stringify(d.Properties.ContainerDefinitions[0].Image)).toContain(':abc123');
   });
 
-  it('routes the gateway to the policy engine and data protection through the internal load balancer', () => {
-    for (const port of [3001, 3002, 3003]) {
-      template.hasResourceProperties('AWS::ElasticLoadBalancingV2::Listener', { Port: port, Protocol: 'HTTP' });
-      template.hasResourceProperties('AWS::ElasticLoadBalancingV2::TargetGroup', { Port: port, TargetType: 'ip', HealthCheckPath: '/health' });
-    }
-    // Policy engine and data protection services are registered with their target groups.
-    const services = template.findResources('AWS::ECS::Service');
-    const withLb = Object.values(services).filter((s: any) => (s.Properties.LoadBalancers ?? []).length > 0);
-    expect(withLb).toHaveLength(4); // gateway (public); policy engine, data protection and analytics (internal)
-  });
-
-  it('gives the internal key to the four Probaline services, from Secrets Manager', () => {
-    template.resourceCountIs('AWS::SecretsManager::Secret', 1);
+  it('gives only the gateway the private signing key, and the internal services only the public keys', () => {
     const defs = Object.values(template.findResources('AWS::ECS::TaskDefinition')) as any[];
-    const withKey = defs.filter((d) => d.Properties.ContainerDefinitions.some((c: any) => (c.Secrets ?? []).some((x: any) => x.Name === 'INTERNAL_SERVICE_KEY')));
-    expect(withKey.map((d) => d.Properties.ContainerDefinitions[0].Name).sort()).toEqual(['AnalyticsContainer', 'DataProtectionContainer', 'GatewayContainer', 'PolicyEngineContainer']);
+    const holding = (name: string) => defs.filter((d) => d.Properties.ContainerDefinitions.some((c: any) => (c.Secrets ?? []).some((x: any) => x.Name === name)))
+      .map((d) => d.Properties.ContainerDefinitions[0].Name).sort();
+    expect(holding('INTERNAL_SIGNING_KEY')).toEqual(['GatewayContainer']);
+    expect(holding('INTERNAL_TRUSTED_KEYS')).toEqual(['AnalyticsContainer', 'DataProtectionContainer', 'PolicyEngineContainer']);
+    expect(holding('INTERNAL_SERVICE_KEY')).toEqual([]);
     // No key in plain environment variables.
-    expect(JSON.stringify(defs)).not.toMatch(/"Name":"INTERNAL_SERVICE_KEY","Value"/);
+    expect(JSON.stringify(defs)).not.toMatch(/"Name":"INTERNAL_(SIGNING|TRUSTED)_KEYS?","Value"/);
+    template.hasResourceProperties('AWS::CloudFormation::CustomResource', { SigningSecret: Match.anyValue(), TrustedSecret: Match.anyValue() });
   });
 
   it('has the gateway store provider keys and API credentials under the platform\'s own key', () => {
@@ -72,6 +64,35 @@ describe('ServicesStack', () => {
     expect(counted).toEqual(expect.arrayContaining(['SizeRestrictions_BODY', 'CrossSiteScripting_BODY']));
     expect(common.RuleActionOverrides.every((o: any) => o.ActionToUse.Count)).toBe(true);
     expect(JSON.stringify(acl)).toContain('AWSManagedRulesAmazonIpReputationList');
+  });
+
+  it('connects services directly over mutual TLS, by private DNS name, with no internal load balancer', () => {
+    template.resourceCountIs('AWS::ElasticLoadBalancingV2::LoadBalancer', 1);
+    template.resourceCountIs('AWS::ServiceDiscovery::PrivateDnsNamespace', 1);
+    template.resourceCountIs('AWS::ServiceDiscovery::Service', 3);
+    const defs = Object.values(template.findResources('AWS::ECS::TaskDefinition')) as any[];
+    for (const d of defs) {
+      const names = (d.Properties.ContainerDefinitions[0].Secrets ?? []).map((x: any) => x.Name);
+      expect(names).toEqual(expect.arrayContaining(['INTERNAL_TLS_CA', 'INTERNAL_TLS_CERT', 'INTERNAL_TLS_KEY']));
+    }
+    const gw = defs.find((d) => d.Properties.ContainerDefinitions[0].Name === 'GatewayContainer');
+    const env = Object.fromEntries(gw.Properties.ContainerDefinitions[0].Environment.map((e: any) => [e.Name, e.Value]));
+    expect(env.POLICY_ENGINE_URL).toBe('https://policy-engine.ai-gov-test.internal:3001');
+    expect(env.ANALYTICS_URL).toBe('https://analytics.ai-gov-test.internal:3003');
+  });
+
+  it('lets only the gateway reach the internal services', () => {
+    const ingress = Object.values(template.findResources('AWS::EC2::SecurityGroupIngress')) as any[];
+    for (const port of [3001, 3002, 3003]) {
+      const rules = ingress.filter((r) => r.Properties.FromPort === port);
+      expect(rules).toHaveLength(1);
+      expect(rules[0].Properties.SourceSecurityGroupId).toBeDefined();
+      expect(rules[0].Properties.CidrIp).toBeUndefined();
+    }
+    // No service accepts connections by network range; only the public load balancer faces the internet.
+    const services = (Object.values(template.findResources('AWS::EC2::SecurityGroup')) as any[]).filter((g) => /service security group/.test(g.Properties.GroupDescription));
+    expect(services).toHaveLength(4);
+    expect(JSON.stringify(services.map((g) => g.Properties.SecurityGroupIngress ?? []))).not.toContain('CidrIp');
   });
 
   it('tells the gateway its public address and where analytics is', () => {

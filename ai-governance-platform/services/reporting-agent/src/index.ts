@@ -1,6 +1,6 @@
 import Fastify from 'fastify';
 import helmet from '@fastify/helmet';
-import { createLogger, INTERNAL_HEADER, InternalAuthError, internalKeyFromEnv, verifyInternal } from '@ai-governance/utils';
+import { createLogger, INTERNAL_HEADER, InternalAuthError, trustedKeysFromEnv, verifyInternal } from '@ai-governance/utils';
 import { ReportingAgent } from './agent';
 import { configRoutes } from './routes/config.routes';
 import { statusRoutes } from './routes/status.routes';
@@ -19,7 +19,7 @@ async function main() {
     const token = request.headers[INTERNAL_HEADER];
     try {
       if (typeof token !== 'string') throw new InternalAuthError('Missing token');
-      const caller = verifyInternal(token, internalKeyFromEnv(), 'reporting-agent');
+      const caller = verifyInternal(token, trustedKeysFromEnv(), 'reporting-agent');
       if (caller.role !== 'tenant_admin' && caller.role !== 'platform_admin') throw new InternalAuthError('Not an admin');
     } catch (err) {
       return reply.status(401).send({ error: (err as Error).message, code: 'UNAUTHORIZED' });

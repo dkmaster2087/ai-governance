@@ -135,7 +135,8 @@ more company APIs added from their OpenAPI descriptions, with its own address, t
 - **Reads and writes.** Read tools are on when an API is added. Write tools are switched on one by one, and each
   needs a person's approval (on the **Approvals** page, optionally announced in Slack or Teams) or runs
   straight away. An approval is for one exact call and is used once; nobody approves their own request.
-- **Every call:** arguments checked against the schema, the secrets check and company rules; approval where
+- **Every call:** arguments checked against the schema, the secrets check and company rules (a blocking rule
+  stops the call before the API sees it; if the rules can't be checked, the company's fail mode decides); approval where
   needed; the API called with Probaline's own credential plus a signed statement of who asked; personal data
   removed from the result; instruction-like text flagged; a case file in Evidence.
 - **Draft and versions.** Changes are made as a draft and published as a numbered version; any version can be

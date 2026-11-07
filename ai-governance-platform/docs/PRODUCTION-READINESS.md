@@ -61,6 +61,22 @@ loaded live as a company admin and as the platform admin, and the deploy, CI and
 | D4 | **No load test or performance baseline.** | A load test of the request path and MCP calls; record latency added by the checks. | 2 days |
 | D5 | **Local development noise**: LocalStack has no KMS, so archiving audit records to S3 fails locally. | Enable KMS in LocalStack or skip the key locally. | ½ hour |
 
+### E. Trust between services, and protecting the product on customers' hardware
+
+| # | Problem | Fix | Size |
+|---|---|---|---|
+| E1 | **One shared secret signs every internal call.** All services (and the reporting agent) hold it, so any one compromised service can create tokens to call any other as the gateway, for any company. It's never rotated. | Only the gateway (and an install's reporting agent, with its own key) holds a private signing key (ES256); internal services hold only public keys, each tied to who may use it. Keys carry an ID; a script rotates them with an overlap. | 2 days |
+| E2 | **Prompts travel unencrypted inside the network**, gateway to policy engine, data protection and analytics, through an internal load balancer that can't carry a caller's certificate. | Mutual TLS in the services themselves, so it works the same on AWS, on-premises and Kubernetes: each service has its own certificate from a private CA made per install, encrypts every connection and refuses callers without a valid certificate. On AWS the gateway reaches services directly through private DNS (Cloud Map) instead of the internal load balancer. | 3 days |
+| E3 | **Internal services accept connections from the whole network.** | Each accepts only from the gateway's security group. | ½ day |
+| E4 | **Containers ship readable code** (and npm, a shell, curl). | Each service bundled to one file and compiled to V8 bytecode; minimal (distroless) images with no shell or source; images signed, with a software bill of materials. | 2 days |
+| E5 | **Everything runs on the customer's hardware in a self-hosted install**, including rule authoring, compliance mappings and the AI service catalog. | The hybrid model ([HYBRID.md](HYBRID.md)): the control plane stays with us; the customer runs the data plane, which receives rules and detectors as signed data. Fully air-gapped installs get E4 plus contract terms. | 3–4 weeks |
+| E6 | **The detection engine is plain TypeScript**, the part most worth copying and the hottest code on large prompts. | Rewrite the personal-data and secret detectors and rule evaluation in Rust, called from Node, one detector at a time behind the same tests. | 4–6 weeks, gradual |
+
+No packaging stops a determined reverse engineer on hardware they control; E4–E6 make it slow and expensive,
+and keep what isn't shipped out of reach. Contract terms (no reverse engineering, a key per customer, a
+per-customer build watermark) apply from the first install. Buyers who need to inspect what runs in their
+network get a third-party audit, the bill of materials, and source escrow.
+
 ## Order
 
 1. **Make it deployable** (A1–A6, B1): **built** (2026-11-06); not yet run against a real AWS account. Ends
@@ -69,6 +85,8 @@ loaded live as a company admin and as the platform admin, and the deploy, CI and
 2. **Close the security settings** (B2–B5, C1, C3): **built** (2026-11-06); not yet run against a real AWS account.
 3. **Finish what looks built** (C2, C4–C8): about 2 weeks.
 4. **Run it with confidence** (D1–D5, B6, C9): about 1 week, partly in parallel.
+5. **Trust between services and protected packages** (E1–E4): **done** (2026-11-07); a first AWS deploy still to run.
+6. **Hybrid control plane and a Rust detection core** (E5, E6): later, after the first customers.
 
 Already fixed during this review: the policy engine's AWS permissions (turning a framework on would have
 failed), compliance actions through the gateway (Check again never worked), and a HIPAA control that claimed
@@ -103,4 +121,17 @@ used by the end-to-end suite now keeps its signing key across restarts, so back-
 
 Tests: gateway 254, policy engine 46, data protection 7, analytics 37, reporting agent 12, infra 31, dashboard
 76, storage 14, utils 26; end-to-end 38 of 38 on DynamoDB and on PostgreSQL.
+
+## Step 5: what was done
+
+| # | Done | Still to check |
+|---|---|---|
+| E1 | Internal tokens are ES256: only the gateway holds the private key; services hold public keys tied to their owner, so a reporting agent's key can only make reporting-agent tokens. Keys carry IDs, so two can be trusted during a rotation. CDK makes the gateway's key pair on first deploy; `scripts/internal-keys.mjs` makes pairs for rotation and local use. Also fixed: the reporting agent read the policy engine without a token, which step 2 had made it refuse. | — |
+| E2 | Mutual TLS in the services themselves: each install's own CA (`scripts/internal-pki.mjs`, run by the Deploy workflow and the local start script), a certificate per service, HTTPS only, callers refused without the right service certificate; the gateway checks it reached the right service. Required in production. On AWS, services connect directly by private DNS name (Cloud Map); the internal load balancer is gone. | A first AWS deploy. |
+| E3 | Each internal service's security group admits only the gateway's. | — |
+| E4 | One image recipe (`services/Dockerfile`): each service bundled and compiled to V8 bytecode inside a distroless Node image; only the bytecode and a loader ship, as a non-root user. CI checks nothing readable is in the image; the Deploy workflow signs each image and attaches its bill of materials. All five services compile, and the compiled policy engine and gateway were run and called. | — (the policy engine image was built and run: only `app.jsc` and `loader.js` inside, user 65532, 138 MB; it answered over mutual TLS and refused a caller without a certificate). |
+
+Tests: gateway 254, policy engine 50 (including real mutual TLS with certificates from the script), data
+protection 7, analytics 37, reporting agent 12, utils 28, infra 32; CDK synth passes; end-to-end 39 of 39 on
+DynamoDB and on PostgreSQL, with every internal call over mutual TLS and signed tokens.
 

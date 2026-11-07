@@ -131,16 +131,18 @@ minutes.
 
 ## Checks on every call
 
+Before any of these, the caller is checked: an API key with the mcp permission or a person's sign-in token for this server, a tenant that isn't suspended, a license that hasn't ended, a published server that isn't paused, and the server's access list. The full order is in [ARCHITECTURE.md](ARCHITECTURE.md#request-path-ai-agents-mcp).
+
 | Step | What happens | Built on |
 |---|---|---|
 | Arguments | Validated against the schema; unknown fields refused | new |
-| Arguments | Company rules (words, patterns, personal-data types) | policy engine, as for prompts |
-| Arguments | Secrets check: an agent mustn't send a key or password into an API | secrets check (block / redact) |
+| Arguments | Company rules (words, patterns, personal-data types, rate limits); a rule set to block stops the call. Model rules don't apply | policy engine, as for prompts |
+| Arguments | Secrets check: an agent mustn't send a key or password into an API. Always stops the call (a tenant set to redact for prompts still stops tool calls); only `off` skips it | secrets check |
 | Write actions | "Needs approval": the call waits; an approver sees tool, arguments and caller, and approves or refuses in the dashboard; the agent gets the outcome. Timeout refuses | new |
-| Result | Personal data masked unless the tool is marked to return it to these groups | data protection service |
-| Result | Prompt-injection screening: text that tries to instruct the agent is flagged, and the call is optionally refused | new; start with patterns, add a classifier |
+| Result | Personal data masked unless the server is set to return it | data protection service (the gateway's own scanner if it's down) |
+| Result | Prompt-injection screening: text that tries to instruct the agent is flagged with a note the agent sees, and recorded | patterns today; a classifier later |
 | Result | Size cap, so one call can't empty a database into a chat | new |
-| All | Rate limits per person and per tool; the tenant's fail mode when a check can't run | existing |
+| All | Calls a minute per caller per server, and per API key; the tenant's fail mode when the rules can't be checked (closed: no call; open: call made and marked) | shared counters |
 
 Every call gets a **case file**, like prompts today: who (person or workload), agent, tool, arguments (masked),
 checks and their outcome, approval if any, backend status, timing. Results aren't stored, only a fingerprint,

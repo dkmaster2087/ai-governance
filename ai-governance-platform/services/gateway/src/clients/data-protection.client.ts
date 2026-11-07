@@ -2,7 +2,7 @@ import axios from 'axios';
 import { NormalizedAIRequest, NormalizedAIResponse } from '@ai-governance/types';
 import { createLogger, GovernanceUnavailableError } from '@ai-governance/utils';
 
-import { signedFor } from './internal';
+import { internalHttpsAgent, signedFor } from './internal';
 
 const logger = createLogger('gateway:data-protection-client');
 
@@ -14,7 +14,7 @@ export class DataProtectionClient {
       const response = await axios.post<NormalizedAIRequest>(
         `${this.baseUrl}/v1/protect/request`,
         request,
-        { timeout: 5000, headers: signedFor('data-protection', request.tenantId, request.userId) }
+        { timeout: 5000, httpsAgent: internalHttpsAgent(), headers: signedFor('data-protection', request.tenantId, request.userId) }
       );
       return response.data;
     } catch (err) {
@@ -28,7 +28,7 @@ export class DataProtectionClient {
       const result = await axios.post<NormalizedAIResponse>(
         `${this.baseUrl}/v1/protect/response`,
         response,
-        { timeout: 5000, headers: signedFor('data-protection', tenantId) }
+        { timeout: 5000, httpsAgent: internalHttpsAgent(), headers: signedFor('data-protection', tenantId) }
       );
       return result.data;
     } catch (err) {

@@ -1,10 +1,12 @@
 import http from 'http';
 import { AddressInfo } from 'net';
 import Fastify, { FastifyInstance } from 'fastify';
-import { INTERNAL_HEADER, verifyInternal } from '@ai-governance/utils';
+import { INTERNAL_HEADER, newInternalKey, signingKeyFrom, trustedKeysFrom, verifyInternal } from '@ai-governance/utils';
 import { AnalyticsClient, setAnalyticsClient } from '../clients/analytics.client';
 
-const KEY = 'gateway-analytics-key-'.padEnd(40, 'z');
+const PAIR = newInternalKey('gateway');
+const KEY = () => signingKeyFrom(PAIR.signing);
+const TRUST = trustedKeysFrom([PAIR.trusted]);
 
 describe('reports go to the analytics service', () => {
   let analytics: http.Server;
@@ -15,7 +17,7 @@ describe('reports go to the analytics service', () => {
   beforeAll(async () => {
     analytics = http.createServer((req, res) => {
       try {
-        seen.push({ path: req.url!, caller: verifyInternal(String(req.headers[INTERNAL_HEADER]), KEY, 'analytics') });
+        seen.push({ path: req.url!, caller: verifyInternal(String(req.headers[INTERNAL_HEADER]), TRUST, 'analytics') });
       } catch {
         res.writeHead(401); return res.end('{}');
       }
@@ -75,7 +77,7 @@ describe('reports go to the analytics service', () => {
     const down = await app.inject({ method: 'GET', url: '/v1/gateway/summary' });
     expect(down.statusCode).toBe(503);
     expect(down.json().error).toMatch(/AI traffic is not affected/);
-    setAnalyticsClient(new AnalyticsClient(url, 'short'));
+    setAnalyticsClient(new AnalyticsClient(url, () => signingKeyFrom({ iss: 'gateway', privateKey: 'not a key' })));
     expect((await app.inject({ method: 'GET', url: '/v1/gateway/summary' })).statusCode).toBe(503); // not configured
   });
 });

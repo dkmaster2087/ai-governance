@@ -1,7 +1,9 @@
 import http from 'http';
 import { AddressInfo } from 'net';
 import Fastify, { FastifyInstance } from 'fastify';
-import { MemoryStore, setRecords } from '@ai-governance/storage';
+import { collection, MemoryStore, setRecords } from '@ai-governance/storage';
+import { GovernanceUnavailableError } from '@ai-governance/utils';
+import { tenantSettings } from '../services/tenant-settings.service';
 import { parseOpenApi, OpenApiError } from '../mcp/openapi';
 import { validateArguments } from '../mcp/schema';
 import { checkBaseUrl, isPrivateAddress } from '../mcp/egress';
@@ -251,6 +253,26 @@ describe('MCP servers', () => {
     expect(secret.content[0].text).toMatch(/Stopped by Probaline: Contains an AWS access key/);
     expect(seen).toEqual([]);
     expect(audit.log).toHaveBeenCalledTimes(2);
+  });
+
+  it('when the rules can\'t be checked, a fail-closed company\'s call is not made; a fail-open one goes through and is marked', async () => {
+    const admin = await setUp();
+    await admin.inject({ method: 'POST', url: '/v1/mcp/servers/hr-self-service/publish' });
+    const a = await agent();
+    policy.evaluate.mockRejectedValueOnce(new GovernanceUnavailableError('policy-engine'));
+    const closed = await call(a, 'listEmployees', { dept: 'Finance' });
+    expect(closed).toMatchObject({ isError: true });
+    expect(closed.content[0].text).toMatch(/couldn't check this call right now, so it wasn't made/);
+    expect(seen).toEqual([]);
+
+    await collection('tenants').put({ tenantId: 'tenant_acme', status: 'active', settings: { governanceFailMode: 'open' } });
+    tenantSettings().invalidate('tenant_acme');
+    policy.evaluate.mockRejectedValueOnce(new GovernanceUnavailableError('policy-engine'));
+    const open = await call(a, 'listEmployees', { dept: 'Finance' });
+    expect(open.isError).toBe(false);
+    expect(seen).toHaveLength(1);
+    expect((audit.log.mock.calls.at(-1) as any[])[0].metadata).toMatchObject({ governanceDegraded: 'policy_evaluation' });
+    tenantSettings().invalidate('tenant_acme');
   });
 
   it('refuses bad arguments, flags instructions in results, cuts big results, and never follows redirects', async () => {

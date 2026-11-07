@@ -4,7 +4,7 @@ import { createLogger, GovernanceUnavailableError } from '@ai-governance/utils';
 import { CircuitBreaker } from '../services/circuit-breaker';
 import { withRetry } from '../services/retry';
 import { metrics, METRIC } from '../services/metrics';
-import { signedFor } from './internal';
+import { internalHttpsAgent, signedFor } from './internal';
 
 const logger = createLogger('gateway:policy-client');
 
@@ -29,7 +29,7 @@ export class PolicyEngineClient {
           () => axios.post<PolicyEvaluationResult>(
             `${this.baseUrl}/v1/evaluate`,
             request,
-            { timeout: 5000, headers: signedFor('policy-engine', request.tenantId, request.userId) }
+            { timeout: 5000, httpsAgent: internalHttpsAgent(), headers: signedFor('policy-engine', request.tenantId, request.userId) }
           ).then((r) => r.data),
           { maxAttempts: 2, baseDelayMs: 100, maxDelayMs: 1000 },
           'policy-evaluate'

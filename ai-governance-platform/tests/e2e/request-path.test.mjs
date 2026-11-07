@@ -10,6 +10,8 @@ import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
 import path from 'node:path';
+import fs from 'node:fs';
+import https from 'node:https';
 
 const GATEWAY = process.env.GATEWAY_URL || 'http://localhost:3000';
 const MOCK = process.env.MOCK_LLM_URL || 'http://localhost:4010';
@@ -20,6 +22,18 @@ const MODEL = 'gpt-4o-mini';
 
 const platform = { authorization: 'Bearer test-key', 'x-tenant-id': 'tenant_platform', 'x-dev-role': 'platform_admin' };
 const adminOf = (tenantId) => ({ authorization: 'Bearer test-key', 'x-tenant-id': tenantId, 'x-dev-role': 'tenant_admin' });
+
+/** A direct request to an internal service over TLS, trusting the local CA; `as` presents that service's certificate. */
+function internal(port, method, url, { headers = {}, body, as } = {}) {
+  const pki = path.join(ROOT, '.dev-data/pki');
+  const read = (n) => fs.readFileSync(path.join(pki, n));
+  return new Promise((resolve, reject) => {
+    const req = https.request({ host: 'localhost', port, method, path: url, ca: read('ca.pem'), ...(as ? { cert: read(`${as}.pem`), key: read(`${as}.key`) } : {}),
+      headers: { ...headers, ...(body ? { 'content-type': 'application/json' } : {}) } }, (res) => { res.resume(); resolve(res.statusCode); });
+    req.on('error', reject);
+    req.end(body ? JSON.stringify(body) : undefined);
+  });
+}
 
 async function call(method, url, { headers = {}, body, base = GATEWAY } = {}) {
   const res = await fetch(base + url, {
@@ -160,7 +174,9 @@ async function startDegradedGateway() {
     PORT: String(DEGRADED_PORT),
     POLICY_ENGINE_URL: 'http://127.0.0.1:9', DATA_PROTECTION_URL: 'http://127.0.0.1:9',
     // Analytics is down for this gateway too: reports fail, prompts don't.
-    ANALYTICS_URL: 'http://127.0.0.1:9', INTERNAL_SERVICE_KEY: process.env.INTERNAL_SERVICE_KEY || 'local-dev-internal-service-key-not-a-secret',
+    ANALYTICS_URL: 'http://127.0.0.1:9',
+    // The gateway's signing key, as scripts/dev-local.sh made it.
+    INTERNAL_SIGNING_KEY: JSON.stringify(JSON.parse(fs.readFileSync(path.join(ROOT, '.dev-data/internal-keys.json'), 'utf8')).gateway.signing),
   };
   const child = spawn('npx', ['ts-node', '--transpile-only', '-r', 'tsconfig-paths/register', 'src/index.ts'], {
     cwd: path.join(ROOT, 'services/gateway'), env, stdio: ['ignore', 'ignore', 'pipe'],
@@ -460,6 +476,28 @@ describe('MCP servers', () => {
     assert.equal(res.isError, true);
     assert.match(res.content[0].text, /^Stopped by Probaline/);
     assert.equal(hits.length, before, 'the API was not called');
+  });
+
+  test('a personal-data rule stops a tool call carrying that data; a suspended company\'s agent is refused', async () => {
+    const rule = await addRule(A, { type: 'pii_detection', description: 'E2E MCP no SSNs', values: ['SSN'] });
+    const before = hits.length;
+    const res = (await rpc('tools/call', { name: 'searchEmployees', arguments: { q: 'SSN 123-45-6789' } })).body.result;
+    assert.equal(res.isError, true, JSON.stringify(res));
+    assert.match(res.content[0].text, /^Stopped by Probaline/);
+    assert.equal(hits.length, before, 'the API was not called');
+    const record = await caseFile(A, res._meta['probaline/requestId']);
+    assert.equal(record.status, 200, 'a stopped call still has a case file');
+    await setRule(rule, { enabled: false });
+
+    assert.equal((await call('POST', `/v1/tenants/${A}/suspend`, { headers: platform })).status, 200);
+    try {
+      const refused = await rpc('tools/call', { name: 'getEmployee', arguments: { id: 'e1' } });
+      assert.equal(refused.status, 403, JSON.stringify(refused.body));
+      assert.equal(refused.body.code, 'TENANT_SUSPENDED');
+      assert.equal(hits.length, before);
+    } finally {
+      assert.equal((await call('POST', `/v1/tenants/${A}/activate`, { headers: platform })).status, 200);
+    }
   });
 
   test('keys without the MCP permission, and paused servers, are refused', async () => {
@@ -859,10 +897,8 @@ describe('when the checks are down', () => {
 
 describe('reports come from the analytics service', () => {
   test('analytics refuses anything but a request the gateway signed', async () => {
-    const direct = await fetch('http://localhost:3003/internal/v1/gateway/summary');
-    assert.equal(direct.status, 401);
-    const forged = await fetch('http://localhost:3003/internal/v1/cost/summary', { headers: { 'x-probaline-internal': 'e30.e30.AAAA' } });
-    assert.equal(forged.status, 401);
+    assert.equal(await internal(3003, 'GET', '/internal/v1/gateway/summary'), 401);
+    assert.equal(await internal(3003, 'GET', '/internal/v1/cost/summary', { headers: { 'x-probaline-internal': 'e30.e30.AAAA' } }), 401);
     // Through the gateway, the same report works.
     assert.equal((await call('GET', '/v1/gateway/summary', { headers: adminOf(A) })).status, 200);
   });
@@ -870,10 +906,14 @@ describe('reports come from the analytics service', () => {
 
 describe('internal services and evidence retention', () => {
   test('the policy engine and data protection refuse anything the gateway didn\'t sign', async () => {
-    for (const [port, path] of [[3001, `/v1/policies/${A}`], [3002, '/v1/protect/request']]) {
-      const res = await fetch(`http://localhost:${port}${path}`, { method: path.includes('protect') ? 'POST' : 'GET', headers: { 'content-type': 'application/json' }, body: path.includes('protect') ? JSON.stringify({ tenantId: A, messages: [] }) : undefined });
-      assert.equal(res.status, 401, `${port}${path}`);
+    for (const [port, url] of [[3001, `/v1/policies/${A}`], [3002, '/v1/protect/request']]) {
+      // Over TLS, without a service certificate.
+      assert.equal(await internal(port, url.includes('protect') ? 'POST' : 'GET', url, { body: url.includes('protect') ? { tenantId: A, messages: [] } : undefined }), 401, `${port}${url}`);
+      // A service certificate, but not the gateway's.
+      assert.equal(await internal(port, 'GET', url, { as: 'analytics' }), 401, `${port}${url} as analytics`);
     }
+    // Plain HTTP isn't served at all.
+    await assert.rejects(fetch(`http://localhost:3001/health`).then((r) => r.text()));
   });
 
   test('a company admin places a legal hold with a reason, and releases it', async () => {

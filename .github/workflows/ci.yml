@@ -149,11 +149,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: gateway, dockerfile: services/gateway/Dockerfile, context: . }
-          - { name: policy-engine, dockerfile: services/policy-engine/Dockerfile, context: . }
-          - { name: data-protection, dockerfile: services/data-protection/Dockerfile, context: . }
-          - { name: analytics, dockerfile: services/analytics/Dockerfile, context: . }
-          - { name: reporting-agent, dockerfile: services/reporting-agent/Dockerfile, context: . }
+          - { name: gateway, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg SERVICE=gateway --build-arg PORT=3000' }
+          - { name: policy-engine, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg SERVICE=policy-engine --build-arg PORT=3001' }
+          - { name: data-protection, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg SERVICE=data-protection --build-arg PORT=3002' }
+          - { name: analytics, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg SERVICE=analytics --build-arg PORT=3003' }
+          - { name: reporting-agent, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg SERVICE=reporting-agent --build-arg PORT=3005' }
           - { name: collector, dockerfile: collector/deploy/onprem/Dockerfile, context: collector }
           - { name: connector, dockerfile: connector/Dockerfile, context: connector }
     steps:
@@ -161,4 +161,14 @@ jobs:
 
       # Build only, to prove each Dockerfile works; pushing happens in deploy.yml.
       - name: Build image
-        run: docker build -f ${{ matrix.dockerfile }} -t probaline-${{ matrix.name }}:ci ${{ matrix.context }}
+        run: docker build -f ${{ matrix.dockerfile }} ${{ matrix.args }} -t probaline-${{ matrix.name }}:ci ${{ matrix.context }}
+      # Service images must ship bytecode only: no source, no shell, no npm.
+      - name: Check nothing readable ships
+        if: matrix.kind == 'service'
+        run: |
+          id=$(docker create probaline-${{ matrix.name }}:ci)
+          docker export "$id" > image.tar
+          files=$(tar -tf image.tar)
+          echo "$files" | grep -q '^app/app.jsc$'
+          ! echo "$files" | grep -E '^app/.*\.(ts|map)$|^app/app\.js$|^app/node_modules/|^bin/(sh|bash)$|^usr/bin/npm'
+          docker rm "$id" > /dev/null

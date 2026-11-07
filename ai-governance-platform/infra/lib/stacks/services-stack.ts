@@ -13,6 +13,7 @@ import * as kms from 'aws-cdk-lib/aws-kms';
 import { Construct } from 'constructs';
 import type { ServiceName } from './registry-stack';
 import { GatewayFirewall } from '../constructs/gateway-firewall';
+import { InternalKeys } from '../constructs/internal-keys';
 
 interface ServicesStackProps extends cdk.StackProps {
   prefix: string;
@@ -63,12 +64,20 @@ export class ServicesStack extends cdk.Stack {
       containerInsights: true,
     });
 
-    // Internal ALB for service-to-service communication
-    const internalAlb = new elbv2.ApplicationLoadBalancer(this, 'InternalAlb', {
-      vpc,
-      internetFacing: false,
-      vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
-    });
+    // Services find each other by private DNS name (<service>.<prefix>-<stage>.internal) and connect directly,
+    // over mutual TLS: a load balancer in between couldn't carry the caller's certificate.
+    const internalDomain = `${prefix}-${stage}.internal`;
+    this.cluster.addDefaultCloudMapNamespace({ name: internalDomain, vpc });
+    const internalUrl = (name: string, port: number) => `https://${name}.${internalDomain}:${port}`;
+    // Each service's certificate, made by scripts/internal-pki.mjs (run before deploying).
+    const tlsSecrets = (name: string) => {
+      const secret = secretsmanager.Secret.fromSecretNameV2(this, `${name}Tls`, `${prefix}/${stage}/internal-tls/${name}`);
+      return {
+        INTERNAL_TLS_CA: ecs.Secret.fromSecretsManager(secret, 'ca'),
+        INTERNAL_TLS_CERT: ecs.Secret.fromSecretsManager(secret, 'cert'),
+        INTERNAL_TLS_KEY: ecs.Secret.fromSecretsManager(secret, 'key'),
+      };
+    };
 
     // Public ALB for gateway
     this.loadBalancer = new elbv2.ApplicationLoadBalancer(this, 'PublicAlb', {
@@ -94,20 +103,16 @@ export class ServicesStack extends cdk.Stack {
       COMPREHEND_ENABLED: 'true',
     };
 
-    // The key internal requests are signed and checked with. Generated here, held in Secrets Manager, and
-    // given only to Probaline's own services: the gateway signs; policy engine, data protection and analytics check.
-    const internalKey = new secretsmanager.Secret(this, 'InternalServiceKey', {
-      secretName: `${prefix}/${stage}/internal-service-key`,
-      description: 'Signs requests from the gateway to internal services',
-      generateSecretString: { passwordLength: 64, excludePunctuation: true },
-      removalPolicy: stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
-    });
-    const internalKeySecret = { INTERNAL_SERVICE_KEY: ecs.Secret.fromSecretsManager(internalKey) };
+    // Internal calls: only the gateway holds the private signing key; the internal services hold the public keys.
+    const internalKeys = new InternalKeys(this, 'InternalKeys', { prefix, stage, removalPolicy: stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY });
+    const trustedKeysSecret = { INTERNAL_TRUSTED_KEYS: ecs.Secret.fromSecretsManager(internalKeys.trustedKeys) };
+    const signingKeySecret = { INTERNAL_SIGNING_KEY: ecs.Secret.fromSecretsManager(internalKeys.signingKey) };
 
     // --- Policy Engine Service ---
     const policyEngineService = this.createService({
       id: 'PolicyEngine',
       name: 'policy-engine',
+      internal: true,
       prefix,
       stage,
       cluster: this.cluster,
@@ -117,7 +122,7 @@ export class ServicesStack extends cdk.Stack {
       memory: 1024,
       // Rules check approved models and company settings, and count requests for rate limits.
       environment: { ...commonEnv, TENANTS_TABLE: tenantsTable.tableName, MODELS_TABLE: modelsTable.tableName, COMPLIANCE_TABLE: complianceTable.tableName },
-      secrets: internalKeySecret,
+      secrets: { ...trustedKeysSecret, ...tlsSecrets('policy-engine') },
     });
     policiesTable.grantReadWriteData(policyEngineService.taskDefinition.taskRole);
     for (const t of [tenantsTable, modelsTable]) t.grantReadData(policyEngineService.taskDefinition.taskRole);
@@ -127,6 +132,7 @@ export class ServicesStack extends cdk.Stack {
     const dataProtectionService = this.createService({
       id: 'DataProtection',
       name: 'data-protection',
+      internal: true,
       prefix,
       stage,
       cluster: this.cluster,
@@ -135,7 +141,7 @@ export class ServicesStack extends cdk.Stack {
       cpu: 512,
       memory: 1024,
       environment: commonEnv,
-      secrets: internalKeySecret,
+      secrets: { ...trustedKeysSecret, ...tlsSecrets('data-protection') },
     });
     dataProtectionService.taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
@@ -149,6 +155,7 @@ export class ServicesStack extends cdk.Stack {
     const analyticsService = this.createService({
       id: 'Analytics',
       name: 'analytics',
+      internal: true,
       prefix,
       stage,
       cluster: this.cluster,
@@ -162,24 +169,10 @@ export class ServicesStack extends cdk.Stack {
         TENANTS_TABLE: tenantsTable.tableName,
         SHADOW_AI_TABLE: shadowAiTable.tableName,
       },
-      secrets: internalKeySecret,
+      secrets: { ...trustedKeysSecret, ...tlsSecrets('analytics') },
     });
     for (const t of [auditLogsTable, tenantsTable, shadowAiTable, metricsTable]) t.grantReadData(analyticsService.taskDefinition.taskRole);
 
-    // The gateway reaches the policy engine and data protection through the internal load balancer: one
-    // listener per service, open only inside the VPC.
-    const internalRoute = (id: string, service: ecs.FargateService, port: number) => {
-      const listener = internalAlb.addListener(`${id}InternalListener`, { port, protocol: elbv2.ApplicationProtocol.HTTP, open: false });
-      internalAlb.connections.allowFrom(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(port), `${id} from inside the VPC`);
-      listener.addTargets(`${id}InternalTarget`, {
-        port, protocol: elbv2.ApplicationProtocol.HTTP, targets: [service],
-        healthCheck: { path: '/health', interval: cdk.Duration.seconds(30), healthyThresholdCount: 2 },
-        deregistrationDelay: cdk.Duration.seconds(30),
-      });
-    };
-    internalRoute('PolicyEngine', policyEngineService, 3001);
-    internalRoute('DataProtection', dataProtectionService, 3002);
-    internalRoute('Analytics', analyticsService, 3003);
 
     // Customers' provider API keys live in Secrets Manager under this prefix.
     const providerKeysPrefix = `${prefix}/${stage}/provider-keys`;
@@ -191,7 +184,7 @@ export class ServicesStack extends cdk.Stack {
     this.gatewayService = this.createService({
       id: 'Gateway',
       name: 'gateway',
-      secrets: internalKeySecret,
+      secrets: { ...signingKeySecret, ...tlsSecrets('gateway') },
       prefix,
       stage,
       cluster: this.cluster,
@@ -218,9 +211,9 @@ export class ServicesStack extends cdk.Stack {
           MCP_CONNECTORS_TABLE: props.mcpTables.connectors.tableName,
         } : {}),
         AUDIT_LOGS_TABLE: auditLogsTable.tableName,
-        POLICY_ENGINE_URL: `http://${internalAlb.loadBalancerDnsName}:3001`,
-        DATA_PROTECTION_URL: `http://${internalAlb.loadBalancerDnsName}:3002`,
-        ANALYTICS_URL: `http://${internalAlb.loadBalancerDnsName}:3003`,
+        POLICY_ENGINE_URL: internalUrl('policy-engine', 3001),
+        DATA_PROTECTION_URL: internalUrl('data-protection', 3002),
+        ANALYTICS_URL: internalUrl('analytics', 3003),
         ALLOWED_ORIGINS: '', // None needed: browsers reach the gateway through CloudFront on the site's own address
         ...(gatewayUrl ? { PUBLIC_GATEWAY_URL: gatewayUrl } : {}),
         COGNITO_USER_POOL_ID: props.userPool.userPoolId,
@@ -232,6 +225,14 @@ export class ServicesStack extends cdk.Stack {
         GOVERNANCE_FAIL_MODE: 'closed',
       },
     });
+
+    // Services start only once their keys exist.
+    for (const svc of [policyEngineService, dataProtectionService, analyticsService, this.gatewayService]) svc.node.addDependency(internalKeys.ready);
+
+    // Internal services accept connections only from the gateway, nothing else in the network.
+    policyEngineService.connections.allowFrom(this.gatewayService, ec2.Port.tcp(3001), 'policy engine from the gateway only');
+    dataProtectionService.connections.allowFrom(this.gatewayService, ec2.Port.tcp(3002), 'data protection from the gateway only');
+    analyticsService.connections.allowFrom(this.gatewayService, ec2.Port.tcp(3003), 'analytics from the gateway only');
 
     // Grant gateway permissions
     this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(
@@ -321,8 +322,10 @@ export class ServicesStack extends cdk.Stack {
     memory: number;
     environment: Record<string, string>;
     secrets?: Record<string, ecs.Secret>;
+    /** Internal services: reachable by private DNS name, over TLS. */
+    internal?: boolean;
   }): ecs.FargateService {
-    const { id, name, prefix, stage, cluster, vpc, port, cpu, memory, environment, secrets } = config;
+    const { id, name, prefix, stage, cluster, vpc, port, cpu, memory, environment, secrets, internal } = config;
 
     const repo = this.repositories[name as ServiceName];
     const logGroup = new logs.LogGroup(this, `${id}Logs`, {
@@ -347,7 +350,9 @@ export class ServicesStack extends cdk.Stack {
         logGroup,
       }),
       healthCheck: {
-        command: ['CMD-SHELL', `curl -f http://localhost:${port}/health || exit 1`],
+        // Node itself checks /health (distroless images carry no shell or curl; Node is at /nodejs/bin). Internal services serve TLS; /health
+        // needs no certificate, and this check talks only to itself.
+        command: ['CMD', '/nodejs/bin/node', '-e', `require('${internal ? 'https' : 'http'}').get({host:'localhost',port:${port},path:'/health',rejectUnauthorized:false},r=>process.exit(r.statusCode===200?0:1)).on('error',()=>process.exit(1))`],
         interval: cdk.Duration.seconds(30),
         timeout: cdk.Duration.seconds(5),
         retries: 3,
@@ -359,7 +364,7 @@ export class ServicesStack extends cdk.Stack {
       description: `${name} service security group`,
       allowAllOutbound: true,
     });
-    sg.addIngressRule(ec2.Peer.ipv4(vpc.vpcCidrBlock), ec2.Port.tcp(port));
+    // No open ingress: the gateway is reached through its load balancer, internal services only from the gateway.
 
     return new ecs.FargateService(this, `${id}Service`, {
       serviceName: `${prefix}-${name}-${stage}`,
@@ -370,6 +375,7 @@ export class ServicesStack extends cdk.Stack {
       securityGroups: [sg],
       enableExecuteCommand: true, // For debugging
       circuitBreaker: { rollback: true },
+      ...(internal ? { cloudMapOptions: { name } } : {}),
     });
   }
 }

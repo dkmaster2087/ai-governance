@@ -9,3 +9,6 @@ infra
 .env*
 !.env.local
 cdk.out
+build
+.dev-data
+.dev-logs

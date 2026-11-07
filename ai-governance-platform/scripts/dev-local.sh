@@ -57,15 +57,22 @@ case "${1:-start}" in
       (cd "$ROOT" && nohup node scripts/dev-idp.mjs 4030 > "$LOGS/dev-idp.log" 2>&1 < /dev/null &) > /dev/null 2>&1
       echo "  dev-idp → http://localhost:4030 (stand-in company sign-in: client probaline-dev / dev-secret)"
     fi
-    # Internal services answer only requests signed with this key (in AWS it comes from Secrets Manager).
-    export INTERNAL_SERVICE_KEY="${INTERNAL_SERVICE_KEY:-local-dev-internal-service-key-not-a-secret}"
-    start_service policy-engine services/policy-engine 3001
-    start_service data-protection services/data-protection 3002 COMPREHEND_ENABLED=false
-    start_service analytics services/analytics 3003
+    # Internal services answer only requests the gateway signs. Only the gateway gets the private key; every
+    # service gets the public keys. Made once and kept in .dev-data (in AWS they live in Secrets Manager).
+    eval "$(node "$ROOT/scripts/internal-keys.mjs" local "$ROOT/.dev-data/internal-keys.json")"
+    export INTERNAL_TRUSTED_KEYS
+    # Mutual TLS between services: a private CA and one certificate per service, made once in .dev-data/pki.
+    PKI="$ROOT/.dev-data/pki"
+    node "$ROOT/scripts/internal-pki.mjs" local "$PKI" > /dev/null
+    tls() { echo "INTERNAL_TLS_CA=$(cat "$PKI/ca.pem")"; }
+    start_service policy-engine services/policy-engine 3001 "$(tls)" "INTERNAL_TLS_CERT=$(cat "$PKI/policy-engine.pem")" "INTERNAL_TLS_KEY=$(cat "$PKI/policy-engine.key")"
+    start_service data-protection services/data-protection 3002 "$(tls)" "INTERNAL_TLS_CERT=$(cat "$PKI/data-protection.pem")" "INTERNAL_TLS_KEY=$(cat "$PKI/data-protection.key")" COMPREHEND_ENABLED=false
+    start_service analytics services/analytics 3003 "$(tls)" "INTERNAL_TLS_CERT=$(cat "$PKI/analytics.pem")" "INTERNAL_TLS_KEY=$(cat "$PKI/analytics.key")"
     # MCP: local stand-in APIs run on http://localhost, which a deployed gateway refuses.
     # PUBLIC_GATEWAY_URL: the address agents and the sign-in flow use.
-    start_service gateway services/gateway 3000 AUTH_DEV_MODE=true MCP_ALLOW_PRIVATE_BACKENDS=true MCP_ALLOW_HTTP_BACKENDS=true PUBLIC_GATEWAY_URL=http://localhost:3000 ANALYTICS_URL=http://localhost:3003 \
-      POLICY_ENGINE_URL=http://localhost:3001 DATA_PROTECTION_URL=http://localhost:3002 ALLOWED_ORIGINS=http://localhost:5174,http://localhost:5173 \
+    start_service gateway services/gateway 3000 "INTERNAL_SIGNING_KEY=$INTERNAL_SIGNING_KEY_GATEWAY" "$(tls)" "INTERNAL_TLS_CERT=$(cat "$PKI/gateway.pem")" "INTERNAL_TLS_KEY=$(cat "$PKI/gateway.key")" \
+      AUTH_DEV_MODE=true MCP_ALLOW_PRIVATE_BACKENDS=true MCP_ALLOW_HTTP_BACKENDS=true PUBLIC_GATEWAY_URL=http://localhost:3000 ANALYTICS_URL=https://localhost:3003 \
+      POLICY_ENGINE_URL=https://localhost:3001 DATA_PROTECTION_URL=https://localhost:3002 ALLOWED_ORIGINS=http://localhost:5174,http://localhost:5173 \
       OPENAI_BASE_URL=http://localhost:4010/v1 PROXY_TARGET_OPENAI=http://localhost:4010 GLOBAL_RATE_LIMIT=2000
     if lsof -tiTCP:5173 -sTCP:LISTEN >/dev/null 2>&1; then echo "  website: port 5173 already in use, skipping"
     else (cd "$ROOT/frontend/website" && nohup npx vite --port 5173 > "$LOGS/website.log" 2>&1 < /dev/null &) > /dev/null 2>&1; echo "  website → http://localhost:5173"; fi

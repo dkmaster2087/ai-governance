@@ -1,14 +1,18 @@
 import { collection, MemoryStore, setRecords } from '@ai-governance/storage';
-import { INTERNAL_HEADER, signInternal } from '@ai-governance/utils';
+import { INTERNAL_HEADER, newInternalKey, signingKeyFrom, signInternal, trustedKeysFrom } from '@ai-governance/utils';
 import { buildApp } from '../app';
 
-const KEY = 'p'.repeat(40);
+const GW = newInternalKey('gateway');
+const KEY = signingKeyFrom(GW.signing);
+const AGENT_PAIR = newInternalKey('reporting-agent');
+const AGENT = signingKeyFrom(AGENT_PAIR.signing);
+const TRUSTED = trustedKeysFrom([GW.trusted, AGENT_PAIR.trusted]);
 const as = (tenantId: string, role = 'gateway') =>
-  ({ [INTERNAL_HEADER]: signInternal({ tenantId, userId: 'u', role }, KEY, 'policy-engine') });
+  ({ [INTERNAL_HEADER]: signInternal({ tenantId, userId: 'u', role }, role === 'reporting_agent' ? AGENT : KEY, 'policy-engine') });
 
 describe('the policy engine answers only signed requests, about the company signed for', () => {
   let app: Awaited<ReturnType<typeof buildApp>>;
-  beforeAll(async () => { setRecords(new MemoryStore()); app = await buildApp({ key: () => KEY }); });
+  beforeAll(async () => { setRecords(new MemoryStore()); app = await buildApp({ trusted: () => TRUSTED }); });
   afterAll(() => app.close());
   const req = (method: 'GET' | 'POST' | 'DELETE', url: string, headers: Record<string, string>, payload?: object) =>
     app.inject({ method, url, headers, ...(payload ? { payload } : {}) });

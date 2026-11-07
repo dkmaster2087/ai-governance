@@ -1,5 +1,5 @@
 import axios from 'axios';
-import { createLogger, INTERNAL_HEADER, internalKeyFromEnv, signInternal } from '@ai-governance/utils';
+import { createLogger, INTERNAL_HEADER, internalHttpsAgent, signInternal, signingKeyFromEnv } from '@ai-governance/utils';
 
 const logger = createLogger('reporting-agent:core');
 
@@ -212,19 +212,19 @@ export class ReportingAgent {
 
   /** A token for this install's own services: on behalf of the company, limited to the reporting summary. */
   private internalHeaders(audience: string) {
-    const token = signInternal({ tenantId: this.config.tenantId, userId: 'reporting-agent', role: 'reporting_agent' }, internalKeyFromEnv(), audience);
+    const token = signInternal({ tenantId: this.config.tenantId, userId: 'reporting-agent', role: 'reporting_agent' }, signingKeyFromEnv(), audience);
     return { [INTERNAL_HEADER]: token };
   }
 
   /** Usage and cost for the last 24 hours, from this install's analytics. */
   private async readSummary(): Promise<any> {
-    const { data } = await axios.get(`${this.config.analyticsUrl}/internal/v1/reporting/summary`, { headers: this.internalHeaders('analytics'), timeout: 15000 });
+    const { data } = await axios.get(`${this.config.analyticsUrl}/internal/v1/reporting/summary`, { headers: this.internalHeaders('analytics'), timeout: 15000, httpsAgent: internalHttpsAgent() });
     return data;
   }
 
   /** Which frameworks are on and how many of their controls are met, without the controls themselves. */
   private async collectComplianceStatus(): Promise<ComplianceStatus> {
-    const { data } = await axios.get(`${this.config.policyEngineUrl}/v1/compliance/status/${encodeURIComponent(this.config.tenantId)}`, { timeout: 15000 });
+    const { data } = await axios.get(`${this.config.policyEngineUrl}/v1/compliance/status/${encodeURIComponent(this.config.tenantId)}`, { headers: this.internalHeaders('policy-engine'), timeout: 15000, httpsAgent: internalHttpsAgent() });
     const frameworks: any[] = Array.isArray(data) ? data : [];
     const on = frameworks.filter((f) => f.status !== 'disabled');
     return {

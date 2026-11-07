@@ -1,8 +1,8 @@
-import Fastify, { FastifyReply, FastifyRequest } from 'fastify';
+import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { allPages, collection, records } from '@ai-governance/storage';
 import { AuditLog } from '@ai-governance/types';
-import { createLogger, INTERNAL_HEADER, InternalAuthError, InternalCaller, verifyInternal } from '@ai-governance/utils';
+import { createLogger, INTERNAL_HEADER, InternalAuthError, InternalCaller, InternalTls, peerService, tlsServerOptions, TrustedKey, verifyInternal } from '@ai-governance/utils';
 import { isModelTraffic, queryAuditLogs } from './reports/audit-query';
 import { costBreakdown, costSummary, costUsers, mcpActivity, ruleActivity } from './reports/cost';
 import { buildEvidenceRecord, listEvidence } from './reports/evidence';
@@ -71,8 +71,9 @@ function range(q: { from?: string; to?: string }, defaultDays = 7, maxDays = 31)
 
 const bad = (reply: FastifyReply, code: string, error: string, status = 400) => reply.status(status).send({ error, code });
 
-export async function buildApp(opts: { key: string }) {
-  const app = Fastify({ logger: false, bodyLimit: 64 * 1024 });
+export async function buildApp(opts: { trusted: TrustedKey[]; tls?: InternalTls | null }) {
+  // With mutual TLS, every connection is encrypted and callers must show a Probaline service certificate.
+  const app = Fastify({ logger: false, bodyLimit: 64 * 1024, ...(opts.tls ? { https: tlsServerOptions(opts.tls) } : {}) }) as unknown as FastifyInstance;
   app.decorateRequest('caller', null as unknown as InternalCaller);
 
   app.get('/health', async () => ({ status: 'healthy', service: 'analytics' }));
@@ -85,14 +86,20 @@ export async function buildApp(opts: { key: string }) {
   // Every other route: a valid token from the gateway, for a role that may read reports.
   app.addHook('onRequest', async (request, reply) => {
     if (request.url === '/health' || request.url === '/health/ready') return;
+    const peer = opts.tls ? peerService(request.raw.socket) : null;
+    if (opts.tls && peer !== 'gateway' && peer !== 'reporting-agent') {
+      logger.warn('Refused an internal request', { error: peer ? `Service ${peer} may not call analytics` : 'No valid service certificate', path: request.url.split('?')[0] });
+      return bad(reply, 'UNAUTHENTICATED', 'Analytics only answers the gateway', 401);
+    }
     const token = request.headers[INTERNAL_HEADER];
     if (typeof token !== 'string') return bad(reply, 'UNAUTHENTICATED', 'Analytics only answers the gateway', 401);
     try {
-      request.caller = verifyInternal(token, opts.key, AUDIENCE);
+      request.caller = verifyInternal(token, opts.trusted, AUDIENCE);
     } catch (err) {
       logger.warn('Refused an internal request', { error: (err as InternalAuthError).message, path: request.url.split('?')[0] });
       return bad(reply, 'UNAUTHENTICATED', 'Analytics only answers the gateway', 401);
     }
+    if (peer === 'reporting-agent' && request.caller.role !== AGENT_ROLE) return bad(reply, 'FORBIDDEN', 'A reporting agent may act only as itself', 403);
     if (request.caller.role === AGENT_ROLE) {
       if (request.url.split('?')[0] !== AGENT_PATH) return bad(reply, 'FORBIDDEN', 'The reporting agent may read only its summary', 403);
       return;

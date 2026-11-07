@@ -4,3 +4,4 @@ export * from './tokens';
 export * from './errors';
 export * from './internal-auth';
 export * from './internal-guard';
+export * from './internal-tls';

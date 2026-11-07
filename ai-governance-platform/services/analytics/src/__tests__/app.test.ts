@@ -1,10 +1,14 @@
 import { FastifyInstance } from 'fastify';
 import { collection, MemoryStore, setRecords } from '@ai-governance/storage';
 import { AuditLog } from '@ai-governance/types';
-import { INTERNAL_HEADER, signInternal } from '@ai-governance/utils';
+import { INTERNAL_HEADER, newInternalKey, signingKeyFrom, signInternal, trustedKeysFrom } from '@ai-governance/utils';
 import { buildApp } from '../app';
 
-const KEY = 'test-internal-key-'.padEnd(40, 'x');
+const GW = newInternalKey('gateway');
+const KEY = signingKeyFrom(GW.signing);
+const AGENT_PAIR = newInternalKey('reporting-agent');
+const AGENT = signingKeyFrom(AGENT_PAIR.signing);
+const TRUSTED = trustedKeysFrom([GW.trusted, AGENT_PAIR.trusted]);
 const now = Date.now();
 const at = (minutesAgo: number) => new Date(now - minutesAgo * 60_000).toISOString();
 
@@ -19,12 +23,12 @@ function log(tenantId: string, over: Partial<AuditLog> = {}): AuditLog & Record<
 
 describe('analytics', () => {
   let app: FastifyInstance;
-  const as = (tenantId: string, role = 'tenant_admin') => ({ [INTERNAL_HEADER]: signInternal({ tenantId, userId: 'u1', role }, KEY, 'analytics') });
+  const as = (tenantId: string, role = 'tenant_admin') => ({ [INTERNAL_HEADER]: signInternal({ tenantId, userId: 'u1', role }, role === 'reporting_agent' ? AGENT : KEY, 'analytics') });
   const get = (url: string, headers: Record<string, string> = as('tenant_a')) => app.inject({ method: 'GET', url, headers });
 
   beforeEach(async () => {
     setRecords(new MemoryStore());
-    app = await buildApp({ key: KEY });
+    app = await buildApp({ trusted: TRUSTED });
     const audit = collection('auditLogs');
     await collection('tenants').put({ tenantId: 'tenant_a', settings: { auditLogRetentionDays: 90 } });
     await collection('tenants').put({ tenantId: 'tenant_b' });
@@ -39,7 +43,7 @@ describe('analytics', () => {
   it('answers only the gateway, with a valid token for a role that may read reports', async () => {
     expect((await app.inject({ method: 'GET', url: '/health' })).statusCode).toBe(200);
     expect((await get('/internal/v1/gateway/summary', {})).statusCode).toBe(401);
-    expect((await get('/internal/v1/gateway/summary', { [INTERNAL_HEADER]: signInternal({ tenantId: 'tenant_a', userId: 'u', role: 'tenant_admin' }, 'other-key'.padEnd(40, 'y'), 'analytics') })).statusCode).toBe(401);
+    expect((await get('/internal/v1/gateway/summary', { [INTERNAL_HEADER]: signInternal({ tenantId: 'tenant_a', userId: 'u', role: 'tenant_admin' }, signingKeyFrom(newInternalKey('gateway').signing), 'analytics') })).statusCode).toBe(401);
     expect((await get('/internal/v1/gateway/summary', { [INTERNAL_HEADER]: signInternal({ tenantId: 'tenant_a', userId: 'u', role: 'tenant_admin' }, KEY, 'policy-engine') })).statusCode).toBe(401);
     expect((await get('/internal/v1/gateway/summary', as('tenant_a', 'tenant_user'))).statusCode).toBe(403);
     expect((await get('/internal/v1/gateway/summary')).statusCode).toBe(200);

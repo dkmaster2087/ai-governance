@@ -12,3 +12,4 @@ cdk.out/
 .DS_Store
 .dev-logs/
 .dev-data/
+build/

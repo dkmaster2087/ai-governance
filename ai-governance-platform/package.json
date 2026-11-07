@@ -19,11 +19,13 @@
     "test:e2e": "node --test --test-concurrency=1 tests/e2e/request-path.test.mjs"
   },
   "devDependencies": {
-    "turbo": "^2.0.0",
-    "typescript": "^5.4.0",
     "@types/node": "^20.0.0",
+    "bytenode": "^1.7.0",
+    "esbuild": "^0.21.5",
     "eslint": "^9.0.0",
-    "prettier": "^3.2.0"
+    "prettier": "^3.2.0",
+    "turbo": "^2.0.0",
+    "typescript": "^5.4.0"
   },
   "engines": {
     "node": ">=20.0.0",

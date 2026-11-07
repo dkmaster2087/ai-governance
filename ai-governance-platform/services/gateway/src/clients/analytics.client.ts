@@ -1,5 +1,7 @@
+import axios, { AxiosResponse } from 'axios';
 import { FastifyReply, FastifyRequest } from 'fastify';
-import { createLogger, INTERNAL_HEADER, InternalCaller, internalKeyFromEnv, signInternal } from '@ai-governance/utils';
+import { internalHttpsAgent } from './internal';
+import { createLogger, INTERNAL_HEADER, InternalCaller, signInternal, SigningKey, signingKeyFromEnv } from '@ai-governance/utils';
 
 const logger = createLogger('gateway:analytics-client');
 
@@ -23,12 +25,12 @@ export interface AnalyticsAnswer { status: number; body: unknown }
 export class AnalyticsClient {
   constructor(
     private baseUrl = process.env.ANALYTICS_URL || 'http://localhost:3003',
-    private keyOverride?: string,
+    private keyOverride?: () => SigningKey,
     private timeoutMs = 30_000,
   ) {}
 
-  private key(): string {
-    return internalKeyFromEnv(this.keyOverride !== undefined ? { INTERNAL_SERVICE_KEY: this.keyOverride } : process.env);
+  private key(): SigningKey {
+    return this.keyOverride ? this.keyOverride() : signingKeyFromEnv();
   }
 
   /** The company and user a request acts for. Reports are for dashboard users only. */
@@ -46,11 +48,13 @@ export class AnalyticsClient {
       logger.error('Analytics is not configured', { error: (err as Error).message });
       throw new AnalyticsUnavailableError('Analytics is not configured');
     }
-    let res: Response;
+    let res: AxiosResponse;
     try {
-      res = await fetch(`${this.baseUrl.replace(/\/$/, '')}${path}${query ? `?${query}` : ''}`, {
+      res = await axios.get(`${this.baseUrl.replace(/\/$/, '')}${path}${query ? `?${query}` : ''}`, {
         headers: { [INTERNAL_HEADER]: token, accept: 'application/json' },
-        signal: AbortSignal.timeout(this.timeoutMs),
+        timeout: this.timeoutMs,
+        httpsAgent: internalHttpsAgent(),
+        validateStatus: () => true,
       });
     } catch (err) {
       logger.warn('Analytics unreachable', { path, error: (err as Error).message });
@@ -61,8 +65,7 @@ export class AnalyticsClient {
       logger.error('Analytics refused or failed', { path, status: res.status });
       throw new AnalyticsUnavailableError(`Analytics answered ${res.status}`);
     }
-    let body: unknown = null;
-    try { body = await res.json(); } catch { body = null; }
+    const body: unknown = res.data === '' || typeof res.data === 'string' ? null : res.data;
     return { status: res.status, body };
   }
 
@@ -92,8 +95,8 @@ export class AnalyticsClient {
   }
 
   async ping(): Promise<void> {
-    const res = await fetch(`${this.baseUrl.replace(/\/$/, '')}/health`, { signal: AbortSignal.timeout(3000) });
-    if (!res.ok) throw new Error(`Analytics answered ${res.status}`);
+    const res = await axios.get(`${this.baseUrl.replace(/\/$/, '')}/health`, { timeout: 3000, httpsAgent: internalHttpsAgent(), validateStatus: () => true });
+    if (res.status !== 200) throw new Error(`Analytics answered ${res.status}`);
   }
 }
 
