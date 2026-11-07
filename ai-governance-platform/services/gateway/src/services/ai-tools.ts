@@ -1,4 +1,6 @@
-/** Known consumer AI tools, so raw domains from the browser extension group into named tools. */
+import { AiService, CATALOG, CATALOG_VERSION, Category, serviceById, serviceForDomain } from '@ai-governance/catalog';
+
+/** AI tools reached outside the gateway, so raw domains from the browser extension group into named tools. */
 export interface AiTool {
   id: string;
   name: string;
@@ -7,35 +9,40 @@ export interface AiTool {
   url?: string;
 }
 
-export const AI_TOOLS: AiTool[] = [
-  { id: 'chatgpt', name: 'ChatGPT', domains: ['chatgpt.com', 'chat.openai.com'], url: 'https://chatgpt.com' },
-  { id: 'claude', name: 'Claude', domains: ['claude.ai'], url: 'https://claude.ai' },
-  { id: 'gemini', name: 'Gemini', domains: ['gemini.google.com', 'bard.google.com', 'aistudio.google.com'], url: 'https://gemini.google.com' },
-  { id: 'copilot', name: 'Microsoft Copilot', domains: ['copilot.microsoft.com'], url: 'https://copilot.microsoft.com' },
-  { id: 'perplexity', name: 'Perplexity', domains: ['perplexity.ai'], url: 'https://www.perplexity.ai' },
-  { id: 'deepseek', name: 'DeepSeek', domains: ['chat.deepseek.com', 'deepseek.com'], url: 'https://chat.deepseek.com' },
-  { id: 'mistral', name: 'Le Chat (Mistral)', domains: ['chat.mistral.ai'], url: 'https://chat.mistral.ai' },
-  { id: 'huggingface', name: 'Hugging Face', domains: ['huggingface.co'], url: 'https://huggingface.co' },
-  { id: 'openai-api', name: 'OpenAI API, called directly', domains: ['api.openai.com'] },
-  { id: 'anthropic-api', name: 'Anthropic API, called directly', domains: ['api.anthropic.com'] },
-];
+export { CATALOG_VERSION };
+
+/**
+ * The part of the shared catalog the extension watches: chat apps and model APIs, which people reach in a
+ * browser. Coding assistants and work apps are left out, so block mode doesn't stop editors or licensed tools.
+ */
+const BROWSER_CATEGORIES: Category[] = ['chat', 'model_api'];
+
+const toTool = (s: AiService): AiTool => ({ id: s.id, name: s.name, domains: s.domains, ...(s.url ? { url: s.url } : {}) });
+
+export const AI_TOOLS: AiTool[] = CATALOG.filter((s) => BROWSER_CATEGORIES.includes(s.category) && s.domains.length > 0).map(toTool);
+const watched = new Set(AI_TOOLS.map((t) => t.id));
 
 const UNKNOWN_PREFIX = 'domain:';
 
-function matches(domain: string, d: string): boolean {
-  return domain === d || domain.endsWith('.' + d);
-}
-
-/** The tool a visited domain belongs to; unknown domains become a tool of their own. */
+/** The tool a visited domain belongs to; domains outside the watched list become a tool of their own. */
 export function toolForDomain(domain: string): AiTool {
   const d = domain.toLowerCase();
-  return AI_TOOLS.find((t) => t.domains.some((x) => matches(d, x))) ?? { id: UNKNOWN_PREFIX + d, name: d, domains: [d] };
+  const service = serviceForDomain(d);
+  if (service && watched.has(service.id)) return toTool(service);
+  return { id: UNKNOWN_PREFIX + d, name: d, domains: [d] };
 }
 
+/** A tool by id; earlier ids (`mistral`, `huggingface`) still resolve, to the tool's current id. */
 export function toolById(id: string): AiTool | null {
   if (id.startsWith(UNKNOWN_PREFIX)) {
     const domain = id.slice(UNKNOWN_PREFIX.length);
     return /^[a-z0-9.-]{1,253}$/.test(domain) ? { id, name: domain, domains: [domain] } : null;
   }
-  return AI_TOOLS.find((t) => t.id === id) ?? null;
+  const service = serviceById(id);
+  return service && watched.has(service.id) ? toTool(service) : null;
+}
+
+/** The id decisions are saved under: the tool's current id, or the id as given for domains. */
+export function canonicalToolId(id: string): string {
+  return toolById(id)?.id ?? id;
 }

@@ -94,6 +94,59 @@ export interface Recommendation {
   items: string[];
 }
 
+/** A way AI traffic leaves the company that Probaline can carry. Browsers are the extension's job, not a path here. */
+export type PathId = 'model_api' | 'cloud_ai';
+
+export const PATH_TITLES: Record<PathId, string> = {
+  model_api: 'Apps calling model APIs',
+  cloud_ai: 'Cloud AI services (Bedrock, SageMaker, Azure OpenAI, Vertex AI)',
+};
+
+/** One log source's view of a path. Through and direct are in that source's own units, so the share is honest. */
+export interface PathSource {
+  source: string;
+  label: string;
+  through: number;
+  direct: number;
+  /** through / (through + direct). */
+  share: number;
+}
+
+export interface StillDirect {
+  who: string;
+  services: string[];
+  count: number;
+  sources: string[];
+  /** What to change so this caller goes through Probaline. */
+  fix: string;
+}
+
+export interface PathFinding {
+  id: PathId;
+  title: string;
+  /**
+   * The share through Probaline, from the source that saw the most of this path among those that saw the
+   * gateway (or the most overall when none did). Null when nothing was seen on this path.
+   */
+  share: number | null;
+  through: number;
+  direct: number;
+  /** The source the headline share comes from. */
+  measuredBy: string;
+  /** Whether any source saw the gateway on this path; when not, the share may be 0% only because `--gateway` is missing. */
+  gatewaySeen: boolean;
+  sources: PathSource[];
+  stillDirect: StillDirect[];
+  /** Callers still going direct, including those beyond the list. */
+  stillDirectCount: number;
+}
+
+/** Shares from earlier findings files in the same results folder, oldest first. */
+export interface ShareHistoryEntry {
+  to: string;
+  shares: Partial<Record<PathId, number>>;
+}
+
 export interface Findings {
   from: string;
   to: string;
@@ -107,6 +160,10 @@ export interface Findings {
   sources: Array<{ source: string; label: string; firstDay: string; lastDay: string; days: number; count: number; limits?: string }>;
   /** Share of direct model-API traffic covered by routing the top callers through Probaline. */
   coverage: { callers: number; share: number } | null;
+  /** The share through Probaline, per path. Traffic counted here is left out of every other section. */
+  paths: PathFinding[];
+  /** Added by buildReport from earlier findings files; absent when there are none. */
+  history?: ShareHistoryEntry[];
   recommendations: Recommendation[];
 }
 
@@ -128,9 +185,71 @@ function callers(rows: Sighting[]): CallerFinding[] {
 }
 
 export const TOP_CALLERS = 10;
+export const STILL_DIRECT_LISTED = 50;
+
+const pathOf = (r: Sighting): PathId | null => (r.kind === 'api' ? 'model_api' : r.kind === 'cloud_ai' ? 'cloud_ai' : null);
+
+function fixFor(path: PathId, who: string): string {
+  if (path === 'model_api') {
+    return isPerson(who)
+      ? 'Give this person a Probaline API key, or the approved chat tool, instead of their own provider key.'
+      : 'Change the app’s AI base address to the Probaline gateway and give it a Probaline API key.';
+  }
+  return isPerson(who)
+    ? 'Use the gateway instead of calling models with personal cloud credentials.'
+    : 'Point the workload at the gateway, then limit direct model access to the gateway’s role.';
+}
+
+/** Through vs direct, per path and source, and who is still going direct. */
+export function buildPaths(rows: Sighting[]): PathFinding[] {
+  const out: PathFinding[] = [];
+  for (const id of ['model_api', 'cloud_ai'] as PathId[]) {
+    const rs = rows.filter((r) => pathOf(r) === id);
+    if (rs.length === 0) continue;
+    const bySource = new Map<string, { through: number; direct: number }>();
+    for (const r of rs) {
+      const c = bySource.get(r.source) ?? { through: 0, direct: 0 };
+      if (r.via === 'probaline') c.through += r.count; else c.direct += r.count;
+      bySource.set(r.source, c);
+    }
+    const sources: PathSource[] = [...bySource.entries()]
+      .map(([source, c]) => ({ source, label: SOURCE_LABELS[source] ?? source, ...c, share: c.through / (c.through + c.direct) }))
+      .sort((a, b) => b.through + b.direct - (a.through + a.direct));
+    const gatewaySeen = sources.some((x) => x.through > 0);
+    const primary = sources.find((x) => !gatewaySeen || x.through > 0)!;
+
+    const direct = new Map<string, { services: Set<string>; count: number; sources: Set<string> }>();
+    for (const r of rs.filter((x) => x.via !== 'probaline')) {
+      const c = direct.get(r.who) ?? { services: new Set<string>(), count: 0, sources: new Set<string>() };
+      c.services.add(nameOf(r.service));
+      c.sources.add(SOURCE_LABELS[r.source] ?? r.source);
+      c.count += r.count;
+      direct.set(r.who, c);
+    }
+    const stillDirect = [...direct.entries()]
+      .map(([who, c]) => ({ who, services: [...c.services].sort(), count: c.count, sources: [...c.sources].sort(), fix: fixFor(id, who) }))
+      .sort((a, b) => b.count - a.count);
+
+    out.push({
+      id,
+      title: PATH_TITLES[id],
+      share: primary.share,
+      through: primary.through,
+      direct: primary.direct,
+      measuredBy: primary.label,
+      gatewaySeen,
+      sources,
+      stillDirect: stillDirect.slice(0, STILL_DIRECT_LISTED),
+      stillDirectCount: stillDirect.length,
+    });
+  }
+  return out;
+}
 
 /** Everything the report says, from the sightings in a period. */
-export function buildFindings(rows: Sighting[], from: string, to: string, now = new Date()): Findings {
+export function buildFindings(allRows: Sighting[], from: string, to: string, now = new Date()): Findings {
+  // Traffic through Probaline is reported once, in `paths`; everything else describes use outside it.
+  const rows = allRows.filter((r) => r.via !== 'probaline');
   const mid = new Date((new Date(from).getTime() + new Date(to).getTime()) / 2).toISOString().slice(0, 10);
 
   const bySvc = new Map<string, Sighting[]>();
@@ -165,7 +284,7 @@ export function buildFindings(rows: Sighting[], from: string, to: string, now = 
     .sort((a, b) => b.people + b.machines - (a.people + a.machines));
 
   const bySource = new Map<string, Sighting[]>();
-  for (const r of rows) bySource.set(r.source, [...(bySource.get(r.source) ?? []), r]);
+  for (const r of allRows) bySource.set(r.source, [...(bySource.get(r.source) ?? []), r]);
   const sources = [...bySource.entries()].map(([source, rs]) => {
     const days = [...new Set(rs.map((r) => r.day))].sort();
     return { source, label: SOURCE_LABELS[source] ?? source, firstDay: days[0], lastDay: days[days.length - 1], days: days.length, count: sum(rs.map((r) => r.count)), limits: SOURCE_LIMITS[source] };
@@ -189,6 +308,7 @@ export function buildFindings(rows: Sighting[], from: string, to: string, now = 
       noTermsServices: services.filter((s) => s.businessTerms === 'unknown').length,
     },
     services, directApi, cloudAi, browser, sources, coverage,
+    paths: buildPaths(allRows),
     recommendations: [],
   };
   findings.recommendations = recommend(findings);

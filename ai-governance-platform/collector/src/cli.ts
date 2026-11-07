@@ -8,10 +8,13 @@ import { parseOnpremText } from './onprem/parsers';
 
 const USAGE = `Probaline collector: finds AI usage in your logs. Everything stays in --out.
 
-  probaline-collector collect --out <dir> [--source auto|aws_dns|aws_firewall|aws_cloudtrail|onprem] [--ignore role:probaline-gateway,…] <files or folders…>
+  probaline-collector collect --out <dir> [--source auto|aws_dns|aws_firewall|aws_cloudtrail|onprem] [--gateway role:probaline-gateway-task,ip:203.0.113.4,…] [--ignore …] <files or folders…>
       AWS logs are recognized by name or content; anything else is read line by line as on-premises logs
       (Palo Alto, Fortinet, CEF, LEEF, Squid, BIND, Windows DNS, Zscaler, Netskope) or Azure and Google Cloud
       exported log records.
+      --gateway names the Probaline gateway and connector (type:value; ip: takes a range like ip:203.0.113.0/28,
+      and a trailing * matches a prefix). Their traffic counts as through Probaline, for the share in the report.
+      --ignore leaves other known-good callers out entirely.
   probaline-collector report  --out <dir> [--days 30 | --from YYYY-MM-DD --to YYYY-MM-DD] [--company "Acme"] [--reveal-names]
   probaline-collector cloud-job
       One run of the in-cloud collector (Azure Container Apps job or Cloud Run job), configured by
@@ -58,17 +61,19 @@ async function main() {
   if (cmd === 'collect') {
     const wanted = typeof flags.source === 'string' && flags.source !== 'auto' ? flags.source : null;
     const ignore = typeof flags.ignore === 'string' ? flags.ignore.split(',') : [];
-    let matched = 0; let count = 0;
+    const gateway = typeof flags.gateway === 'string' ? flags.gateway.split(',') : [];
+    let matched = 0; let count = 0; let through = 0;
     for (const f of await files(rest)) {
       count++;
       const text = decode(await fs.readFile(f));
       const aws = wanted === 'onprem' ? null : ((wanted as AwsSource | null) ?? detectSource(f, text));
       const observations = aws ? parse(aws, text) : parseOnpremText(text);
-      const r = await processInput(store, path.resolve(f), observations, ignore);
+      const r = await processInput(store, path.resolve(f), observations, ignore, gateway);
       matched += r.matched;
+      through += r.throughProbaline;
     }
     // Files can be one record per line or one big JSON document, so lines aren't a useful count.
-    console.log(`Read ${count} ${count === 1 ? 'file' : 'files'}; ${matched} records matched an AI service.`);
+    console.log(`Read ${count} ${count === 1 ? 'file' : 'files'}; ${matched} records matched an AI service${gateway.length ? `, ${through} of them through Probaline` : ''}.`);
     return;
   }
 

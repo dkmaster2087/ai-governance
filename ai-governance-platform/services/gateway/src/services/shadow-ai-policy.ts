@@ -1,5 +1,5 @@
 import { collection } from '@ai-governance/storage';
-import { AI_TOOLS, toolById } from './ai-tools';
+import { AI_TOOLS, canonicalToolId, toolById } from './ai-tools';
 
 export type ToolDecision = 'blocked' | 'allowed';
 
@@ -35,9 +35,12 @@ export class ShadowAiPolicyStore {
   async get(tenantId: string): Promise<ShadowAiPolicy> {
     const tenant = await this.tenants().get({ tenantId });
     const stored = tenant?.shadowAi as Partial<ShadowAiPolicy> | undefined;
+    // Decisions saved under a tool's earlier id count under its current one.
+    const decisions: Record<string, ToolDecision> = {};
+    for (const [id, d] of Object.entries(stored?.decisions ?? {})) decisions[canonicalToolId(id)] = d;
     return {
       mode: stored?.mode === 'block' ? 'block' : 'monitor',
-      decisions: { ...(stored?.decisions ?? {}) },
+      decisions,
       guidance: {
         message: stored?.guidance?.message || DEFAULT_GUIDANCE.message,
         links: [...(stored?.guidance?.links ?? [])],
@@ -71,9 +74,10 @@ function validLink(l: GuidanceLink): boolean {
 export function applyPolicyChange(current: ShadowAiPolicy, change: PolicyChange): { policy: ShadowAiPolicy } | { error: string } {
   const decisions = { ...current.decisions };
   for (const [id, decision] of Object.entries(change.decisions ?? {})) {
-    if (!toolById(id)) return { error: `Unknown tool: ${id}` };
-    if (decision === null) delete decisions[id];
-    else decisions[id] = decision;
+    const tool = toolById(id);
+    if (!tool) return { error: `Unknown tool: ${id}` };
+    if (decision === null) delete decisions[tool.id];
+    else decisions[tool.id] = decision;
   }
   let guidance = current.guidance;
   if (change.guidance) {

@@ -1,11 +1,11 @@
 import { createHash } from 'crypto';
 import { gunzipSync } from 'zlib';
-import { buildFindings, Findings } from './findings';
+import { buildFindings, Findings, PathId, ShareHistoryEntry } from './findings';
 import { renderReport } from './report';
 import { Aggregator, mergeSightings, Observation } from './sightings';
 import { loadNames, loadPseudonymizer, loadSightings, saveNames, saveSightings, Store } from './store';
 
-export interface ProcessResult { lines: number; matched: number; files: number }
+export interface ProcessResult { lines: number; matched: number; files: number; throughProbaline: number }
 
 /** Decompress if gzip, then decode. Log deliveries are usually .gz. */
 export function decode(body: Buffer): string {
@@ -22,17 +22,39 @@ export async function processInput(
   inputName: string,
   observations: Iterable<Observation>,
   ignore: string[] = [],
+  gateway: string[] = [],
 ): Promise<ProcessResult> {
   const pseudonyms = await loadPseudonymizer(store);
-  const agg = new Aggregator({ pseudonyms, ignore });
+  const agg = new Aggregator({ pseudonyms, ignore, gateway });
   for (const o of observations) agg.add(o);
   const batchId = createHash('sha256').update(inputName).digest('hex').slice(0, 24);
   const files = await saveSightings(store, batchId, agg.byDay());
   await saveNames(store, pseudonyms);
-  return { lines: agg.seen, matched: agg.matched, files };
+  return { lines: agg.seen, matched: agg.matched, files, throughProbaline: agg.throughProbaline };
 }
 
 export const isoDay = (d: Date) => d.toISOString().slice(0, 10);
+
+export const HISTORY_REPORTS = 6;
+
+/** Shares through Probaline from earlier findings files in the store, oldest first. Files without paths are skipped. */
+export async function loadShareHistory(store: Store, before: string): Promise<ShareHistoryEntry[]> {
+  const keys = (await store.list('reports/findings-'))
+    .filter((k) => /^reports\/findings-\d{4}-\d{2}-\d{2}\.json$/.test(k) && k.slice(17, 27) < before)
+    .sort()
+    .slice(-HISTORY_REPORTS);
+  const out: ShareHistoryEntry[] = [];
+  for (const k of keys) {
+    try {
+      const f = JSON.parse((await store.get(k)) ?? '{}') as Partial<Findings>;
+      if (!Array.isArray(f.paths) || typeof f.to !== 'string') continue;
+      const shares: Partial<Record<PathId, number>> = {};
+      for (const p of f.paths) if (typeof p.share === 'number' && p.gatewaySeen) shares[p.id] = p.share;
+      out.push({ to: f.to, shares });
+    } catch { /* an unreadable earlier file doesn't stop the report */ }
+  }
+  return out;
+}
 
 /** Build the report for a period and write it to the store. */
 export async function buildReport(
@@ -41,6 +63,8 @@ export async function buildReport(
 ): Promise<{ findings: Findings; key: string; html: string }> {
   const rows = mergeSightings(await loadSightings(store, opts.from, opts.to));
   const findings = buildFindings(rows, opts.from, opts.to, opts.now);
+  const history = await loadShareHistory(store, opts.to);
+  if (history.length) findings.history = history;
   const names = opts.revealNames ? await loadNames(store) : undefined;
   const html = renderReport(findings, { names, company: opts.company });
   // The copy with names goes in private/, next to the key, so it isn't mistaken for the shareable one.

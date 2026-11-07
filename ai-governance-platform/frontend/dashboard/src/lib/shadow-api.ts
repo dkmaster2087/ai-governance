@@ -11,6 +11,8 @@ export interface ShadowAiSummary {
   to: string;
   mode: 'monitor' | 'block';
   retentionDays: number;
+  /** Version of the AI catalog that grouped domains into tools; missing from older gateways. */
+  catalogVersion?: string;
   totals: { people: number; visits: number; blockedVisits: number };
   tools: Array<{
     id: string;

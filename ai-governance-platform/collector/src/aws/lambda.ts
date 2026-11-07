@@ -24,6 +24,7 @@ function config() {
     results,
     logBuckets: new Set(list(env('LOG_BUCKETS'))),
     ignore: list(env('IGNORE')),
+    gateway: list(env('GATEWAY')),
     reportDays: Math.min(Math.max(Number(env('REPORT_DAYS', '30')) || 30, 1), 90),
     company: env('COMPANY') || undefined,
   };
@@ -37,13 +38,13 @@ async function processObject(bucket: string, key: string) {
   const text = decode(await readObject(s3, bucket, key));
   const source = detectSource(key, text);
   if (source) {
-    const result = await processInput(new S3Store(s3, cfg.results), `s3://${bucket}/${key}`, parse(source, text), cfg.ignore);
+    const result = await processInput(new S3Store(s3, cfg.results), `s3://${bucket}/${key}`, parse(source, text), cfg.ignore, cfg.gateway);
     return { key, source, ...result };
   }
   // Not an AWS log: logs other products stream into S3 (Netskope, Zscaler) are read line by line.
   const observations = [...parseOnpremText(text)];
   if (observations.length === 0) return { key, skipped: 'not a log this collector reads' };
-  const result = await processInput(new S3Store(s3, cfg.results), `s3://${bucket}/${key}`, observations, cfg.ignore);
+  const result = await processInput(new S3Store(s3, cfg.results), `s3://${bucket}/${key}`, observations, cfg.ignore, cfg.gateway);
   return { key, source: observations[0].source, ...result };
 }
 

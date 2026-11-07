@@ -93,15 +93,17 @@ Every parser produces sightings like this. It is the same shape the browser exte
 
 ### The AI service catalog
 
-The collectors' list of AI services grows from today's ten browser tools to a few hundred, each with:
+One list for the collectors and the gateway: `shared/catalog` (`@ai-governance/catalog`), no dependencies, so
+the standalone collector carries it. It grows toward a few hundred services, each with:
 
 - domains and API endpoints, including cloud AI endpoints (`bedrock-runtime.*.amazonaws.com`,
   `*.openai.azure.com`, `*-aiplatform.googleapis.com`, `generativelanguage.googleapis.com`)
 - a category: chat app, model API, coding assistant, cloud AI service, or AI inside a work app
 - whether the vendor offers business data terms (no training on customer data)
 
-The catalog is versioned and shipped with the collector, so it works offline. The gateway's
-`services/gateway/src/services/ai-tools.ts` becomes a generated subset of it.
+The catalog is versioned and shipped with the collector, so it works offline. The gateway's Shadow AI page uses
+the chat apps and model APIs from it (`services/gateway/src/services/ai-tools.ts`), so the browser extension
+watches the same domains the report names. The report and the Shadow AI page say which version they used.
 
 ## Sources, in build order
 

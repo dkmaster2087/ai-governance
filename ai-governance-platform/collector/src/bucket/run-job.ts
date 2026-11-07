@@ -11,7 +11,7 @@ const list = (v: string) => v.split(',').map((s) => s.trim()).filter(Boolean);
  *   CLOUD=azure  LOG_ACCOUNT_URL, LOG_CONTAINERS (comma-separated), RESULTS_ACCOUNT_URL, RESULTS_CONTAINER
  *                (or AZURE_STORAGE_CONNECTION_STRING for both, when testing against Azurite)
  *   CLOUD=gcp    LOG_BUCKETS (comma-separated), RESULTS_BUCKET   (GCS_API_ENDPOINT only for local testing)
- *   Common:      LOG_PREFIXES, IGNORE, REPORT_DAYS (30), COMPANY, MAX_FILES (2000)
+ *   Common:      LOG_PREFIXES, IGNORE, GATEWAY, REPORT_DAYS (30), COMPANY, MAX_FILES (2000)
  */
 export async function runCloudJob(log: (m: string) => void = console.log) {
   const cloud = env('CLOUD').toLowerCase();
@@ -40,6 +40,7 @@ export async function runCloudJob(log: (m: string) => void = console.log) {
     buckets, store, log,
     prefixes: list(env('LOG_PREFIXES')),
     ignore: list(env('IGNORE')),
+    gateway: list(env('GATEWAY')),
     reportDays: Number(env('REPORT_DAYS', '30')) || 30,
     company: env('COMPANY') || undefined,
     maxFiles: Number(env('MAX_FILES', '2000')) || 2000,

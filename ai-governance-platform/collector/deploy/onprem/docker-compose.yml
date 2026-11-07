@@ -10,7 +10,9 @@ services:
     environment:
       COMPANY: "Acme"
       WATCH_DIR: /logs
-      # Leave out the Probaline gateway and other known callers, comma separated, e.g. ip:10.0.0.10
+      # The Probaline gateway and connector, comma separated, e.g. ip:10.0.0.10: counted as through Probaline
+      GATEWAY: ""
+      # Other known-good callers to leave out entirely, comma separated
       IGNORE: ""
     volumes:
       - probaline-data:/data

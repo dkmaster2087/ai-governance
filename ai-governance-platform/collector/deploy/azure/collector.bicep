@@ -33,8 +33,11 @@ param resultsStorageAccountName string = 'probaline${uniqueString(resourceGroup(
 @description('How often the job runs (cron, UTC). Default: every hour at :15.')
 param schedule string = '15 * * * *'
 
-@description('Callers to leave out, e.g. the Probaline gateway itself (comma-separated).')
+@description('Callers to leave out entirely: known-good callers that aren\'t AI use (comma-separated).')
 param ignore string = ''
+
+@description('The Probaline gateway and connector, e.g. ip:203.0.113.4 (comma-separated). Counted as through Probaline.')
+param gateway string = ''
 
 @description('Company name shown on the report.')
 param company string = ''
@@ -120,6 +123,7 @@ resource job 'Microsoft.App/jobs@2024-03-01' = {
             { name: 'RESULTS_ACCOUNT_URL', value: results.properties.primaryEndpoints.blob }
             { name: 'RESULTS_CONTAINER', value: resultsContainer.name }
             { name: 'IGNORE', value: ignore }
+            { name: 'GATEWAY', value: gateway }
             { name: 'COMPANY', value: company }
           ]
         }
