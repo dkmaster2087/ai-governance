@@ -18,15 +18,14 @@ export interface ModelConfig {
   deploymentName?: string;         // Azure OpenAI deployment name
 
   // Limits & cost
+  /** The longest answer an app may ask for, in tokens; larger requests are capped to it. */
   maxTokensPerRequest: number;
   inputCostPer1kTokens: number;
   outputCostPer1kTokens: number;
-  maxContextTokens: number;
 
   // Governance
-  allowedForRoles: string[];       // Which user roles can use this model
-  allowedForApps: string[];        // Which app IDs can use this model (empty = all)
-  requiresApproval: boolean;       // High-risk models need explicit approval per request
+  /** API keys that may use this model; empty means every key of the company. */
+  allowedKeyIds?: string[];
   tags: string[];
 
   createdAt: string;

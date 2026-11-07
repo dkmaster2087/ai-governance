@@ -59,7 +59,8 @@ export const DOCS: DocPage[] = [
         <H2>1. Create an API key</H2>
         <P>In the dashboard, open <strong>More → API keys</strong> and create a key with the <C>chat</C> permission. Copy it: it’s shown once.</P>
         <H2>2. Add a model</H2>
-        <P>Open <strong>More → Models &amp; keys</strong> and add the models your apps use, from Amazon Bedrock or OpenAI. For OpenAI, paste your API key; it’s stored in AWS Secrets Manager. Bedrock models use the gateway’s AWS role and need no key. To refuse every other model, add an <strong>Approved models</strong> rule.</P>
+        <P>Open <strong>More → Models &amp; keys</strong> and add the models your apps use, from Amazon Bedrock or OpenAI. For OpenAI, paste your API key; it’s stored encrypted (AWS Secrets Manager, or your database on a self-hosted install). Bedrock models use the gateway’s AWS role and need no key. To refuse every other model, add an <strong>Approved models</strong> rule.</P>
+        <P>On each model you can also set the <strong>longest answer</strong> an app may ask for (larger requests are capped to it, so one request can’t run up the bill) and <strong>which API keys may use it</strong>. Other keys are refused with <C>MODEL_NOT_ALLOWED</C>, and the refusal is recorded in Evidence.</P>
         <H2>3. Point your app at the gateway</H2>
         <P>The gateway speaks the OpenAI chat completions format. Change the base URL and use your Probaline key:</P>
         <Code label="curl">{`curl https://gateway.example.com/v1/chat/completions \\
@@ -210,6 +211,26 @@ client = OpenAI(
     ),
   },
   {
+    slug: 'alerts',
+    title: 'Alerts',
+    summary: 'Tell your team by email or webhook when something needs attention.',
+    body: (
+      <>
+        <P>Administrators set up alerts on the <strong>Alerts</strong> page. Each alert watches one thing and sends to up to 10 email addresses, a webhook, or both.</P>
+        <Table head={['Alert', 'Sent when']} rows={[
+          ['Many requests stopped', 'A number of requests or tool calls are stopped within 15 minutes, an hour or a day.'],
+          ['Personal data in AI answers', 'Personal data is removed from AI answers or tool results that many times in the window.'],
+          ['Unapproved AI tools in use', 'The browser extension reports that many visits to AI tools you haven’t approved.'],
+          ['Spend near budget', 'This month’s AI spend passes the share of the budget you set (once a month).'],
+        ]} />
+        <P>Each alert is sent once per window, however many more events follow. <strong>Send a test</strong> checks the email and webhook straight away and shows what happened; <strong>Recently sent</strong> lists the last 90 days.</P>
+        <H2>Webhooks</H2>
+        <P>Paste a Slack, Microsoft Teams or Google Chat incoming webhook address and the alert appears as a message. For your own endpoint, the JSON body has <C>kind</C>, <C>title</C>, <C>message</C> and <C>firedAt</C>, and the <C>x-probaline-signature</C> header is signed with a secret shown once when you save the webhook (the same scheme as log export). Addresses must be https and public.</P>
+        <Note>Email needs your provider to have set up sending (Amazon SES). If it isn’t, the test says so.</Note>
+      </>
+    ),
+  },
+  {
     slug: 'access',
     title: 'Roles and API keys',
     summary: 'Who can see and change what.',
@@ -295,7 +316,11 @@ const ok = crypto.timingSafeEqual(Buffer.from(v1, 'hex'), Buffer.from(expected, 
         <P>Deploy <C>collector/deploy/aws/collector.yaml</C> with the names of the log buckets. It reads Route 53 Resolver DNS query logs, Network Firewall logs and CloudTrail (Amazon Bedrock and SageMaker calls). Turn on EventBridge notifications for each log bucket, put the Probaline gateway’s role in <C>Ignore</C>, then run the backfill command from the stack outputs. The report is at <C>reports/latest.html</C> in the results bucket.</P>
         <P>Other products’ logs that are streamed into one of those buckets (Netskope transaction logs, for example) are read too.</P>
         <H2>On-premises</H2>
-        <P>Run the container from <C>collector/deploy/onprem</C>. Point firewalls and proxies at it over syslog (UDP or TCP) and mount DNS server and proxy log folders under <C>/logs</C>.</P>
+        <P>Run the <C>probaline/collector</C> image on any Linux host with Docker (an example Compose file is in <C>collector/deploy/onprem</C>). Point firewalls and proxies at it over syslog (UDP or TCP) and mount DNS server and proxy log folders under <C>/logs</C>; results stay in its <C>/data</C> volume.</P>
+        <Code>{`docker run -d --name probaline-collector --restart unless-stopped \
+  -p 514:5514/udp -p 514:5514/tcp -e COMPANY=Acme \
+  -v probaline-data:/data -v /var/log/squid:/logs/squid:ro -e WATCH_DIR=/logs \
+  probaline/collector:0.1.0`}</Code>
         <Table head={['Product', 'How it arrives']} rows={[
           ['Palo Alto Networks (URL filtering)', 'syslog'],
           ['Fortinet FortiGate (web filter, DNS)', 'syslog'],
@@ -371,6 +396,7 @@ node collector/dist/cli.js report --out ./results --company "Acme"
   -e PROBALINE_URL=https://<gateway> \
   -e PROBALINE_CONNECTOR_TOKEN=<token shown once> \
   probaline/connector:0.1.0`}</Code>
+        <P>The connector and collector images are compiled, minimal (no shell, not root) and signed by Probaline’s release workflow with a bill of materials attached. Check one with <C>cosign verify</C> before you run it; the connector’s README has the exact command.</P>
         <P>It never calls cloud metadata addresses or follows redirects, and logs only host, method and status. Answers through a connector are capped at 250 KB.</P>
         <H2>What happens on every call</H2>
         <Table head={['Step', 'What Probaline does']} rows={[
@@ -406,6 +432,8 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           ['A new key is added', 'Everything works again at once.'],
         ]} />
         <P>Administrators can remove a license from the License page. Without another license, the same 30 days start.</P>
+        <H2>Users included</H2>
+        <P>The License page shows how many people count against your license: everyone with a dashboard account, plus people who used AI through Probaline in the last 30 days (named on AI requests by your apps, or signed in to an MCP server). Each person counts once. If you go above the number included, the page says so; nothing is cut off.</P>
       </>
     ),
   },
@@ -500,8 +528,10 @@ npx cdk deploy --all --context stage=prod \\
           [<C>OBJECT_STORE</C>, <><C>s3</C> (default) or <C>file</C></>],
           [<C>LOG_EXPORT_ALLOW_PRIVATE_DESTINATIONS</C>, <><C>true</C> lets log export reach a SIEM inside your network</>],
           [<C>LOG_EXPORT_WORKER</C>, <><C>off</C> stops a gateway from sending log export batches</>],
+          [<C>SECRET_STORE</C>, <><C>aws</C> (default, Secrets Manager) or <C>database</C>: provider keys and credentials encrypted in the database</>],
+          [<C>SECRETS_ENCRYPTION_KEY</C>, <>With <C>SECRET_STORE=database</C>: 32 random bytes, base64 (<C>openssl rand -base64 32</C>). Keep it apart from your database backups</>],
         ]} />
-        <Note>Provider API keys (for OpenAI and others) are still kept in AWS Secrets Manager, so a PostgreSQL deployment still needs it for now. Storing them encrypted in the database is next.</Note>
+        <P>With <C>SECRET_STORE=database</C> a PostgreSQL deployment needs no AWS services at all. To change the encryption key, set the new one and keep the old as <C>SECRETS_ENCRYPTION_KEY_OLD</C> until secrets have been saved again. Back up the database and the object store together; the restore runbook (<C>docs/RESTORE-RUNBOOK.md</C>) covers both deployments.</P>
         <H2>From GitHub</H2>
         <P>The <strong>Deploy</strong> workflow runs only when started by hand: Actions → Deploy → Run workflow, then choose the stage, or tear one down. A push never deploys. It creates the image repositories, pushes images tagged with the commit, deploys the stacks, then builds and uploads the three sites with the addresses the stacks report. It signs in to AWS with a role (OIDC) and needs the repository secrets <C>AWS_DEPLOY_ROLE_ARN</C> and <C>AWS_ACCOUNT_ID</C>. On the <C>prod</C> environment set the variables <C>GATEWAY_URL</C> and <C>CERTIFICATE_ARN</C> (and optionally the site domains and <C>CLOUDFRONT_CERTIFICATE_ARN</C>), and add required reviewers.</P>
         <Note>Beta: this deploy passes its checks but hasn’t yet been run against a real AWS account.</Note>

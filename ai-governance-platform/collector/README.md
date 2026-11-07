@@ -56,12 +56,16 @@ Notes:
 
 ## On-premises
 
-One container receives syslog and follows log files. Build it and run it on any Linux host with Docker:
+One container receives syslog and follows log files. Run it on any Linux host with Docker:
 
 ```bash
-docker build -f collector/deploy/onprem/Dockerfile -t probaline-collector collector
 docker compose -f collector/deploy/onprem/docker-compose.yml up -d
 ```
+
+The image is `probaline/collector:<version>`: the collector compiled to bytecode on a minimal (distroless)
+Node image, with no shell or source, running as a non-root user, signed with a bill of materials (see
+[Releases](#releases)). To build it yourself: `docker build -f collector/Dockerfile -t probaline/collector:0.1.0 .`
+from the platform folder.
 
 - **Syslog:** point firewalls and proxies at the host on port 514 (UDP or TCP; the container listens on 5514).
   One port takes every supported product at once; each line is recognized by its shape. Prefer TCP: UDP
@@ -70,7 +74,7 @@ docker compose -f collector/deploy/onprem/docker-compose.yml up -d
   rotated files are read from the start, `.gz` files are read once, and positions survive restarts.
 - **Results** are in the `/data` volume, same layout as above; `status.json` shows what is being received.
   The report is rebuilt daily (`REPORT_AT`, UTC), or on demand:
-  `docker exec <container> node dist/cli.js report --out /data`.
+  `docker exec <container> /nodejs/bin/node /app/loader.js report --out /data`.
 
 | Product | How it arrives | What is read |
 |---|---|---|
@@ -175,6 +179,14 @@ Give the collector the exported files (`collect`, the container's watch folder, 
 bucket the in-cloud job reads). Failed sign-ins are skipped. **Not built yet:** pulling these logs directly
 from each product's API with read-only credentials; today they come from exports, a SIEM, or a diagnostic
 setting (Entra).
+
+## Releases
+
+Set the new version in `package.json` and `COLLECTOR_VERSION` in `src/cli.ts`, then push a tag
+`collector-v<version>`. The Release workflow (`.github/workflows/release-agents.yml`) checks the versions
+agree, builds the image, checks nothing readable is in it, and publishes it signed as
+`probaline/collector:<version>` and `ghcr.io/dkmaster2087/probaline-collector:<version>`. Check an image with
+`cosign verify` as described in the connector's README.
 
 ## Demo data
 

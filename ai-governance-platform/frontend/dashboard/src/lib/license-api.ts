@@ -44,7 +44,18 @@ export interface LicenseStatus {
 }
 
 export const fetchLicenseStatus = async () => (await gateway.get<LicenseStatus>('/v1/license/status')).data;
-export const fetchLicenseOverview = async () => (await gateway.get<{ status: LicenseStatus; licenses: License[] }>('/v1/license/overview')).data;
+/** People counted against the license's "users included". Being over only warns. */
+export interface LicenseUsers {
+  included: number;
+  counted: number;
+  accounts: number;
+  /** People who used AI through Probaline in the last 30 days; null when that couldn't be read. */
+  usedAi: number | null;
+  partial: boolean;
+  over: boolean;
+}
+
+export const fetchLicenseOverview = async () => (await gateway.get<{ status: LicenseStatus; licenses: License[]; users?: LicenseUsers }>('/v1/license/overview')).data;
 export const activateLicense = async (licenseKey: string) => (await gateway.post<{ license: License; status: LicenseStatus }>('/v1/license/activate', { licenseKey })).data;
 export const removeLicense = async (licenseId: string) => (await gateway.post(`/v1/license/${encodeURIComponent(licenseId)}/remove`, {})).data;
 

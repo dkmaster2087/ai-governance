@@ -227,13 +227,7 @@ aws --endpoint-url=$ENDPOINT dynamodb put-item \
     "createdAt": {"S": "2026-01-01T00:00:00Z"},
     "updatedAt": {"S": "2026-01-01T00:00:00Z"},
     "settings": {"M": {
-      "maxTokensPerRequest": {"N": "4096"},
-      "maxRequestsPerMinute": {"N": "100"},
-      "auditLogRetentionDays": {"N": "365"},
-      "dataResidencyRegion": {"S": "us-east-1"},
-      "piiMaskingEnabled": {"BOOL": true},
-      "allowExternalProviders": {"BOOL": true},
-      "allowedModels": {"L": []}
+      "auditLogRetentionDays": {"N": "365"}
     }}
   }' || true
 
@@ -251,13 +245,7 @@ aws --endpoint-url=$ENDPOINT dynamodb put-item \
     "createdAt": {"S": "2026-01-15T00:00:00Z"},
     "updatedAt": {"S": "2026-03-15T00:00:00Z"},
     "settings": {"M": {
-      "maxTokensPerRequest": {"N": "2048"},
-      "maxRequestsPerMinute": {"N": "200"},
-      "auditLogRetentionDays": {"N": "2555"},
-      "dataResidencyRegion": {"S": "us-east-1"},
-      "piiMaskingEnabled": {"BOOL": true},
-      "allowExternalProviders": {"BOOL": false},
-      "allowedModels": {"L": []}
+      "auditLogRetentionDays": {"N": "2555"}
     }}
   }' || true
 
@@ -276,12 +264,8 @@ aws --endpoint-url=$ENDPOINT dynamodb put-item \
     "isDefault": {"BOOL": true},
     "region": {"S": "us-east-1"},
     "maxTokensPerRequest": {"N": "4096"},
-    "maxContextTokens": {"N": "200000"},
     "inputCostPer1kTokens": {"N": "0.00025"},
     "outputCostPer1kTokens": {"N": "0.00125"},
-    "allowedForRoles": {"L": []},
-    "allowedForApps": {"L": []},
-    "requiresApproval": {"BOOL": false},
     "tags": {"L": [{"S": "fast"}, {"S": "cost-effective"}]},
     "createdAt": {"S": "2026-01-01T00:00:00Z"},
     "updatedAt": {"S": "2026-01-01T00:00:00Z"},
@@ -301,12 +285,8 @@ aws --endpoint-url=$ENDPOINT dynamodb put-item \
     "isDefault": {"BOOL": false},
     "region": {"S": "us-east-1"},
     "maxTokensPerRequest": {"N": "4096"},
-    "maxContextTokens": {"N": "200000"},
     "inputCostPer1kTokens": {"N": "0.003"},
     "outputCostPer1kTokens": {"N": "0.015"},
-    "allowedForRoles": {"L": []},
-    "allowedForApps": {"L": []},
-    "requiresApproval": {"BOOL": false},
     "tags": {"L": [{"S": "balanced"}]},
     "createdAt": {"S": "2026-01-01T00:00:00Z"},
     "updatedAt": {"S": "2026-01-01T00:00:00Z"},

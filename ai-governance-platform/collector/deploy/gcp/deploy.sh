@@ -48,10 +48,10 @@ echo "==> Cloud Run job $JOB"
 ENV="CLOUD=gcp,LOG_BUCKETS=$LOG_BUCKET,RESULTS_BUCKET=$RESULTS_BUCKET,IGNORE=${IGNORE:-},COMPANY=${COMPANY:-}"
 if gc run jobs describe "$JOB" --region "$REGION" >/dev/null 2>&1; then
   gc run jobs update "$JOB" --region "$REGION" --image "$IMAGE" --service-account "$SA" --set-env-vars "$ENV" \
-    --command node --args dist/cli.js,cloud-job --task-timeout 3600 --max-retries 1 --memory 1Gi
+    --args cloud-job --task-timeout 3600 --max-retries 1 --memory 1Gi
 else
   gc run jobs create "$JOB" --region "$REGION" --image "$IMAGE" --service-account "$SA" --set-env-vars "$ENV" \
-    --command node --args dist/cli.js,cloud-job --task-timeout 3600 --max-retries 1 --memory 1Gi
+    --args cloud-job --task-timeout 3600 --max-retries 1 --memory 1Gi
 fi
 
 echo "==> Hourly schedule"

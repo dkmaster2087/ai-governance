@@ -12,6 +12,8 @@ export interface ModelConfig {
   apiKeyHint?: string;
   inputCostPer1kTokens: number;
   outputCostPer1kTokens: number;
+  maxTokensPerRequest?: number;
+  allowedKeyIds?: string[];
   lastTestedAt?: string;
   lastTestStatus?: 'pass' | 'fail';
 }
@@ -24,6 +26,10 @@ export interface ModelInput {
   apiKey?: string;
   inputCostPer1kTokens: number;
   outputCostPer1kTokens: number;
+  /** The longest answer an app may ask for; larger requests are capped. */
+  maxTokensPerRequest: number;
+  /** API keys that may use the model; empty means every key. */
+  allowedKeyIds: string[];
 }
 
 export interface ModelTestResult {

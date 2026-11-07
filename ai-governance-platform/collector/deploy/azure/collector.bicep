@@ -4,7 +4,7 @@
 // Nothing leaves your subscription.
 //
 //   az deployment group create -g <resource-group> -f collector.bicep \
-//     -p logStorageAccountName=<account with insights-logs-* containers> image=<registry>/probaline-collector:<tag>
+//     -p logStorageAccountName=<account with insights-logs-* containers> image=probaline/collector:0.1.0
 //
 // The log storage account must be in the same resource group (otherwise grant the job's identity
 // "Storage Blob Data Reader" on it yourself; the output gives the identity's principal ID).
@@ -21,7 +21,7 @@ param logContainers array = [
   'insights-logs-requestresponse'
 ]
 
-@description('Collector container image, e.g. myregistry.azurecr.io/probaline-collector:0.1.0')
+@description('Collector container image, e.g. probaline/collector:0.1.0 (or a copy in your own registry)')
 param image string
 
 @description('Name of an Azure Container Registry in this resource group to pull the image from (optional).')
@@ -111,7 +111,7 @@ resource job 'Microsoft.App/jobs@2024-03-01' = {
         {
           name: 'collector'
           image: image
-          command: [ 'node', 'dist/cli.js', 'cloud-job' ]
+          args: [ 'cloud-job' ]
           resources: { cpu: json('0.5'), memory: '1Gi' }
           env: [
             { name: 'CLOUD', value: 'azure' }

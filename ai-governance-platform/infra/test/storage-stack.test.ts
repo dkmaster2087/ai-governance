@@ -19,6 +19,12 @@ describe('StorageStack', () => {
     template.resourceCountIs('AWS::DynamoDB::Table', 19);
   });
 
+  it('can restore every table to any point in the last 35 days, except short-lived counters', () => {
+    const tables = Object.values(template.findResources('AWS::DynamoDB::Table')) as any[];
+    const without = tables.filter((t) => !t.Properties.PointInTimeRecoverySpecification?.PointInTimeRecoveryEnabled).map((t) => t.Properties.TableName);
+    expect(without).toEqual([expect.stringMatching(/-metrics-/)]);
+  });
+
   it('keeps admin activity restorable in every stage', () => {
     template.hasResourceProperties('AWS::DynamoDB::Table', {
       TableName: Match.stringLikeRegexp('-activity-'), PointInTimeRecoverySpecification: { PointInTimeRecoveryEnabled: true }, TimeToLiveSpecification: { AttributeName: 'ttl', Enabled: true },

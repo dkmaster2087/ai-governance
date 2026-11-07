@@ -308,14 +308,37 @@ This makes reading the product slow and expensive, not impossible: on hardware a
 determined reverse engineer can still study bytecode. The plan for keeping the most valuable parts off their
 hardware is in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md) (E5, E6).
 
+## Alerts
+
+Company alerts (dashboard → Alerts) are checked after every case file is written (`AuditService.log`) and when
+the browser extension reports sightings, off the request path: a failure to check or send never affects a
+request. Counts are kept in the shared `metrics` table per rule and window, so each alert fires once when its
+count is reached, whichever gateway instance sees the event; spend is counted per company and month (from what
+analytics reports as already spent when the alert is created). Delivery is email (SES, `EMAIL_FROM`) and/or a
+webhook through the same egress checks as MCP and log export (https only, no private or metadata addresses, no
+redirects), signed like log-export webhooks. Fired alerts are kept 90 days in the alerts table.
+
+## Secrets
+
+`SECRET_STORE=aws` (default) keeps provider keys, MCP credentials, log-export tokens and the gateway's MCP keys
+in Secrets Manager under the platform's KMS key. `SECRET_STORE=database` keeps them in the `secrets` collection,
+encrypted by the gateway (AES-256-GCM, the secret's name as associated data) under `SECRETS_ENCRYPTION_KEY`.
+Each reference records where its secret lives, so switching doesn't break secrets saved before.
+
+The MCP signing key (agent access tokens and the `X-Probaline-Identity` statements) rotates every 90 days: the
+next key is published in the JWKS 7 days before it signs, and the old key stays published 7 days after. One
+gateway instance a day takes the step (a lock in `metrics`); every instance re-reads the keys every 10 minutes.
+
 ## Known gaps before production
 
-- CI runs unit tests, builds and image builds on every push, but not the end-to-end suite, which needs
-  LocalStack. Deploying is manual only.
+- CI runs unit tests, image builds and the end-to-end suite (LocalStack, both storage backends) on every push;
+  the end-to-end job hasn't run on GitHub yet. Deploying is manual only.
 - The full AWS deploy (repositories, images, stacks, three sites behind CloudFront) passes CDK synth and unit
   tests but hasn't yet been run against a real AWS account.
-- Production deploys need `-c certificateArn=…` and `-c gatewayUrl=…` for HTTPS; the service Dockerfiles
-  haven't been built on a developer machine yet (CI builds them).
+- Production deploys need `-c certificateArn=…` and `-c gatewayUrl=…` for HTTPS.
+- The gateway reads the caller's address from the left-most `X-Forwarded-For` entry, which a caller can set, so
+  its own per-address limit (`GLOBAL_RATE_LIMIT`) and the contact form's can be dodged. The web firewall's
+  per-address limit can't; trust only the hops added by CloudFront and the load balancer.
 - Secrets detection covers prompts only. A model that writes a credential into its answer isn't checked by it
   (the existing response scanner catches a few key formats).
 - Streamed answers are masked by the gateway's built-in patterns as they stream; the deeper data-protection
@@ -323,7 +346,7 @@ hardware is in [PRODUCTION-READINESS.md](PRODUCTION-READINESS.md) (E5, E6).
   through when split across chunks.
 - A revoked API key stops working at once on the gateway instance that revoked it; other instances drop
   their cached copy within a minute.
-- MCP servers (beta): the gateway's signing key isn't rotated yet; sign-in needs `PUBLIC_GATEWAY_URL` set (without it, addresses come from request headers); approval
+- MCP servers (beta): sign-in needs `PUBLIC_GATEWAY_URL` set (without it, addresses come from request headers); approval
   waits and connector calls poll the database, which adds load and a little latency.
 - Provider keys and API credentials saved before the platform key was set (`PROVIDER_KEYS_KMS_KEY_ID`) stay
   under Secrets Manager's default key until they're saved again.

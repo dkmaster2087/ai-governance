@@ -25,6 +25,20 @@ const logger = createLogger('analytics');
 export const AUDIENCE = 'analytics';
 const DAY = 86_400_000;
 
+const NOT_PEOPLE = new Set(['', 'anonymous', 'unknown', 'agent-user', 'dashboard']);
+/** Distinct people in these records, lowercased so an email used in two places counts once. */
+export function peopleIn(logs: AuditLog[]): string[] {
+  const out = new Set<string>();
+  for (const l of logs) {
+    const m = l.metadata ?? {};
+    if (m.test === 'true') continue;
+    const who = m.kind === 'mcp_tool_call' ? (m.caller === 'person' ? m.callerEmail : '') : l.userId;
+    const id = String(who ?? '').trim().toLowerCase();
+    if (!NOT_PEOPLE.has(id)) out.add(id);
+  }
+  return [...out].sort();
+}
+
 declare module 'fastify' {
   interface FastifyRequest { caller: InternalCaller }
 }
@@ -207,6 +221,17 @@ export async function buildApp(opts: { trusted: TrustedKey[]; tls?: InternalTls 
     const r = range({}, 7)!;
     const { logs, truncated } = await queryAuditLogs(tenantOf(request), r.fromIso, r.toIso);
     return { from: r.fromIso, to: r.toIso, truncated, ...mcpActivity(logs) };
+  });
+
+  /**
+   * The people who used AI through Probaline in the last 30 days, for the license's "users included":
+   * people named on AI requests and people signed in to MCP servers. Agents with only a key, anonymous
+   * requests and admins testing in the dashboard aren't people.
+   */
+  app.get('/internal/v1/license/people', async (request) => {
+    const r = range({}, 30)!;
+    const { logs, truncated } = await queryAuditLogs(tenantOf(request), r.fromIso, r.toIso);
+    return { from: r.fromIso, to: r.toIso, truncated, people: peopleIn(logs) };
   });
 
   // ── What an on-prem install reports back to the platform (only what the company allows) ───────

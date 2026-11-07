@@ -1,7 +1,8 @@
 import net from 'net';
 import { randomBytes } from 'crypto';
 import { collection } from '@ai-governance/storage';
-import { SecretBackend, SecretsManagerBackend } from '../services/provider-key.store';
+import { SecretBackend } from '../services/provider-key.store';
+import { secretBackend } from '../services/secret-store';
 import { isPrivateAddress } from '../mcp/egress';
 import { DestinationKind, DestinationSecrets } from './formats';
 import { RecordChoice, ExportRecord } from './records';
@@ -120,7 +121,7 @@ export class DestinationStore {
   private records = () => collection<Record<string, any>>('logExport');
 
   constructor(
-    private backend: SecretBackend = new SecretsManagerBackend(),
+    private backend: SecretBackend = secretBackend(),
     private prefix = `${process.env.PROVIDER_KEYS_SECRET_PREFIX || `probaline/${process.env.STAGE || 'dev'}/provider-keys`}/log-export`,
   ) {}
 

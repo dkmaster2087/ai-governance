@@ -67,6 +67,22 @@ describe('analytics', () => {
     expect((await get('/internal/v1/gateway/summary?from=2026-01-01T00:00:00Z&to=2026-06-01T00:00:00Z')).json().code).toBe('INVALID_RANGE');
   });
 
+  it('lists the people who used AI in the last 30 days, once each, for the license', async () => {
+    const audit = collection('auditLogs');
+    await audit.put(log('tenant_a', { requestId: 'p-1', userId: 'Ana@Acme.example' }));
+    await audit.put(log('tenant_a', { requestId: 'p-2', userId: 'anonymous' }));
+    await audit.put(log('tenant_a', { requestId: 'p-3', userId: 'x', metadata: { kind: 'mcp_tool_call', caller: 'person', callerEmail: 'ana@acme.example' } }));
+    await audit.put(log('tenant_a', { requestId: 'p-4', userId: 'agent-user', metadata: { kind: 'mcp_tool_call', caller: 'api_key' } }));
+    await audit.put(log('tenant_a', { requestId: 'p-5', userId: 'bo@acme.example', metadata: { kind: 'mcp_tool_call', caller: 'person', callerEmail: 'bo@acme.example', test: 'true' } }));
+    const r = (await get('/internal/v1/license/people')).json();
+    expect(r.people).toContain('ana@acme.example');
+    expect(r.people.filter((p: string) => p === 'ana@acme.example')).toHaveLength(1);
+    expect(r.people).not.toContain('anonymous');
+    expect(r.people).not.toContain('agent-user');
+    expect(r.people).not.toContain('bo@acme.example');
+    expect((await get('/internal/v1/license/people', as('tenant_b'))).json().people).not.toContain('ana@acme.example');
+  });
+
   it('shows the platform view to platform admins only', async () => {
     expect((await get('/internal/v1/platform/usage')).statusCode).toBe(403);
     const usage = (await get('/internal/v1/platform/usage?days=7', as('tenant_platform', 'platform_admin'))).json();

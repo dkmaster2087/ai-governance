@@ -1,0 +1,102 @@
+# Publishes the programs customers run in their own network: the connector and the collector.
+#
+# Push a tag to release one:   git tag connector-v0.1.1 && git push origin connector-v0.1.1
+#                              git tag collector-v0.2.0 && git push origin collector-v0.2.0
+# The tag's version must match the program's package.json and its version constant, or nothing is published.
+#
+# Where they go:
+#   - GitHub Container Registry, always: ghcr.io/<owner>/probaline-<program>:<version>
+#   - Docker Hub as probaline/<program>:<version>, when the repository has the DOCKERHUB_USERNAME variable
+#     and DOCKERHUB_TOKEN secret (an access token for an account that can push to the `probaline` namespace).
+# Each image is signed (keyless, tied to this workflow run) with a software bill of materials attached, so
+# customers can check it came from this repository unchanged:
+#   cosign verify probaline/connector:0.1.1 \
+#     --certificate-identity-regexp 'https://github.com/<owner>/<repo>/.github/workflows/release-agents.yml@.*' \
+#     --certificate-oidc-issuer https://token.actions.githubusercontent.com
+name: Release connector and collector
+
+on:
+  push:
+    tags: ['connector-v*', 'collector-v*']
+  workflow_dispatch:
+    inputs:
+      program:
+        description: 'Program'
+        required: true
+        type: choice
+        options: [connector, collector]
+      publish:
+        description: 'Publish (off: build and check only)'
+        required: false
+        default: false
+        type: boolean
+
+permissions: { contents: read }
+
+defaults:
+  run:
+    working-directory: ai-governance-platform
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+    permissions: { contents: read, packages: write, id-token: write }
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Which program and version
+        run: |
+          if [ "${{ github.event_name }}" = "push" ]; then
+            TAG="${GITHUB_REF_NAME}"; PROGRAM="${TAG%%-v*}"; VERSION="${TAG#*-v}"; PUBLISH=true
+          else
+            PROGRAM="${{ inputs.program }}"; VERSION=$(node -p "require('./$PROGRAM/package.json').version"); PUBLISH="${{ inputs.publish }}"
+          fi
+          node scripts/release-check.mjs "$PROGRAM" "$VERSION"
+          OWNER=$(echo "${{ github.repository_owner }}" | tr '[:upper:]' '[:lower:]')
+          echo "PROGRAM=$PROGRAM" >> "$GITHUB_ENV"; echo "VERSION=$VERSION" >> "$GITHUB_ENV"; echo "PUBLISH=$PUBLISH" >> "$GITHUB_ENV"
+          echo "GHCR=ghcr.io/$OWNER/probaline-$PROGRAM" >> "$GITHUB_ENV"
+
+      - name: Build
+        run: docker build -f "$PROGRAM/Dockerfile" -t "local/$PROGRAM:$VERSION" .
+
+      # The same check CI makes for the services: bytecode and a loader, nothing readable.
+      - name: Check nothing readable ships
+        run: |
+          id=$(docker create "local/$PROGRAM:$VERSION")
+          files=$(docker export "$id" | tar -t); docker rm "$id" > /dev/null
+          echo "$files" | grep -qx 'app/app.jsc' || { echo "app/app.jsc missing"; exit 1; }
+          if echo "$files" | grep -E '\.ts$|\.map$|^app/app\.js$|node_modules|^bin/(ba)?sh$|bin/npm'; then echo "Readable code or tools in the image"; exit 1; fi
+          docker run --rm "local/$PROGRAM:$VERSION" --version | grep -qx "$VERSION" || { echo "The image doesn't report $VERSION"; exit 1; }
+
+      - if: env.PUBLISH == 'true'
+        uses: docker/login-action@v3
+        with: { registry: ghcr.io, username: '${{ github.actor }}', password: '${{ secrets.GITHUB_TOKEN }}' }
+      - if: env.PUBLISH == 'true' && vars.DOCKERHUB_USERNAME != ''
+        uses: docker/login-action@v3
+        with: { username: '${{ vars.DOCKERHUB_USERNAME }}', password: '${{ secrets.DOCKERHUB_TOKEN }}' }
+
+      - name: Push
+        if: env.PUBLISH == 'true'
+        run: |
+          TARGETS="$GHCR"
+          [ -n "${{ vars.DOCKERHUB_USERNAME }}" ] && TARGETS="$TARGETS probaline/$PROGRAM"
+          : > images.txt
+          for t in $TARGETS; do
+            docker tag "local/$PROGRAM:$VERSION" "$t:$VERSION"
+            docker push "$t:$VERSION"
+            echo "$t@$(docker inspect --format='{{range .RepoDigests}}{{println .}}{{end}}' "$t:$VERSION" | grep "^$t@" | cut -d@ -f2)" >> images.txt
+          done
+          cat images.txt
+
+      - if: env.PUBLISH == 'true'
+        uses: anchore/sbom-action@v0
+        with: { image: 'local/${{ env.PROGRAM }}:${{ env.VERSION }}', format: spdx-json, output-file: ai-governance-platform/sbom.spdx.json, upload-artifact: true }
+      - if: env.PUBLISH == 'true'
+        uses: sigstore/cosign-installer@v3
+      - name: Sign each image and attach its bill of materials
+        if: env.PUBLISH == 'true'
+        run: |
+          while read -r image; do
+            cosign sign --yes "$image"
+            cosign attest --yes --type spdxjson --predicate sbom.spdx.json "$image"
+          done < images.txt

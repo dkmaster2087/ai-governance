@@ -1,4 +1,5 @@
 import { NormalizedAIRequest, NormalizedAIResponse, PolicyEvaluationResult, AuditLog } from '@ai-governance/types';
+import { alerting } from './alerting.service';
 import { hashContent, estimateCost, createLogger } from '@ai-governance/utils';
 import { collection, objects } from '@ai-governance/storage';
 import { ModelConfigRepository } from '../repositories/model-config.repository';
@@ -88,6 +89,8 @@ export class AuditService {
       // Audit failures should not break the request flow
       logger.error('Failed to write audit log', { error: err, requestId: request.requestId });
     }
+    // Company alerts (stopped spikes, personal data in answers, spend), off the request path.
+    alerting().signal(() => alerting().fromAuditRecord(log));
   }
 
   /** Archive copy, one file per record (S3 in AWS; a directory or S3-compatible store elsewhere). */

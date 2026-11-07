@@ -3,6 +3,7 @@ import { PolicyEngineClient } from '../clients/policy-engine.client';
 import { DataProtectionClient } from '../clients/data-protection.client';
 import { ProviderRouter } from '../services/provider.router';
 import { AuditService } from '../services/audit.service';
+import { collection, MemoryStore, setRecords } from '@ai-governance/storage';
 
 jest.mock('../clients/policy-engine.client');
 jest.mock('../clients/data-protection.client');
@@ -39,6 +40,7 @@ describe('GatewayService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks();
+    setRecords(new MemoryStore());
 
     mockDataProtection.prototype.protectRequest.mockResolvedValue({
       requestId: 'req_123',
@@ -98,5 +100,45 @@ describe('GatewayService', () => {
 
     await service.processRequest(mockRequest);
     expect(mockAuditService.prototype.log).toHaveBeenCalledTimes(1);
+  });
+
+  describe('each model\'s settings', () => {
+    const allow = { allowed: true, action: 'allow' as const, triggeredRules: [], riskScore: 0 };
+    const addModel = (extra: object) => collection('models').put({
+      tenantId: 'tenant_123', modelConfigId: 'm1', name: 'Claude Haiku', provider: 'bedrock', modelId: mockRequest.model,
+      status: 'active', isDefault: false, maxTokensPerRequest: 500, inputCostPer1kTokens: 0, outputCostPer1kTokens: 0, tags: [], ...extra,
+    } as any);
+    beforeEach(() => mockPolicyClient.prototype.evaluate.mockResolvedValue(allow));
+
+    it('caps the answer at the model\'s limit, and records when it did', async () => {
+      await addModel({});
+      await service.processRequest({ ...mockRequest, maxTokens: 4000 });
+      const sent = (mockProviderRouter.prototype.route.mock.calls[0] as any[])[0];
+      expect(sent.maxTokens).toBe(500);
+      expect((mockAuditService.prototype.log.mock.calls[0] as any[])[0].metadata).toMatchObject({ maxTokensCapped: '4000→500' });
+
+      await service.processRequest(mockRequest); // asked for nothing: gets the limit
+      expect((mockProviderRouter.prototype.route.mock.calls[1] as any[])[0].maxTokens).toBe(500);
+      await service.processRequest({ ...mockRequest, maxTokens: 100 }); // smaller requests are left alone
+      expect((mockProviderRouter.prototype.route.mock.calls[2] as any[])[0].maxTokens).toBe(100);
+    });
+
+    it('lets only the chosen keys use a model, and records the refusal', async () => {
+      await addModel({ allowedKeyIds: ['key_support'] });
+      expect((await service.processRequest({ ...mockRequest, keyId: 'key_support' })).content).toBe('Hello! How can I help?');
+
+      await expect(service.processRequest({ ...mockRequest, keyId: 'key_marketing' })).rejects.toMatchObject({ code: 'MODEL_NOT_ALLOWED', statusCode: 403 });
+      await expect(service.processRequest(mockRequest)).rejects.toMatchObject({ code: 'MODEL_NOT_ALLOWED' });
+      expect(mockProviderRouter.prototype.route).toHaveBeenCalledTimes(1);
+      expect(mockPolicyClient.prototype.evaluate).toHaveBeenCalledTimes(1); // refused before anything else ran
+      const [req, , result] = mockAuditService.prototype.log.mock.calls.at(-1) as any[];
+      expect(req.metadata).toMatchObject({ check: 'model_keys' });
+      expect(result).toMatchObject({ allowed: false, reason: expect.stringContaining('may not use Claude Haiku') });
+    });
+
+    it('leaves models nobody configured alone', async () => {
+      await service.processRequest({ ...mockRequest, maxTokens: 9000, keyId: 'any' });
+      expect((mockProviderRouter.prototype.route.mock.calls[0] as any[])[0].maxTokens).toBe(9000);
+    });
   });
 });

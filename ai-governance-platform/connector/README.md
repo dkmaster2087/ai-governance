@@ -20,7 +20,24 @@ docker run -d --name probaline-connector --restart unless-stopped \
   probaline/connector:0.1.0
 ```
 
-Or with Node 20: `npm run build && PROBALINE_URL=… PROBALINE_CONNECTOR_TOKEN=… node dist/cli.js`.
+The image is the connector compiled to bytecode on a minimal (distroless) Node image: no shell, no source,
+not root. For `NODE_EXTRA_CA_CERTS`, mount the CA file read-only, e.g. `-v /etc/acme-ca.pem:/ca.pem:ro -e
+NODE_EXTRA_CA_CERTS=/ca.pem`.
+
+### Check the image before you run it
+
+Each release is signed by Probaline's release workflow, with a software bill of materials attached:
+
+```bash
+cosign verify probaline/connector:0.1.0 \
+  --certificate-identity-regexp 'https://github.com/dkmaster2087/ai-governance/.github/workflows/release-agents.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+cosign verify-attestation --type spdxjson probaline/connector:0.1.0 \
+  --certificate-identity-regexp 'https://github.com/dkmaster2087/ai-governance/.github/workflows/release-agents.yml@.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com
+```
+
+The same image is at `ghcr.io/dkmaster2087/probaline-connector:0.1.0`.
 
 | Setting | |
 |---|---|
@@ -36,3 +53,10 @@ Run two copies for resilience: each call goes to whichever copy collects it firs
 
 Answers through a connector are capped at 250 KB. Calls wait in the gateway's database (encrypted) for at
 most a few seconds while the connector collects them, so each call adds a little latency.
+
+## Releases
+
+Set the new version in `package.json` and `src/connector.ts`, then push a tag `connector-v<version>`. The
+Release workflow (`.github/workflows/release-agents.yml`) checks the versions agree, builds the image, checks
+nothing readable is in it, and publishes it signed. Build it yourself from the platform folder with
+`docker build -f connector/Dockerfile -t probaline/connector:0.1.0 .`.

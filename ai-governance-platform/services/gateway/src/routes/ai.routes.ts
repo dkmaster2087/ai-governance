@@ -41,6 +41,7 @@ export async function aiRoutes(app: FastifyInstance) {
       tenantId: request.tenantId,
       userId: request.userId,
       appId: request.appId,
+      ...(request.principal?.kind === 'api_key' ? { keyId: request.principal.keyId } : {}),
       model: body.model,
       messages: body.messages,
       maxTokens: body.max_tokens,

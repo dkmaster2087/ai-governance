@@ -7,12 +7,13 @@ import {
   PROVIDER_LABEL, removeModel, saveModel, testModel,
 } from '../lib/models-api';
 import { errorMessage } from '../lib/rules-api';
+import { listKeys } from '../lib/api-keys-api';
 import { Button, Note, Panel, SectionLabel, Segmented, Switch } from '../components/kit/primitives';
 
 const field = 'w-full min-h-[42px] px-3 border border-line-strong rounded-lg bg-white';
 const price = (n: number) => (n ? `$${n}` : '—');
 
-const blank: ModelInput = { name: '', provider: 'bedrock', modelId: '', status: 'active', apiKey: '', inputCostPer1kTokens: 0, outputCostPer1kTokens: 0 };
+const blank: ModelInput = { name: '', provider: 'bedrock', modelId: '', status: 'active', apiKey: '', inputCostPer1kTokens: 0, outputCostPer1kTokens: 0, maxTokensPerRequest: 4096, allowedKeyIds: [] };
 
 export function ModelForm({ model, onDone }: { model?: ModelConfig; onDone: () => void }) {
   const qc = useQueryClient();
@@ -24,7 +25,13 @@ export function ModelForm({ model, onDone }: { model?: ModelConfig; onDone: () =
     apiKey: '',
     inputCostPer1kTokens: model.inputCostPer1kTokens ?? 0,
     outputCostPer1kTokens: model.outputCostPer1kTokens ?? 0,
+    maxTokensPerRequest: model.maxTokensPerRequest ?? 4096,
+    allowedKeyIds: model.allowedKeyIds ?? [],
   } : blank);
+  const keys = useQuery({ queryKey: ['api-keys'], queryFn: listKeys });
+  const usable = (keys.data ?? []).filter((k) => k.status === 'active' && k.scopes.includes('chat'));
+  const [limited, setLimited] = useState((model?.allowedKeyIds ?? []).length > 0);
+  const toggleKey = (id: string, on: boolean) => set('allowedKeyIds', on ? [...form.allowedKeyIds, id] : form.allowedKeyIds.filter((k) => k !== id));
   const set = <K extends keyof ModelInput>(k: K, v: ModelInput[K]) => setForm((f) => ({ ...f, [k]: v }));
   const unsupported = model && !(model.provider in PROVIDER_LABEL);
   const needsKey = form.provider === 'openai';
@@ -33,7 +40,7 @@ export function ModelForm({ model, onDone }: { model?: ModelConfig; onDone: () =
     mutationFn: () => saveModel(form, model?.modelConfigId),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['model-configs'] }); onDone(); },
   });
-  const canSave = form.name.trim() && form.modelId.trim() && (!needsKey || form.apiKey || model?.apiKeyHint);
+  const canSave = form.name.trim() && form.modelId.trim() && (!needsKey || form.apiKey || model?.apiKeyHint) && (!limited || form.allowedKeyIds.length > 0);
 
   return (
     <Panel aria-label={model ? `Edit ${model.name}` : 'Add a model'} className="px-6 py-5">
@@ -76,6 +83,31 @@ export function ModelForm({ model, onDone }: { model?: ModelConfig; onDone: () =
           </label>
         </div>
         <p className="m-0 -mt-2 text-xs text-ink-muted">Prices are what your provider charges; Spend uses them to estimate cost.</p>
+        <label className="flex flex-col gap-1.5 max-w-[320px]"><span className="text-sm font-semibold">Longest answer (tokens)</span>
+          <input className={field} type="number" min={1} max={1000000} step={1} value={form.maxTokensPerRequest}
+            onChange={(e) => set('maxTokensPerRequest', Math.min(1_000_000, Math.max(1, Math.floor(Number(e.target.value) || 1))))} />
+          <span className="text-xs text-ink-muted">Apps that ask for a longer answer get this many tokens at most. Keeps one request from running up the bill.</span>
+        </label>
+        <fieldset className="flex flex-col gap-2 border-0 p-0 m-0">
+          <legend className="text-sm font-semibold mb-1.5">Which API keys may use it</legend>
+          <div><Segmented label="Which API keys may use it" value={limited ? 'some' : 'all'}
+            onChange={(v: 'all' | 'some') => { setLimited(v === 'some'); if (v === 'all') set('allowedKeyIds', []); }}
+            options={[{ value: 'all', label: 'Every key' }, { value: 'some', label: 'Only these keys' }]} /></div>
+          {limited && (
+            usable.length ? (
+              <div className="flex flex-col gap-1.5 pl-1">
+                {usable.map((k) => (
+                  <label key={k.keyId} className="flex items-center gap-2 text-sm">
+                    <input type="checkbox" checked={form.allowedKeyIds.includes(k.keyId)} onChange={(e) => toggleKey(k.keyId, e.target.checked)} />
+                    <span>{k.name}</span><span className="font-mono text-xs text-ink-muted">{k.keyPrefix}…</span>
+                  </label>
+                ))}
+              </div>
+            ) : <p className="m-0 text-sm text-ink-muted">{keys.isLoading ? 'Loading keys…' : 'No active keys with chat access yet. Create one under API keys.'}</p>
+          )}
+          {limited && !form.allowedKeyIds.length && usable.length > 0 && <span className="text-xs text-stop-text font-semibold">Choose at least one key, or pick Every key.</span>}
+          <span className="text-xs text-ink-muted">Other keys are refused with a clear message, and the refusal is recorded in Evidence.</span>
+        </fieldset>
         <div className="flex items-center gap-3">
           <Switch label="Listed for apps" checked={form.status === 'active'} onChange={(on) => set('status', on ? 'active' : 'inactive')} />
           <span className="text-sm">Listed for apps <span className="text-ink-muted">(shown in the gateway’s model list)</span></span>
@@ -115,6 +147,7 @@ function ModelRow({ m, onEdit }: { m: ModelConfig; onEdit: () => void }) {
       <div className="text-sm min-w-0">
         <div>{PROVIDER_LABEL[m.provider] ?? <span className="text-stop-text font-semibold">{m.provider} (not supported)</span>}{m.apiKeyHint && <span className="font-mono text-ink-muted"> · key {m.apiKeyHint}</span>}</div>
         <div className="text-ink-muted">{m.inputCostPer1kTokens || m.outputCostPer1kTokens ? `In ${price(m.inputCostPer1kTokens)} · out ${price(m.outputCostPer1kTokens)} per 1k tokens` : 'No prices set'}</div>
+        <div className="text-ink-muted">Answers up to {(m.maxTokensPerRequest ?? 4096).toLocaleString()} tokens · {m.allowedKeyIds?.length ? `${m.allowedKeyIds.length} key${m.allowedKeyIds.length === 1 ? '' : 's'} only` : 'every key'}</div>
         {testLine && <div className={clsx('font-semibold', testLine.ok ? 'text-ink' : 'text-stop-text')}>{testLine.text}</div>}
       </div>
       <div className="flex gap-2 flex-wrap md:justify-end">

@@ -2,10 +2,12 @@
 # Run the platform locally against LocalStack (http://localhost:4566).
 #
 #   scripts/dev-local.sh start             # LocalStack (docker) + gateway, policy engine, data protection, analytics, dashboard
-#   scripts/dev-local.sh start --postgres  # the same, storing records in PostgreSQL (docker, :5433) and files on disk
-#                                          # (LocalStack still runs: provider keys are in Secrets Manager)
+#   scripts/dev-local.sh start --postgres  # the same, storing records in PostgreSQL (docker, :5433), files on disk and
+#                                          # secrets in the database (SECRET_STORE=database)
 #   scripts/dev-local.sh stop     # stop the Node processes (LocalStack keeps running; `docker rm -f ai-gov-localstack` to remove it)
 #   scripts/dev-local.sh status
+#   SITES=off scripts/dev-local.sh start   # services only, no website, docs or dashboard (CI)
+#   GLOBAL_RATE_LIMIT=10000000 scripts/dev-local.sh start   # for scripts/load-test.mjs (the per-address limit)
 #
 # Sample traffic: node scripts/seed-traffic.mjs (uses the mock model on :4010).
 # Logs go to .dev-logs/. The dashboard uses local demo accounts (admin@platform.com / admin123, etc.)
@@ -33,6 +35,10 @@ case "${1:-start}" in
     if [ "${2:-}" = "--postgres" ] || [ "${STORAGE_BACKEND:-}" = "postgres" ]; then
       export STORAGE_BACKEND=postgres OBJECT_STORE=file OBJECT_STORE_DIR="$ROOT/.dev-data/objects"
       export DATABASE_URL="${DATABASE_URL:-postgres://probaline:probaline-dev@localhost:5433/probaline}"
+      # Secrets in the database too, encrypted under a key made once, as a self-hosted install without AWS runs.
+      mkdir -p "$ROOT/.dev-data"
+      [ -f "$ROOT/.dev-data/secrets.key" ] || (umask 077 && openssl rand -base64 32 > "$ROOT/.dev-data/secrets.key")
+      export SECRET_STORE=database SECRETS_ENCRYPTION_KEY="$(cat "$ROOT/.dev-data/secrets.key")"
       if ! docker ps --format '{{.Names}}' | grep -q '^probaline-postgres$'; then
         echo "Starting PostgreSQL..."
         docker start probaline-postgres >/dev/null 2>&1 || (cd "$ROOT" && docker compose -p probaline up -d postgres)
@@ -44,6 +50,11 @@ case "${1:-start}" in
       echo "Starting LocalStack..."
       (cd "$ROOT" && docker compose -p probaline up -d localstack)
       until docker logs ai-gov-localstack 2>&1 | grep -q "LocalStack init complete"; do sleep 1; done
+    fi
+    # A container made before KMS was added can't encrypt archive copies; it has to be recreated.
+    if ! docker inspect ai-gov-localstack --format '{{range .Config.Env}}{{println .}}{{end}}' | grep -q '^SERVICES=.*kms'; then
+      echo "  LocalStack was created without KMS, so archive copies of audit records fail. Recreate it (its data is temporary anyway):"
+      echo "    docker rm -f ai-gov-localstack && scripts/dev-local.sh stop && scripts/dev-local.sh start"
     fi
     echo "Building shared packages..."
     (cd "$ROOT" && npm run build -w shared/types -w shared/utils -w shared/storage >/dev/null)
@@ -75,7 +86,9 @@ case "${1:-start}" in
       AUTH_DEV_MODE=true MCP_ALLOW_PRIVATE_BACKENDS=true MCP_ALLOW_HTTP_BACKENDS=true PUBLIC_GATEWAY_URL=http://localhost:3000 ANALYTICS_URL=https://localhost:3003 \
       LOG_EXPORT_ALLOW_HTTP=true LOG_EXPORT_ALLOW_PRIVATE_DESTINATIONS=true LOG_EXPORT_INTERVAL_MS=1000 LOG_EXPORT_SETTLE_MS=2000 LOG_EXPORT_RETRY_BASE_MS=1000 \
       POLICY_ENGINE_URL=https://localhost:3001 DATA_PROTECTION_URL=https://localhost:3002 ALLOWED_ORIGINS=http://localhost:5174,http://localhost:5173 \
-      OPENAI_BASE_URL=http://localhost:4010/v1 PROXY_TARGET_OPENAI=http://localhost:4010 GLOBAL_RATE_LIMIT=2000
+      OPENAI_BASE_URL=http://localhost:4010/v1 PROXY_TARGET_OPENAI=http://localhost:4010 GLOBAL_RATE_LIMIT=${GLOBAL_RATE_LIMIT:-2000}
+    # SITES=off skips the website, docs and dashboard (the end-to-end suite in CI needs only the services).
+    if [ "${SITES:-on}" = "off" ]; then exit 0; fi
     if lsof -tiTCP:5173 -sTCP:LISTEN >/dev/null 2>&1; then echo "  website: port 5173 already in use, skipping"
     else (cd "$ROOT/frontend/website" && nohup npx vite --port 5173 > "$LOGS/website.log" 2>&1 < /dev/null &) > /dev/null 2>&1; echo "  website → http://localhost:5173"; fi
     if lsof -tiTCP:5175 -sTCP:LISTEN >/dev/null 2>&1; then echo "  docs: port 5175 already in use, skipping"

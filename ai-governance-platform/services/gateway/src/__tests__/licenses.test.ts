@@ -3,6 +3,7 @@ import { collection, MemoryStore, setRecords } from '@ai-governance/storage';
 import { computeLicenseStatus, LicenseKey, LicenseStateService, setLicenseState } from '../services/license-state';
 import { createAuthPlugin } from '../middleware/auth.middleware';
 import { hashApiKey } from '../repositories/api-key.repository';
+import { setAnalyticsClient } from '../clients/analytics.client';
 
 const DAY = 86_400_000;
 const iso = (daysFromNow: number) => new Date(Date.now() + daysFromNow * DAY).toISOString();
@@ -77,6 +78,28 @@ describe('licenses', () => {
     const overview = (await admin.inject({ method: 'GET', url: '/v1/license/overview' })).json();
     expect(overview.licenses.map((l: any) => [l.status, l.plan])).toEqual([['active', 'starter']]);
     expect(JSON.stringify(overview)).not.toContain(issued.licenseKey);
+  });
+
+  it('counts users against the license, warning above it without cutting anyone off', async () => {
+    const issued = await issue('tenant_acme', { maxUsers: 3 });
+    const admin = await appAs('tenant_admin');
+    await admin.inject({ method: 'POST', url: '/v1/license/activate', payload: { licenseKey: issued.licenseKey } });
+    for (const [email, status] of [['ana@acme.example', 'active'], ['Bo@Acme.example', 'invited'], ['old@acme.example', 'disabled']]) {
+      await collection('users').put({ tenantId: 'tenant_acme', email, status, role: 'tenant_user' });
+    }
+    let people: { people: string[]; truncated: boolean } | null = { people: ['ana@acme.example', 'cy@acme.example', 'dee@acme.example'], truncated: false };
+    setAnalyticsClient({ optional: async () => people } as any);
+    try {
+      // Accounts ana, bo; people using AI ana (again), cy, dee: 4 people for 3 included.
+      expect((await admin.inject({ method: 'GET', url: '/v1/license/overview' })).json().users)
+        .toEqual({ included: 3, counted: 4, accounts: 2, usedAi: 3, partial: false, over: true });
+      // Analytics down: accounts only, and the page is told the count is partial.
+      people = null;
+      expect((await admin.inject({ method: 'GET', url: '/v1/license/overview' })).json().users)
+        .toMatchObject({ counted: 2, usedAi: null, partial: true, over: false });
+    } finally {
+      setAnalyticsClient(null);
+    }
   });
 
   it('refuses keys that are wrong, for another company, revoked or expired; only admins enter keys', async () => {

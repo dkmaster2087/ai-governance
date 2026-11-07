@@ -8,6 +8,7 @@ import {
 } from '@aws-sdk/client-secrets-manager';
 import { ModelConfig } from '@ai-governance/types';
 import { createLogger } from '@ai-governance/utils';
+import { secretBackend } from './secret-store';
 
 const logger = createLogger('gateway:provider-keys');
 
@@ -58,7 +59,7 @@ export class ProviderKeyStore {
   private cache = new Map<string, { value: string; until: number }>();
 
   constructor(
-    private backend: SecretBackend = new SecretsManagerBackend(),
+    private backend: SecretBackend = secretBackend(),
     private cacheTtlMs = 5 * 60_000,
     private prefix = process.env.PROVIDER_KEYS_SECRET_PREFIX || `probaline/${process.env.STAGE || 'dev'}/provider-keys`,
   ) {}

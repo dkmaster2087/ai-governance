@@ -109,6 +109,44 @@ jobs:
         working-directory: ai-governance-platform/frontend/docs
         run: npx vitest run
 
+  # The whole request path through the real services (mutual TLS, signed internal calls), against LocalStack,
+  # on each storage backend: tests/e2e/*.test.mjs.
+  e2e:
+    name: End to end — ${{ matrix.storage }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    strategy:
+      fail-fast: false
+      matrix:
+        storage: [dynamodb, postgres]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+          cache: npm
+          cache-dependency-path: ai-governance-platform/package-lock.json
+      - name: Install dependencies
+        run: |
+          command -v lsof > /dev/null || sudo apt-get install -y lsof
+          npm ci
+      - name: Start the services
+        env: { SITES: 'off' }
+        run: ./scripts/dev-local.sh start ${{ matrix.storage == 'postgres' && '--postgres' || '' }}
+      - name: Wait for the gateway
+        run: |
+          for i in $(seq 1 90); do curl -sf localhost:3000/health > /dev/null && exit 0; sleep 2; done
+          echo "The gateway didn't start"; tail -50 .dev-logs/gateway.log; exit 1
+      - name: End-to-end suite
+        run: npm run test:e2e
+      - name: Service logs
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with: { name: 'e2e-logs-${{ matrix.storage }}', path: ai-governance-platform/.dev-logs/, retention-days: 7 }
+      - name: Stop
+        if: always()
+        run: ./scripts/dev-local.sh stop
+
   build:
     name: Build
     runs-on: ubuntu-latest
@@ -154,17 +192,16 @@ jobs:
           - { name: data-protection, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg SERVICE=data-protection --build-arg PORT=3002' }
           - { name: analytics, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg SERVICE=analytics --build-arg PORT=3003' }
           - { name: reporting-agent, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg SERVICE=reporting-agent --build-arg PORT=3005' }
-          - { name: collector, dockerfile: collector/deploy/onprem/Dockerfile, context: collector }
-          - { name: connector, dockerfile: connector/Dockerfile, context: connector }
+          - { name: collector, dockerfile: collector/Dockerfile, context: ., kind: agent }
+          - { name: connector, dockerfile: connector/Dockerfile, context: ., kind: agent }
     steps:
       - uses: actions/checkout@v4
 
-      # Build only, to prove each Dockerfile works; pushing happens in deploy.yml.
+      # Build only, to prove each Dockerfile works; pushing happens in deploy.yml (services) and release-agents.yml.
       - name: Build image
         run: docker build -f ${{ matrix.dockerfile }} ${{ matrix.args }} -t probaline-${{ matrix.name }}:ci ${{ matrix.context }}
-      # Service images must ship bytecode only: no source, no shell, no npm.
+      # Service, connector and collector images must ship bytecode only: no source, no shell, no npm.
       - name: Check nothing readable ships
-        if: matrix.kind == 'service'
         run: |
           id=$(docker create probaline-${{ matrix.name }}:ci)
           docker export "$id" > image.tar

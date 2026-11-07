@@ -159,6 +159,7 @@ const storageEnv = () => (storage === 'postgres'
     // Same as scripts/dev-local.sh start --postgres
     STORAGE_BACKEND: 'postgres', OBJECT_STORE: 'file', OBJECT_STORE_DIR: path.join(ROOT, '.dev-data/objects'),
     DATABASE_URL: process.env.DATABASE_URL || 'postgres://probaline:probaline-dev@localhost:5433/probaline',
+    SECRET_STORE: 'database', SECRETS_ENCRYPTION_KEY: fs.readFileSync(path.join(ROOT, '.dev-data/secrets.key'), 'utf8').trim(),
   }
   : { STORAGE_BACKEND: 'dynamodb' });
 
@@ -901,6 +902,61 @@ describe('reports come from the analytics service', () => {
     assert.equal(await internal(3003, 'GET', '/internal/v1/cost/summary', { headers: { 'x-probaline-internal': 'e30.e30.AAAA' } }), 401);
     // Through the gateway, the same report works.
     assert.equal((await call('GET', '/v1/gateway/summary', { headers: adminOf(A) })).status, 200);
+  });
+});
+
+describe('model limits and alerts', () => {
+  test('a model can be limited to chosen keys, and long answers are capped', async () => {
+    const models = (await call('GET', '/v1/models/config', { headers: adminOf(A) })).body;
+    const model = models.find((m) => m.modelId === MODEL);
+    const support = await newKey(A, 'e2e-support');
+    const set = (change) => call('PUT', `/v1/models/config/${model.modelConfigId}`, { headers: adminOf(A), body: change });
+    try {
+      assert.equal((await set({ allowedKeyIds: [support.keyId], maxTokensPerRequest: 300 })).status, 200);
+      const refused = await chat(keyA, `hello ${marker()}`);
+      assert.equal(refused.status, 403, JSON.stringify(refused.body));
+      assert.equal(refused.body.code, 'MODEL_NOT_ALLOWED');
+
+      const m = marker();
+      const res = await call('POST', '/v1/chat/completions', {
+        headers: { authorization: `Bearer ${support.key}` }, body: { model: MODEL, max_tokens: 5000, messages: [{ role: 'user', content: `hello ${m}` }] },
+      });
+      assert.equal(res.status, 200, JSON.stringify(res.body));
+      assert.equal((await atModel(m))[0].maxTokens, 300, 'the model got the capped size');
+    } finally {
+      await set({ allowedKeyIds: [], maxTokensPerRequest: 4096 });
+    }
+  });
+
+  test('an alert reaches its webhook when requests are stopped', async () => {
+    const http = await import('node:http');
+    const hits = [];
+    const hook = http.createServer((req, res) => {
+      let body = ''; req.on('data', (c) => (body += c));
+      req.on('end', () => { hits.push({ headers: req.headers, body: JSON.parse(body) }); res.writeHead(200); res.end(); });
+    });
+    await new Promise((r) => hook.listen(0, '127.0.0.1', r));
+    const word = marker();
+    let alertId;
+    try {
+      const made = await call('POST', '/v1/alerts/rules', { headers: adminOf(A), body: {
+        name: `E2E stops ${word}`, kind: 'stopped_spike', config: { count: 2, minutes: 15 }, webhookUrl: `http://127.0.0.1:${hook.address().port}/hook`,
+      } });
+      assert.equal(made.status, 201, JSON.stringify(made.body));
+      alertId = made.body.ruleId;
+      await addRule(A, { type: 'keyword_block', description: `E2E alert word ${word}`, values: [word] });
+      assert.equal((await chat(keyA, `about ${word}`)).status, 403);
+      assert.equal((await chat(keyA, `again ${word}`)).status, 403);
+      for (let i = 0; i < 50 && !hits.length; i++) await new Promise((r) => setTimeout(r, 100));
+      assert.equal(hits.length, 1, 'one alert for the two stops');
+      assert.match(hits[0].body.title, /2 requests stopped/);
+      assert.match(hits[0].headers['x-probaline-signature'], /^t=\d+,v1=[0-9a-f]+$/);
+      const sent = (await call('GET', '/v1/alerts/events', { headers: adminOf(A) })).body;
+      assert.ok(sent.some((e) => e.alertRuleId === alertId && e.delivery.webhook === 'sent'), JSON.stringify(sent));
+    } finally {
+      if (alertId) await call('DELETE', `/v1/alerts/rules/${alertId}`, { headers: adminOf(A) });
+      await new Promise((r) => hook.close(r));
+    }
   });
 });
 

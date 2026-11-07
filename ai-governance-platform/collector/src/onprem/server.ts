@@ -238,8 +238,8 @@ export class OnpremCollector {
   }
 }
 
-/** Container entry point, configured by environment variables. */
-async function main() {
+/** Container entry point, configured by environment variables (`probaline-collector serve`). */
+export async function serve() {
   const env = (k: string) => process.env[k];
   const port = (k: string, d: number) => (env(k) === 'off' ? undefined : Number(env(k) ?? d));
   const collector = new OnpremCollector({
@@ -259,4 +259,4 @@ async function main() {
   process.on('SIGINT', shutdown);
 }
 
-if (require.main === module) main().catch((e) => { console.error(e); process.exit(1); });
+if (require.main === module) serve().catch((e) => { console.error(e); process.exit(1); });

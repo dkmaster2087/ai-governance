@@ -89,6 +89,25 @@ export function TenantLicensePage() {
 
       {active.map((l) => <LicenseCard key={l.licenseId} l={l} canRemove={isAdmin} onRemoved={refresh} />)}
 
+      {data.users && data.users.included > 0 && active.length > 0 && (
+        <Panel aria-label="Users" className="px-7 py-5 flex flex-col gap-2">
+          <SectionLabel>Users</SectionLabel>
+          <p className={clsx('m-0 text-[20px] font-bold', data.users.over && 'text-stop-text')}>
+            {data.users.counted.toLocaleString()} of {data.users.included.toLocaleString()} included
+          </p>
+          <p className="m-0 text-ink-muted text-sm">
+            Everyone with a dashboard account ({data.users.accounts.toLocaleString()}), plus people who used AI through Probaline in the last 30 days
+            {data.users.usedAi === null ? ' (couldn’t be read just now, so not counted)' : ` (${data.users.usedAi.toLocaleString()})`}. Each person counts once.
+            {data.users.partial && data.users.usedAi !== null && ' Very busy companies may be undercounted.'}
+          </p>
+          {data.users.over && (
+            <Note title="You’re above the users your license includes.">
+              Nothing is cut off. Talk to your Probaline contact to add users at renewal or sooner.
+            </Note>
+          )}
+        </Panel>
+      )}
+
       {reporting && (
         <Panel className="px-7 py-6 flex flex-col gap-3">
           <SectionLabel>What your on-prem agent sends us</SectionLabel>

@@ -55,7 +55,17 @@ with that setting outside dev/local/test stages.
 npm test                                  # all packages
 (cd services/gateway && npx jest)         # one package
 (cd frontend/dashboard && npx vitest run)
+npm run test:e2e                          # the request path through the real services (start the local stack first)
+node scripts/load-test.mjs                # time the checks add, and how much a gateway handles (docs/PERFORMANCE.md)
 ```
+
+CI runs the unit tests, builds every image (checking no readable code ships) and runs the end-to-end suite on
+DynamoDB and on PostgreSQL. Restoring from backups: [docs/RESTORE-RUNBOOK.md](docs/RESTORE-RUNBOOK.md).
+
+The connector and collector images, which customers run, are published by pushing a tag
+`connector-v<version>` or `collector-v<version>` (`.github/workflows/release-agents.yml`): signed, with a bill
+of materials, to GitHub's registry and (with `DOCKERHUB_USERNAME`/`DOCKERHUB_TOKEN`) Docker Hub as
+`probaline/connector` and `probaline/collector`.
 
 ## Deploy to AWS
 
@@ -124,6 +134,13 @@ node scripts/create-platform-admin.mjs <user-pool-id> you@example.com "First" "L
 | `LOG_EXPORT_INTERVAL_MS`, `LOG_EXPORT_SETTLE_MS`, `LOG_EXPORT_RETRY_BASE_MS`, `LOG_EXPORT_MAX_ATTEMPTS`, `LOG_EXPORT_BATCH_SIZE` | gateway | Log export timing: every 10 s, records at least 30 s old, retries from 30 s doubling, 5 tries, 100 per batch |
 | `LOG_EXPORT_ALLOW_PRIVATE_DESTINATIONS`, `LOG_EXPORT_ALLOW_HTTP` | gateway | `true` lets log export send to private addresses (self-hosted inside the company network) or plain http (local only) |
 | `AUTH_DEV_MODE` | gateway | Local demo sign-in only; refused outside dev stages |
+| `EMAIL_FROM` | gateway | Sender for website enquiries and alerts, verified in Amazon SES (CDK: `-c emailFrom=…`). Email is off without it |
+| `CONTACT_EMAIL_TO` | gateway | Who receives the website's contact form, comma-separated (CDK: `-c contactEmail=…`); enquiries are also kept in the audit bucket |
+| `DASHBOARD_URL` | gateway | The dashboard's address, linked from alert emails (CDK: from `-c dashboardDomain=…`) |
+| `SECRET_STORE` | gateway | Where secrets are kept: `aws` (Secrets Manager, default) or `database` (encrypted in the database, for installs without AWS) |
+| `SECRETS_ENCRYPTION_KEY`, `SECRETS_ENCRYPTION_KEY_OLD` | gateway | With `SECRET_STORE=database`: 32 random bytes, base64 (`openssl rand -base64 32`). To change it, set the new key and keep the old as `_OLD` until secrets are saved again. Keep it apart from database backups |
+| `MCP_KEY_ROTATE_DAYS`, `MCP_KEY_OVERLAP_DAYS` | gateway | How often the MCP signing key rotates (default 90 days) and how long old and next keys stay published (default 7) |
+| `GLOBAL_RATE_LIMIT` | gateway | Requests a minute from one address (the web firewall applies its own limit in AWS) |
 | `VITE_API_URL`, `VITE_DASHBOARD_URL` | website, docs | Gateway and dashboard addresses. `scripts/check-build-env.mjs` refuses a deployed build without them, or with localhost |
 | `PROBALINE_LICENSE_KEY`, `TENANT_ID`, `PROBALINE_REPORTING_URL`, `REPORTING_ENABLED` | reporting agent | On-prem installs only: the license, the company, the platform's reporting address (e.g. `https://app.example/api/v1/reporting`) and whether to send reports |
 | `REPORT_USAGE`, `REPORT_COST`, `REPORT_COMPLIANCE`, `REPORTING_INTERVAL_SECONDS` | reporting agent | What to send (each default `true`; audit records are never sent) and how often (default 300) |
@@ -157,3 +174,5 @@ Variables on each GitHub environment (`dev`, `staging`, `prod`), all optional ou
 | `WEBSITE_DOMAIN`, `DASHBOARD_DOMAIN`, `DOCS_DOMAIN` | Your own domains for the sites |
 | `CLOUDFRONT_CERTIFICATE_ARN` | us-east-1 certificate covering those domains |
 | `ALARM_EMAIL` | Who is emailed when an alarm goes off |
+| `EMAIL_FROM` | Sender for website enquiries and alerts, verified in SES (e.g. `Probaline <no-reply@probaline.com>`) |
+| `CONTACT_EMAIL` | Who receives website enquiries (comma-separated) |

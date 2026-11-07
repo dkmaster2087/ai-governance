@@ -13,6 +13,14 @@ vi.mock('../lib/api', () => ({
   testModelConfig: vi.fn(),
 }));
 
+vi.mock('../lib/api-keys-api', () => ({
+  listKeys: vi.fn(async () => [
+    { keyId: 'k_support', keyPrefix: 'pb_live_ab', name: 'Support bot', scopes: ['chat'], status: 'active', createdAt: '', createdBy: 'u' },
+    { keyId: 'k_ext', keyPrefix: 'pb_live_cd', name: 'Browser extension', scopes: ['shadow_ai:ingest'], status: 'active', createdAt: '', createdBy: 'u' },
+    { keyId: 'k_old', keyPrefix: 'pb_live_ef', name: 'Old app', scopes: ['chat'], status: 'revoked', createdAt: '', createdBy: 'u' },
+  ]),
+}));
+
 const wrap = (ui: React.ReactElement) => {
   const qc = new QueryClient({ defaultOptions: { queries: { retry: false } } });
   return render(<QueryClientProvider client={qc}><MemoryRouter>{ui}</MemoryRouter></QueryClientProvider>);
@@ -56,6 +64,23 @@ describe('ModelForm', () => {
     const [id, payload] = vi.mocked(api.updateModelConfig).mock.calls[0];
     expect(id).toBe('m1');
     expect(payload).toMatchObject({ provider: 'openai', modelId: 'gpt-4o', apiKey: undefined });
+  });
+
+  it('caps answers and limits the model to chosen keys', async () => {
+    vi.mocked(api.updateModelConfig).mockResolvedValue({});
+    const onDone = vi.fn();
+    wrap(<ModelForm model={openaiModel} onDone={onDone} />);
+    fireEvent.change(screen.getByLabelText(/Longest answer/), { target: { value: '800' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Only these keys' }));
+    // Only active keys that can send prompts are offered.
+    const support = await screen.findByRole('checkbox', { name: /Support bot/ });
+    expect(screen.queryByRole('checkbox', { name: /Browser extension/ })).not.toBeInTheDocument();
+    expect(screen.queryByRole('checkbox', { name: /Old app/ })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Save' })).toBeDisabled(); // none chosen yet
+    fireEvent.click(support);
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    expect(vi.mocked(api.updateModelConfig).mock.calls[0][1]).toMatchObject({ maxTokensPerRequest: 800, allowedKeyIds: ['k_support'] });
   });
 
   it('shows the server’s reason when saving fails', async () => {

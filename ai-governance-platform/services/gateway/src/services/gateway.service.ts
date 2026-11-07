@@ -8,6 +8,7 @@ import { ResponseScanner } from './response-scanner';
 import { StreamMasker } from './stream-masker';
 import { tenantSettings } from './tenant-settings.service';
 import { checkSecrets } from './secrets-check';
+import { ModelConfigRepository } from '../repositories/model-config.repository';
 
 const logger = createLogger('gateway');
 
@@ -18,6 +19,8 @@ interface ProcessRequestInput {
   tenantId: string;
   userId: string;
   appId: string;
+  /** The API key making the request (absent for signed-in people). */
+  keyId?: string;
   model: string;
   messages: ChatMessage[];
   maxTokens?: number;
@@ -31,6 +34,7 @@ export class GatewayService {
   private auditService = new AuditService();
   private responseScanner = new ResponseScanner();
   private tenantSettings = tenantSettings();
+  private models = new ModelConfigRepository();
 
   /**
    * Everything before the provider is called: policy evaluation on the original prompt, then personal-data
@@ -42,6 +46,11 @@ export class GatewayService {
 
     logger.info('Processing AI request', { requestId, tenantId: input.tenantId, model: input.model });
 
+    // The company's settings for this model: which keys may use it, and the longest answer allowed.
+    const model = await this.models.findByModelId(input.tenantId, input.model);
+    const limit = model?.maxTokensPerRequest;
+    const maxTokens = limit ? Math.min(input.maxTokens ?? limit, limit) : input.maxTokens;
+
     const normalizedRequest: NormalizedAIRequest = {
       requestId,
       tenantId: input.tenantId,
@@ -50,11 +59,18 @@ export class GatewayService {
       provider: this.providerRouter.resolveProvider(input.model),
       modelId: input.model,
       messages: input.messages,
-      maxTokens: input.maxTokens,
+      maxTokens,
       temperature: input.temperature,
-      metadata: {},
+      metadata: input.maxTokens && limit && input.maxTokens > limit ? { maxTokensCapped: `${input.maxTokens}→${limit}` } : {},
       timestamp,
     };
+
+    if (model?.allowedKeyIds?.length && !(input.keyId && model.allowedKeyIds.includes(input.keyId))) {
+      const reason = `This API key may not use ${model.name || input.model}; an admin can allow it on the Models page`;
+      await this.auditService.log({ ...normalizedRequest, metadata: { ...normalizedRequest.metadata, check: 'model_keys' } }, null,
+        { allowed: false, action: 'block', triggeredRules: [], riskScore: 0, reason }, 0);
+      throw Object.assign(new Error(reason), { code: 'MODEL_NOT_ALLOWED', statusCode: 403, requestId });
+    }
 
     const failMode = await this.tenantSettings.getFailMode(input.tenantId);
     /** Governance steps skipped because a dependency was down and the tenant fails open. */
@@ -104,7 +120,8 @@ export class GatewayService {
     let protectedRequest: NormalizedAIRequest;
     try {
       const masked = await this.dataProtectionClient.protectRequest(afterSecrets);
-      protectedRequest = { ...masked, metadata: { ...afterSecrets.metadata, ...masked.metadata } };
+      // Only the cleaned messages come back from data protection; everything else stays as the gateway set it.
+      protectedRequest = { ...afterSecrets, messages: masked.messages, metadata: { ...afterSecrets.metadata, ...masked.metadata } };
     } catch (err) {
       protectedRequest = whenUnavailable(err, 'pii_masking', afterSecrets);
     }
@@ -144,7 +161,7 @@ export class GatewayService {
       filteredResponse = scannedResponse;
     }
 
-    await this.record(prep, filteredResponse, latencyMs);
+    await this.record(prep, filteredResponse, latencyMs, filteredResponse.content !== response.content ? { answerPiiRemoved: 'true' } : {});
     return filteredResponse;
   }
 
@@ -185,18 +202,21 @@ export class GatewayService {
         yield { done: true, finishReason, inputTokens, outputTokens };
       } finally {
         if (!completed) await upstream.return(undefined).catch(() => undefined);
+        const masked = self.responseScanner.scan(full).maskedContent;
         const response: NormalizedAIResponse = {
           requestId: prep.requestId,
           provider: prep.protectedRequest.provider,
           modelId: prep.protectedRequest.modelId,
-          content: self.responseScanner.scan(full).maskedContent,
+          content: masked,
           inputTokens,
           outputTokens,
           latencyMs: Date.now() - startTime,
           finishReason: completed ? finishReason : 'client_disconnected',
           timestamp: new Date().toISOString(),
         };
-        await self.record(prep, response, response.latencyMs, { streamed: 'true', ...(completed ? {} : { streamAbandoned: 'true' }) })
+        await self.record(prep, response, response.latencyMs, {
+          streamed: 'true', ...(completed ? {} : { streamAbandoned: 'true' }), ...(masked !== full ? { answerPiiRemoved: 'true' } : {}),
+        })
           .catch((err) => logger.error('Audit failed for streamed request', { requestId: prep.requestId, error: (err as Error).message }));
       }
     }

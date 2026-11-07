@@ -110,6 +110,7 @@ export class StorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
+      pointInTimeRecovery: true,
       removalPolicy,
     });
 
@@ -121,6 +122,7 @@ export class StorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
+      pointInTimeRecovery: true,
       removalPolicy,
     });
 
@@ -149,6 +151,7 @@ export class StorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
+      pointInTimeRecovery: true,
       removalPolicy,
     });
 
@@ -161,6 +164,7 @@ export class StorageStack extends cdk.Stack {
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
       timeToLiveAttribute: 'ttl',
+      pointInTimeRecovery: true,
       removalPolicy,
     });
 
@@ -172,7 +176,7 @@ export class StorageStack extends cdk.Stack {
       billingMode: dynamodb.BillingMode.PAY_PER_REQUEST,
       encryption: dynamodb.TableEncryption.CUSTOMER_MANAGED,
       encryptionKey: kmsKey,
-      pointInTimeRecovery: stage === 'prod',
+      pointInTimeRecovery: true,
       ...(ttl ? { timeToLiveAttribute: 'ttl' } : {}),
       removalPolicy,
     });
@@ -184,9 +188,8 @@ export class StorageStack extends cdk.Stack {
     this.mcpOauthTable = mcpTable('McpOauthTable', 'mcp-oauth', 'recordKey', true);
     this.mcpConnectorsTable = mcpTable('McpConnectorsTable', 'mcp-connectors', 'recordKey', true);
 
-    // Admin activity is evidence, so it can be restored in every stage, like audit records.
+    // Admin activity is evidence, kept 400 days.
     this.activityTable = mcpTable('ActivityTable', 'activity', 'eventKey', true);
-    (this.activityTable.node.defaultChild as dynamodb.CfnTable).pointInTimeRecoverySpecification = { pointInTimeRecoveryEnabled: true };
     this.logExportTable = mcpTable('LogExportTable', 'log-export', 'recordKey', true);
 
     // Audit logs table (tenantId + requestId) with TTL for retention

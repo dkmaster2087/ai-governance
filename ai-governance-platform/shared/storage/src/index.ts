@@ -55,6 +55,8 @@ export const SPECS = {
   activity: (): CollectionSpec => ({ name: 'activity', table: env('ACTIVITY_TABLE', 'ai-gov-activity-dev'), partitionKey: 'tenantId', sortKey: 'eventKey', ttlField: 'ttl' }),
   /** Log export: destinations (`dest#<id>`) and batches that could not be delivered (`dead#<time>#<id>`). */
   logExport: (): CollectionSpec => ({ name: 'log_export', table: env('LOG_EXPORT_TABLE', 'ai-gov-log-export-dev'), partitionKey: 'tenantId', sortKey: 'recordKey', ttlField: 'ttl' }),
+  /** Secrets kept in the database, encrypted by the gateway (SECRET_STORE=database; installs without AWS). */
+  secrets: (): CollectionSpec => ({ name: 'secrets', table: env('SECRETS_TABLE', 'ai-gov-secrets-dev'), partitionKey: 'scope', sortKey: 'name' }),
 };
 
 export type CollectionName = keyof typeof SPECS;

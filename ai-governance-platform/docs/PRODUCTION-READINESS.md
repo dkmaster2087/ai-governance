@@ -36,6 +36,7 @@ loaded live as a company admin and as the platform admin, and the deploy, CI and
 | B4 | **Per-key rate limits are stored (60 a minute) but not enforced**; only a per-address limit applies. MCP limits are per instance. | Enforce per key and per MCP caller with shared counters (as the policy engine's rate rule now does). | 1 day |
 | B5 | **Provider keys and MCP credentials use the default Secrets Manager key**, not the platform's KMS key (`PROVIDER_KEYS_KMS_KEY_ID` is unset). | Pass the storage stack's key and grant its use. | ½ day |
 | B6 | **The MCP signing key never rotates.** | Rotation with two published keys during the overlap. | 1 day |
+| B7 | **The gateway trusts the left-most `X-Forwarded-For` address**, which a caller can set, so its own per-address limits (and the contact form's) can be dodged. Found 2026-11-07. The web firewall's limit isn't affected. | Trust only the hops CloudFront and the load balancer add (`trustProxy` with a hop count per route), or read CloudFront's viewer-address header. | ½ day |
 
 ### C. Features that look built but don't work
 
@@ -83,8 +84,8 @@ network get a third-party audit, the bill of materials, and source escrow.
    with a real environment where a platform admin creates a company, its admin is invited, signs in, and the
    company's AI traffic flows.
 2. **Close the security settings** (B2–B5, C1, C3): **built** (2026-11-06); not yet run against a real AWS account.
-3. **Finish what looks built** (C2, C4–C8): about 2 weeks.
-4. **Run it with confidence** (D1–D5, B6, C9): about 1 week, partly in parallel.
+3. **Finish what looks built** (C2, C4–C8): **done** (2026-11-07); email and webhooks not yet tried against real SES and chat tools.
+4. **Run it with confidence** (D1–D5, B6, C9): **done** (2026-11-07); the CI end-to-end job and the restore test haven't run on GitHub or AWS yet. Next: B7, then the first real AWS deploy.
 5. **Trust between services and protected packages** (E1–E4): **done** (2026-11-07); a first AWS deploy still to run.
 6. **Hybrid control plane and a Rust detection core** (E5, E6): later, after the first customers.
 
@@ -134,4 +135,32 @@ Tests: gateway 254, policy engine 46, data protection 7, analytics 37, reporting
 Tests: gateway 254, policy engine 50 (including real mutual TLS with certificates from the script), data
 protection 7, analytics 37, reporting agent 12, utils 28, infra 32; CDK synth passes; end-to-end 39 of 39 on
 DynamoDB and on PostgreSQL, with every internal call over mutual TLS and signed tokens.
+
+## Step 3: what was done
+
+| # | Done | Still to check |
+|---|---|---|
+| C2 | Alerts that fire: many requests stopped, personal data removed from AI answers or tool results, unapproved AI tools, spend past a share of a monthly budget. Checked after every case file and every batch of extension sightings, off the request path; counted in the shared database so each fires once per window across instances. Email (SES) and webhooks (Slack, Teams, Google Chat or a signed endpoint, with the same address checks as log export: before, any address was accepted, including internal ones). An Alerts page with tests and 90 days of what was sent. | Email through real SES; webhooks into real Slack and Teams. |
+| C4 | Applied: each model's longest answer (larger requests capped, recorded) and which API keys may use it (others get `403 MODEL_NOT_ALLOWED`, recorded), both on the Models page. Removed: per-model roles and approval, context size, and five company-level settings nothing read. Data protection can now change only a request's messages, not its model or limits. | — |
+| C5 | The contact form emails the team with the visitor as reply-to, keeps the copy, ignores bots (a hidden field) and limits each address to 5 an hour. | A real SES send. |
+| C6 | The activity trail and log export are merged; their AWS tables and grants added. | — |
+| C7 | Connector and collector images built like the services (bytecode, distroless, non-root, no shell) and published by a release workflow on a version tag: checked, signed, with a bill of materials, to GitHub's registry and Docker Hub. The collector image has a `serve` command; its Azure and Google Cloud jobs updated. | The first release run; the Docker Hub `probaline` namespace must be created and its token added. |
+| C8 | The License page counts users (dashboard accounts plus people who used AI in 30 days, each once) against the license and warns above it; nothing is cut off. | — |
+
+## Step 4: what was done
+
+| # | Done | Still to check |
+|---|---|---|
+| D1 | CI runs the end-to-end suite on DynamoDB and on PostgreSQL (`SITES=off` starts the services only), keeping service logs when it fails. | Its first run on GitHub. |
+| D2 | All four services scale on CPU and memory (production: at least two of each); deploys start new copies before stopping old ones; ECS Exec is off (the images have no shell). | — |
+| D3 | Point-in-time recovery on every table except the short-lived counters. A restore runbook (`docs/RESTORE-RUNBOOK.md`) for records, whole tables, archives, secrets and the KMS key, and `scripts/restore-test.mjs` for the quarterly test. | The first restore test against AWS. |
+| D4 | `scripts/load-test.mjs` and a first baseline (`docs/PERFORMANCE.md`): Probaline adds about 9 ms at p50 and 14 ms at p95 to a request; one gateway process handled about 280 prompts a second on a laptop, running uncompiled. | The same on a deployed stage with the compiled images. |
+| D5 | Local archive copies work: the start script warns when the LocalStack container predates KMS. | — |
+| B6 | The MCP signing key rotates every 90 days with 7 days of overlap either side, one instance a day under a lock; every instance re-reads keys every 10 minutes. | — |
+| C9 | `SECRET_STORE=database`: secrets encrypted in the database (AES-256-GCM, the name as associated data) under a key from the environment, with a key change path. Local PostgreSQL runs and the CI PostgreSQL job use it, so they need no AWS for secrets. | — |
+
+Tests: gateway 299, policy engine 50, data protection 7, analytics 38, reporting agent 12, utils 28, storage 14,
+infra 37, collector 98, connector 3, dashboard 86, website 10, docs 3; CDK synth passes for dev and prod;
+end-to-end 46 of 46 on DynamoDB and on PostgreSQL (secrets in the database). The connector and collector images
+were built and run locally.
 

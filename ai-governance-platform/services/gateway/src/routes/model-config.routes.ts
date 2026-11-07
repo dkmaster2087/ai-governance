@@ -14,13 +14,10 @@ const modelSchema = z.object({
   region: z.string().optional(),
   apiKey: z.string().optional(),          // Stored in Secrets Manager, never persisted raw
   deploymentName: z.string().optional(),
-  maxTokensPerRequest: z.number().int().positive().default(4096),
+  maxTokensPerRequest: z.number().int().positive().max(1_000_000).default(4096),
   inputCostPer1kTokens: z.number().min(0).default(0),
   outputCostPer1kTokens: z.number().min(0).default(0),
-  maxContextTokens: z.number().int().positive().default(8192),
-  allowedForRoles: z.array(z.string()).default([]),
-  allowedForApps: z.array(z.string()).default([]),
-  requiresApproval: z.boolean().default(false),
+  allowedKeyIds: z.array(z.string().min(1).max(100)).max(500).default([]),
   tags: z.array(z.string()).default([]),
 });
 

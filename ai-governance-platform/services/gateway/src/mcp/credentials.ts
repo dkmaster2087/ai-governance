@@ -1,4 +1,5 @@
-import { SecretBackend, SecretsManagerBackend } from '../services/provider-key.store';
+import { SecretBackend } from '../services/provider-key.store';
+import { secretBackend } from '../services/secret-store';
 
 /**
  * Credentials Probaline uses to call a company's API. Kept in the secret store, like provider keys; the
@@ -7,7 +8,7 @@ import { SecretBackend, SecretsManagerBackend } from '../services/provider-key.s
 export class McpCredentialStore {
   private cache = new Map<string, { value: string; until: number }>();
   constructor(
-    private backend: SecretBackend = new SecretsManagerBackend(),
+    private backend: SecretBackend = secretBackend(),
     private prefix = `${process.env.PROVIDER_KEYS_SECRET_PREFIX || `probaline/${process.env.STAGE || 'dev'}/provider-keys`}/mcp`,
   ) {}
 

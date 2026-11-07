@@ -31,6 +31,7 @@ const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
       { label: 'API keys', href: '/keys' },
       { label: 'Models & keys', href: '/models' },
       { label: 'Spend', href: '/cost' },
+      { label: 'Alerts', href: '/alerts' },
       { label: 'Compliance', href: '/compliance' },
       { label: 'Users', href: '/users' },
       { label: 'Activity', href: '/activity' },

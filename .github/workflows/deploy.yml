@@ -7,6 +7,9 @@
 #   CERTIFICATE_ARN             ACM certificate for the gateway's load balancer (same region)
 #   CLOUDFRONT_CERTIFICATE_ARN  ACM certificate in us-east-1 covering the three front-end names below
 #   WEBSITE_DOMAIN, DASHBOARD_DOMAIN, DOCS_DOMAIN   custom names for the front ends (CloudFront names otherwise)
+#   ALARM_EMAIL                 where CloudWatch alarms are emailed
+#   EMAIL_FROM                  sender for website enquiries and alerts, verified in SES, e.g. Probaline <no-reply@probaline.com>
+#   CONTACT_EMAIL               who receives website enquiries (comma separated)
 #
 # Order: image repositories → images (tagged with this commit) → all stacks → the three front ends, built with
 # the addresses and sign-in settings the stacks just created.
@@ -73,6 +76,8 @@ jobs:
           DASHBOARD_DOMAIN: ${{ vars.DASHBOARD_DOMAIN }}
           DOCS_DOMAIN: ${{ vars.DOCS_DOMAIN }}
           ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          CONTACT_EMAIL: ${{ vars.CONTACT_EMAIL }}
         run: |
           ctx=(--context "stage=${{ inputs.stage }}" --context "imageTag=${{ github.sha }}")
           [ -n "$GATEWAY_URL" ] && ctx+=(--context "gatewayUrl=$GATEWAY_URL")
@@ -82,6 +87,8 @@ jobs:
           [ -n "$DASHBOARD_DOMAIN" ] && ctx+=(--context "dashboardDomain=$DASHBOARD_DOMAIN")
           [ -n "$DOCS_DOMAIN" ] && ctx+=(--context "docsDomain=$DOCS_DOMAIN")
           [ -n "$ALARM_EMAIL" ] && ctx+=(--context "alarmEmail=$ALARM_EMAIL")
+          [ -n "$EMAIL_FROM" ] && ctx+=(--context "emailFrom=$EMAIL_FROM")
+          [ -n "$CONTACT_EMAIL" ] && ctx+=(--context "contactEmail=$CONTACT_EMAIL")
           npx cdk deploy "$PREFIX-registry-${{ inputs.stage }}" --exclusively --require-approval never "${ctx[@]}"
 
   # ─── Build & push images, tagged with this commit ─────────────────────────
@@ -163,6 +170,8 @@ jobs:
           DASHBOARD_DOMAIN: ${{ vars.DASHBOARD_DOMAIN }}
           DOCS_DOMAIN: ${{ vars.DOCS_DOMAIN }}
           ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          CONTACT_EMAIL: ${{ vars.CONTACT_EMAIL }}
         run: |
           ctx=(--context "stage=${{ inputs.stage }}" --context "imageTag=${{ github.sha }}")
           [ -n "$GATEWAY_URL" ] && ctx+=(--context "gatewayUrl=$GATEWAY_URL")
@@ -172,6 +181,8 @@ jobs:
           [ -n "$DASHBOARD_DOMAIN" ] && ctx+=(--context "dashboardDomain=$DASHBOARD_DOMAIN")
           [ -n "$DOCS_DOMAIN" ] && ctx+=(--context "docsDomain=$DOCS_DOMAIN")
           [ -n "$ALARM_EMAIL" ] && ctx+=(--context "alarmEmail=$ALARM_EMAIL")
+          [ -n "$EMAIL_FROM" ] && ctx+=(--context "emailFrom=$EMAIL_FROM")
+          [ -n "$CONTACT_EMAIL" ] && ctx+=(--context "contactEmail=$CONTACT_EMAIL")
           npx cdk deploy --all --require-approval never "${ctx[@]}"
       - name: Read the addresses and sign-in settings the stacks created
         id: out
@@ -262,6 +273,8 @@ jobs:
           DASHBOARD_DOMAIN: ${{ vars.DASHBOARD_DOMAIN }}
           DOCS_DOMAIN: ${{ vars.DOCS_DOMAIN }}
           ALARM_EMAIL: ${{ vars.ALARM_EMAIL }}
+          EMAIL_FROM: ${{ vars.EMAIL_FROM }}
+          CONTACT_EMAIL: ${{ vars.CONTACT_EMAIL }}
         run: |
           ctx=(--context "stage=${{ inputs.stage }}" --context "imageTag=${{ github.sha }}")
           [ -n "$GATEWAY_URL" ] && ctx+=(--context "gatewayUrl=$GATEWAY_URL")
@@ -271,4 +284,6 @@ jobs:
           [ -n "$DASHBOARD_DOMAIN" ] && ctx+=(--context "dashboardDomain=$DASHBOARD_DOMAIN")
           [ -n "$DOCS_DOMAIN" ] && ctx+=(--context "docsDomain=$DOCS_DOMAIN")
           [ -n "$ALARM_EMAIL" ] && ctx+=(--context "alarmEmail=$ALARM_EMAIL")
+          [ -n "$EMAIL_FROM" ] && ctx+=(--context "emailFrom=$EMAIL_FROM")
+          [ -n "$CONTACT_EMAIL" ] && ctx+=(--context "contactEmail=$CONTACT_EMAIL")
           npx cdk destroy --all --force "${ctx[@]}"

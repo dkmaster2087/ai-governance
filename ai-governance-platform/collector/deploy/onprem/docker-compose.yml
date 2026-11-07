@@ -2,7 +2,7 @@
 # Point firewalls and proxies at this host's port 514 (UDP or TCP), and/or mount log folders under /logs.
 services:
   probaline-collector:
-    image: probaline-collector:latest
+    image: probaline/collector:0.1.0
     restart: unless-stopped
     ports:
       - "514:5514/udp"

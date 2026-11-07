@@ -181,6 +181,12 @@ export class ServicesStack extends cdk.Stack {
     // The gateway's public address (-c gatewayUrl=https://gateway.example.com): MCP sign-in and the identity
     // statements sent to company APIs name it, so it must not depend on request headers.
     const gatewayUrl: string | undefined = this.node.tryGetContext('gatewayUrl');
+    // Email through SES (-c emailFrom="Probaline <no-reply@probaline.com>", an address or domain verified in SES):
+    // website enquiries go to -c contactEmail=sales@…, and alerts to the addresses each company sets.
+    const emailFrom: string | undefined = this.node.tryGetContext('emailFrom');
+    const contactEmail: string | undefined = this.node.tryGetContext('contactEmail');
+    // Alerts link to the dashboard when its custom name is known (-c dashboardDomain=app.example.com).
+    const dashboardDomain: string | undefined = this.node.tryGetContext('dashboardDomain');
 
     // --- Gateway Service (public-facing) ---
     this.gatewayService = this.createService({
@@ -212,6 +218,9 @@ export class ServicesStack extends cdk.Stack {
           MCP_OAUTH_TABLE: props.mcpTables.oauth.tableName,
           MCP_CONNECTORS_TABLE: props.mcpTables.connectors.tableName,
         } : {}),
+        ...(emailFrom ? { EMAIL_FROM: emailFrom } : {}),
+        ...(contactEmail ? { CONTACT_EMAIL_TO: contactEmail } : {}),
+        ...(dashboardDomain ? { DASHBOARD_URL: `https://${dashboardDomain}` } : {}),
         ...(props.logTables ? { ACTIVITY_TABLE: props.logTables.activity.tableName, LOG_EXPORT_TABLE: props.logTables.logExport.tableName } : {}),
         AUDIT_LOGS_TABLE: auditLogsTable.tableName,
         POLICY_ENGINE_URL: internalUrl('policy-engine', 3001),
@@ -268,6 +277,13 @@ export class ServicesStack extends cdk.Stack {
     for (const t of Object.values(props.mcpTables ?? {})) t.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     for (const t of Object.values(props.logTables ?? {})) t.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     auditLogsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
+    if (emailFrom) {
+      // Send only from this account's verified identities.
+      this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+        actions: ['ses:SendEmail'],
+        resources: [`arn:aws:ses:${this.region}:${this.account}:identity/*`, `arn:aws:ses:${this.region}:${this.account}:configuration-set/*`],
+      }));
+    }
     this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: ['bedrock:InvokeModel', 'bedrock:InvokeModelWithResponseStream'],
@@ -304,10 +320,17 @@ export class ServicesStack extends cdk.Stack {
       listener.addTargets('GatewayTarget', gatewayTarget);
     }
 
-    // Production runs at least two gateways and scales with load.
-    if (stage === 'prod') {
-      const scaling = this.gatewayService.autoScaleTaskCount({ minCapacity: 2, maxCapacity: 10 });
-      scaling.scaleOnCpuUtilization('GatewayCpu', { targetUtilizationPercent: 60 });
+    // Every service scales with load. Production keeps at least two copies of each, in different zones.
+    const prod = stage === 'prod';
+    for (const [id, svc, max] of [
+      ['Gateway', this.gatewayService, prod ? 20 : 3],
+      ['PolicyEngine', policyEngineService, prod ? 10 : 3],
+      ['DataProtection', dataProtectionService, prod ? 10 : 3],
+      ['Analytics', analyticsService, prod ? 4 : 2],
+    ] as const) {
+      const scaling = svc.autoScaleTaskCount({ minCapacity: prod ? 2 : 1, maxCapacity: max });
+      scaling.scaleOnCpuUtilization(`${id}Cpu`, { targetUtilizationPercent: 60, scaleOutCooldown: cdk.Duration.seconds(60), scaleInCooldown: cdk.Duration.seconds(300) });
+      scaling.scaleOnMemoryUtilization(`${id}Memory`, { targetUtilizationPercent: 75 });
     }
 
     new cdk.CfnOutput(this, 'LoadBalancerDns', { value: this.loadBalancer.loadBalancerDnsName });
@@ -375,9 +398,13 @@ export class ServicesStack extends cdk.Stack {
       cluster,
       taskDefinition: taskDef,
       desiredCount: stage === 'prod' ? 2 : 1,
+      // Deploys start new copies before stopping old ones, so capacity never drops.
+      minHealthyPercent: 100,
+      maxHealthyPercent: 200,
       vpcSubnets: { subnetType: ec2.SubnetType.PRIVATE_WITH_EGRESS },
       securityGroups: [sg],
-      enableExecuteCommand: true, // For debugging
+      // The images have no shell, so ECS Exec has nothing to run; keep the way in closed.
+      enableExecuteCommand: false,
       circuitBreaker: { rollback: true },
       ...(internal ? { cloudMapOptions: { name } } : {}),
     });

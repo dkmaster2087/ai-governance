@@ -24,15 +24,9 @@ export interface TenantBilling {
 }
 
 export interface TenantSettings {
-  allowedModels: string[];
-  maxTokensPerRequest: number;
-  maxRequestsPerMinute: number;
-  dataResidencyRegion: string;
-  piiMaskingEnabled: boolean;
   auditLogRetentionDays: number;
   /** While on, no evidence is deleted, whatever the retention period. */
   legalHold?: { on: boolean; since: string; by: string; reason: string };
-  allowExternalProviders: boolean;
   /**
    * What happens when the policy engine or data protection service is unreachable.
    * 'closed' (default) blocks the request; 'open' lets it through and flags it in the audit log.

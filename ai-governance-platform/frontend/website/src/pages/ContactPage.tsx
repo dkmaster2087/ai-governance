@@ -9,7 +9,7 @@ const field = 'min-h-[44px] px-3.5 border border-line-strong rounded-lg bg-white
 export function ContactPage() {
   const [state, setState] = useState<FormState>('idle');
   const [error, setError] = useState('');
-  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', company: '', role: '', deploymentInterest: 'saas', message: '' });
+  const [form, setForm] = useState({ firstName: '', lastName: '', email: '', company: '', role: '', deploymentInterest: 'saas', message: '', website: '' });
   const set = (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) => setForm((f) => ({ ...f, [e.target.name]: e.target.value }));
 
   const submit = async (e: React.FormEvent) => {
@@ -41,6 +41,8 @@ export function ContactPage() {
           </Panel>
         ) : (
           <form onSubmit={submit} className="flex flex-col gap-4">
+            {/* Left empty by people; bots that fill every field are ignored. */}
+            <input name="website" value={form.website} onChange={set} tabIndex={-1} autoComplete="off" aria-hidden="true" className="absolute -left-[9999px] h-px w-px opacity-0" />
             <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
               <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">First name</span><input name="firstName" required value={form.firstName} onChange={set} className={field} autoComplete="given-name" /></label>
               <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Last name</span><input name="lastName" required value={form.lastName} onChange={set} className={field} autoComplete="family-name" /></label>

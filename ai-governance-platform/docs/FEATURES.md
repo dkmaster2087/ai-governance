@@ -42,10 +42,11 @@ to let requests through instead; those are flagged in their evidence record.
 | Evidence | Every decision, searchable; a case file per request with a downloadable export |
 | API keys | Keys with scoped permissions and optional expiry; create, replace, revoke |
 
-| Models & keys | Models apps can reach (Amazon Bedrock or OpenAI), provider keys, prices for Spend; test a model |
+| Models & keys | Models apps can reach (Amazon Bedrock or OpenAI), provider keys, prices for Spend; the longest answer allowed (larger requests are capped); which API keys may use each model (others get `403 MODEL_NOT_ALLOWED`, recorded in Evidence); test a model |
 | Compliance | SOC 2, HIPAA, EU AI Act on/off; every control as enforced by a rule, built into Probaline, needing your action, or not covered yet |
 | Users | Roles, and how to add people in Cognito (local demo accounts in development) |
 | Activity | Every admin change and sign-in: who, what, when, from where; filter by changes, sign-ins, refused |
+| Alerts | Email or webhook (Slack, Teams, Google Chat, or a signed HTTPS endpoint) when many requests are stopped, personal data is removed from AI answers, people use unapproved AI tools, or spend passes a share of a monthly budget; send a test; what was sent in the last 90 days |
 | Log export (beta) | Send decisions, admin activity and sign-ins to Splunk, Datadog, Elastic, Sumo Logic or any OpenTelemetry or HTTPS collector; test button; retries and a list of undelivered batches |
 
 Spend, License and Settings use the same design.
@@ -144,11 +145,17 @@ by platform admins only.
   in to the dashboard, enter a new key (which takes effect at once) and read their evidence.
 - The platform admin can revoke with the 30 days, or stop at once. Companies that never entered a license get
   the same 30 days: new companies from creation, existing ones from when licensing started being enforced.
+- **Users included:** the License page counts everyone with a dashboard account plus people who used AI through
+  Probaline in the last 30 days (named on AI requests, or signed in to MCP servers), each once. Above the
+  license's number it warns; nothing is cut off.
 - Settings: `LICENSE_GRACE_DAYS` and `LICENSE_WARN_DAYS` (both 30). The platform's own tenant needs no license.
 
 ## Deployment
 
 - **Hosted** and **in the customer's AWS account** (same software, AWS CDK).
+- **Without AWS services for secrets:** with PostgreSQL storage, `SECRET_STORE=database` keeps provider keys and
+  credentials encrypted in the database under a key the install provides.
+- **Website contact form:** each enquiry is kept and emailed to the team (`CONTACT_EMAIL_TO`, through SES).
 - **On-premises / Kubernetes / air-gapped:** planned.
 
 ## MCP servers (beta)

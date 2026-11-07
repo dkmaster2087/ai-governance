@@ -13,6 +13,9 @@ const USAGE = `Probaline collector: finds AI usage in your logs. Everything stay
       (Palo Alto, Fortinet, CEF, LEEF, Squid, BIND, Windows DNS, Zscaler, Netskope) or Azure and Google Cloud
       exported log records.
   probaline-collector report  --out <dir> [--days 30 | --from YYYY-MM-DD --to YYYY-MM-DD] [--company "Acme"] [--reveal-names]
+  probaline-collector serve
+      The on-premises collector: receives syslog and watches a folder, configured by environment variables
+      (the container image runs this): see collector/README.md.
   probaline-collector cloud-job
       One run of the in-cloud collector (Azure Container Apps job or Cloud Run job), configured by
       environment variables: see collector/README.md.
@@ -43,9 +46,17 @@ async function files(inputs: string[]): Promise<string[]> {
   return out.sort();
 }
 
+/** Matches package.json; scripts/release-check.mjs checks they agree. */
+export const COLLECTOR_VERSION = '0.1.0';
+
 async function main() {
+  if (process.argv[2] === '--version') { process.stdout.write(`${COLLECTOR_VERSION}\n`); return; }
   const [cmd, ...argv] = process.argv.slice(2);
   const { flags, rest } = args(argv);
+  if (cmd === 'serve') {
+    const { serve } = await import('./onprem/server');
+    return serve();
+  }
   if (cmd === 'cloud-job') {
     const { runCloudJob } = await import('./bucket/run-job');
     await runCloudJob();

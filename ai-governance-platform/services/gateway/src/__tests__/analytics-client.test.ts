@@ -14,6 +14,12 @@ describe('reports go to the analytics service', () => {
   const seen: Array<{ path: string; caller: ReturnType<typeof verifyInternal> }> = [];
   let answer: { status: number; body: unknown } = { status: 200, body: { ok: true } };
 
+  // The routes under test, loaded once (slow when every suite runs at once).
+  const routes: any[] = [];
+  beforeAll(async () => {
+    for (const m of ['gateway', 'cost', 'evidence', 'platform', 'shadow-ai'] as const) routes.push(Object.values(await import(`../routes/${m}.routes`))[0]);
+  }, 60_000);
+
   beforeAll(async () => {
     analytics = http.createServer((req, res) => {
       try {
@@ -34,11 +40,7 @@ describe('reports go to the analytics service', () => {
     const app = Fastify();
     app.decorateRequest('principal', null);
     app.addHook('preHandler', async (req: any) => { req.principal = principal; req.tenantId = tenantId; req.userId = (principal as any).userId; });
-    for (const m of ['gateway', 'cost', 'evidence', 'platform', 'shadow-ai'] as const) {
-      const mod = await import(`../routes/${m}.routes`);
-      const fn = Object.values(mod)[0] as any;
-      await app.register(fn, { prefix: '/v1' });
-    }
+    for (const fn of routes) await app.register(fn, { prefix: '/v1' });
     return app;
   }
   const admin = { kind: 'user', homeTenantId: 'tenant_acme', userId: 'u1', email: 'a@acme.example', role: 'tenant_admin' };

@@ -20,8 +20,7 @@ function fakeBackend() {
 const baseModel = {
   modelConfigId: 'm1', tenantId: 'tenant_acme', name: 'GPT', provider: 'openai' as const, modelId: 'gpt-4o',
   status: 'active' as const, isDefault: false, maxTokensPerRequest: 1000, inputCostPer1kTokens: 0,
-  outputCostPer1kTokens: 0, maxContextTokens: 8000, allowedForRoles: [], allowedForApps: [],
-  requiresApproval: false, tags: [], createdAt: '', updatedAt: '', createdBy: 'u',
+  outputCostPer1kTokens: 0, tags: [], createdAt: '', updatedAt: '', createdBy: 'u',
 };
 
 describe('ProviderKeyStore', () => {

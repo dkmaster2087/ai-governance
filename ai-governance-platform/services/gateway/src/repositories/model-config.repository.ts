@@ -6,7 +6,7 @@ import { randomUUID } from 'crypto';
 const logger = createLogger('gateway:model-config-repo');
 
 /** Fields a model config update may change. */
-const EDITABLE = ['name', 'status', 'isDefault', 'maxTokensPerRequest', 'maxContextTokens', 'inputCostPer1kTokens', 'outputCostPer1kTokens', 'allowedForRoles', 'allowedForApps', 'requiresApproval', 'tags', 'region', 'modelId', 'provider', 'endpoint', 'apiKeyHint', 'apiKeySecretArn'] as const;
+const EDITABLE = ['name', 'status', 'isDefault', 'maxTokensPerRequest', 'inputCostPer1kTokens', 'outputCostPer1kTokens', 'allowedKeyIds', 'tags', 'region', 'modelId', 'provider', 'endpoint', 'apiKeyHint', 'apiKeySecretArn'] as const;
 
 const notFound = () => Object.assign(new Error('Model config not found'), { statusCode: 404, code: 'NOT_FOUND' });
 
@@ -20,6 +20,12 @@ export class ModelConfigRepository {
       logger.error('Failed to fetch model configs', { tenantId, error: (err as Error).message });
       return [];
     }
+  }
+
+  /** The company's configuration for a model, for the request path. Errors are thrown, not hidden. */
+  async findByModelId(tenantId: string, modelId: string): Promise<ModelConfig | null> {
+    const all = await allPages((after) => this.models().query({ partition: tenantId, after }));
+    return all.find((c) => c.modelId === modelId) ?? null;
   }
 
   async getById(tenantId: string, modelConfigId: string): Promise<ModelConfig | null> {

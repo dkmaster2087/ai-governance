@@ -1,4 +1,5 @@
 import { FastifyInstance } from 'fastify';
+import { alerting } from '../services/alerting.service';
 import { allPages, collection } from '@ai-governance/storage';
 import { createLogger } from '@ai-governance/utils';
 import { z } from 'zod';
@@ -85,6 +86,7 @@ export async function shadowAIRoutes(app: FastifyInstance) {
       }
     }
 
+    alerting().signal(() => alerting().fromShadowAi(tenantId, stored));
     return reply.status(200).send({ received: events.length, stored });
   });
 

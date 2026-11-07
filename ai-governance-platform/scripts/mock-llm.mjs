@@ -29,7 +29,7 @@ http.createServer((req, res) => {
       let parsed = {};
       try { parsed = JSON.parse(body); } catch {}
       const prompt = (parsed.messages ?? []).map((m) => (typeof m.content === 'string' ? m.content : JSON.stringify(m.content))).join(' ');
-      received.push({ at: new Date().toISOString(), path: url.pathname, model: parsed.model, prompt, messages: parsed.messages });
+      received.push({ at: new Date().toISOString(), path: url.pathname, model: parsed.model, prompt, messages: parsed.messages, maxTokens: parsed.max_tokens });
       if (received.length > MAX_KEPT) received.shift();
       const words = prompt.split(/\s+/).filter(Boolean).length;
       const content = prompt.includes('MOCK_REPLY_WITH_PII')

@@ -10,6 +10,7 @@ import { GRACE_DAYS, LicenseKey, licenseState } from '../services/license-state'
 import { forgetApiKey } from '../middleware/auth.middleware';
 import { requireAccess, requireTenantParam, PLATFORM_ADMIN, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
 import { reapplyRetention } from '../services/retention';
+import { AnalyticsClient, analyticsClient } from '../clients/analytics.client';
 
 const logger = createLogger('gateway:tenants');
 
@@ -72,13 +73,7 @@ export async function tenantRoutes(app: FastifyInstance) {
       deploymentMode: body.deploymentMode ?? 'saas',
       region: body.region ?? 'us-east-1',
       settings: {
-        allowedModels: [],
-        maxTokensPerRequest: 4096,
-        maxRequestsPerMinute: 100,
-        dataResidencyRegion: body.region ?? 'us-east-1',
-        piiMaskingEnabled: true,
         auditLogRetentionDays: body.auditLogRetentionDays ?? 365,
-        allowExternalProviders: false,
         governanceFailMode: 'closed',
       },
       createdAt: new Date().toISOString(),
@@ -224,13 +219,39 @@ export async function tenantRoutes(app: FastifyInstance) {
   app.get('/license/status', { preHandler: requireAccess({ roles: ['tenant_admin', 'tenant_auditor', 'tenant_user'] }) }, async (request) =>
     (await licenseState().get(request.tenantId)) ?? { state: 'active' });
 
+  /**
+   * Users against the license's "users included": everyone with a dashboard account (not turned off), plus
+   * people who used AI through Probaline in the last 30 days. Being over only warns; nothing is cut off.
+   */
+  async function usersCounted(request: Parameters<typeof AnalyticsClient.callerOf>[0], included: number) {
+    const accounts = (await userDirectory().list(request.tenantId)).filter((u) => u.status !== 'disabled').map((u) => u.email.toLowerCase());
+    let aiPeople: { people: string[]; truncated: boolean } | null = null;
+    try {
+      aiPeople = await analyticsClient().optional('/internal/v1/license/people', AnalyticsClient.callerOf(request));
+    } catch { /* analytics is optional here */ }
+    const all = new Set([...accounts, ...(aiPeople?.people ?? [])]);
+    const counted = all.size;
+    if (included > 0 && counted > included) logger.warn('Company is above the users its license includes', { tenantId: request.tenantId, counted, included });
+    return {
+      included,
+      counted,
+      accounts: accounts.length,
+      // null when analytics couldn't answer: the count is then accounts only.
+      usedAi: aiPeople ? aiPeople.people.length : null,
+      partial: !aiPeople || aiPeople.truncated,
+      over: included > 0 && counted > included,
+    };
+  }
+
   /** The company's licenses (entered ones; issued keys not yet entered stay hidden) and where it stands. */
   app.get('/license/overview', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
     const tenant = await tenants().get({ tenantId: request.tenantId });
     const all = (await licensesOf(request.tenantId)).filter((k) => k.activation !== 'pending').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
+    const current = all.find((k) => statusOf(k) === 'active');
     return {
       status: (await licenseState().get(request.tenantId)) ?? { state: 'active' },
       licenses: all.map((k) => toView(k, tenant?.name as string | undefined)),
+      users: await usersCounted(request, current?.license?.maxUsers ?? 0),
     };
   });
 

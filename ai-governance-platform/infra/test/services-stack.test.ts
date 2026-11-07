@@ -10,7 +10,7 @@ describe('ServicesStack', () => {
   let template: Template;
 
   beforeAll(() => {
-    const app = new cdk.App({ context: { gatewayUrl: 'https://gateway.acme.example', imageTag: 'abc123' } });
+    const app = new cdk.App({ context: { gatewayUrl: 'https://gateway.acme.example', imageTag: 'abc123', emailFrom: 'no-reply@probaline.example', contactEmail: 'sales@probaline.example' } });
     const env = { account: '123456789012', region: 'us-east-1' };
     const base = { env, prefix: 'ai-gov', stage: 'test' };
     const network = new NetworkStack(app, 'Net', base);
@@ -52,6 +52,23 @@ describe('ServicesStack', () => {
       ContainerDefinitions: Match.arrayWith([Match.objectLike({ Name: 'GatewayContainer', Environment: Match.arrayWith([
         Match.objectLike({ Name: 'ACTIVITY_TABLE' }), Match.objectLike({ Name: 'LOG_EXPORT_TABLE' })]) })]),
     });
+  });
+
+  it('lets the gateway email from verified addresses, and sends enquiries to the team', () => {
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([Match.objectLike({ Name: 'GatewayContainer', Environment: Match.arrayWith([
+        { Name: 'EMAIL_FROM', Value: 'no-reply@probaline.example' }, { Name: 'CONTACT_EMAIL_TO', Value: 'sales@probaline.example' }]) })]),
+    });
+    expect(JSON.stringify(template.findResources('AWS::IAM::Policy'))).toContain('ses:SendEmail');
+  });
+
+  it('scales every service on CPU and memory, never drops capacity during a deploy, and has no shell access', () => {
+    template.resourceCountIs('AWS::ApplicationAutoScaling::ScalableTarget', 4);
+    template.resourceCountIs('AWS::ApplicationAutoScaling::ScalingPolicy', 8);
+    for (const s of Object.values(template.findResources('AWS::ECS::Service')) as any[]) {
+      expect(s.Properties.DeploymentConfiguration).toMatchObject({ MinimumHealthyPercent: 100, MaximumPercent: 200 });
+      expect(s.Properties.EnableExecuteCommand).toBe(false);
+    }
   });
 
   it('has the gateway store provider keys and API credentials under the platform\'s own key', () => {
