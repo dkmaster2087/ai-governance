@@ -18,6 +18,7 @@ import { ModelsPage } from './pages/ModelsPage';
 import { SettingsPage } from './pages/SettingsPage';
 import { ActivityPage } from './pages/ActivityPage';
 import { LogExportPage } from './pages/LogExportPage';
+import { EnforcementPage } from './pages/EnforcementPage';
 import { CompliancePage } from './pages/CompliancePage';
 import { TenantsPage } from './pages/TenantsPage';
 import { NoDashboardAccessPage } from './pages/NoDashboardAccessPage';
@@ -133,6 +134,7 @@ export default function App() {
           <Route path="/settings" element={<RequireAdmin><SettingsPage /></RequireAdmin>} />
           <Route path="/activity" element={<RequireAuditAccess><ActivityPage /></RequireAuditAccess>} />
           <Route path="/log-export" element={<RequireAdmin><LogExportPage /></RequireAdmin>} />
+          <Route path="/enforcement" element={<RequireAdmin><EnforcementPage /></RequireAdmin>} />
           <Route path="/users" element={<RequireAdmin><UsersPage /></RequireAdmin>} />
           <Route path="/license" element={<RequireAdmin><TenantLicensePage /></RequireAdmin>} />
           <Route path="*" element={<Navigate to="/gateway" replace />} />

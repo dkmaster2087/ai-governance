@@ -26,6 +26,11 @@ export interface AiService {
   /** For endpoints with a region or resource name in them. */
   patterns?: RegExp[];
   /**
+   * Parent domains whose every subdomain belongs to the service (`*.openai.azure.com`), for block lists that take
+   * wildcards. Only where `patterns` can be written that way; Bedrock and SageMaker can't, and are locked in AWS.
+   */
+  subdomainsOf?: string[];
+  /**
    * Names identity providers and admin consoles use for the app (Okta, Entra, Google Workspace, …), lower case.
    * A sign-in to "ChatGPT Enterprise (Prod)" matches `chatgpt`; longer names are tried first.
    */
@@ -92,6 +97,7 @@ export const CATALOG: AiService[] = [
   {
     id: 'azure-openai', name: 'Azure OpenAI / AI Foundry', vendor: 'Microsoft', category: 'cloud_ai', businessTerms: 'offered', domains: [],
     patterns: [/^[a-z0-9-]+\.openai\.azure\.com$/, /^[a-z0-9-]+\.services\.ai\.azure\.com$/, /^[a-z0-9-]+\.cognitiveservices\.azure\.com$/],
+    subdomainsOf: ['openai.azure.com', 'services.ai.azure.com', 'cognitiveservices.azure.com'],
   },
   {
     id: 'vertex-ai', name: 'Vertex AI', vendor: 'Google Cloud', category: 'cloud_ai', businessTerms: 'offered', domains: ['aiplatform.googleapis.com'],

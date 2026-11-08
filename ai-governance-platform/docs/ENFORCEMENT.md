@@ -1,7 +1,8 @@
 # Enforcing that AI traffic goes through Probaline: plan
 
 Status: streaming built (apps and proxy mode); lock and verify steps 1 (one catalog) and 3 (share through
-Probaline in the collector) built 2026-11-07; the rest is planned. Written 2026-10-31; build plan for lock and
+Probaline in the collector) built 2026-11-07; steps 2 (AI-domain feed) and 4 (AWS lock) built 2026-11-08, beta;
+the rest is planned. Written 2026-10-31; build plan for lock and
 verify in both directions (AI going out, agents coming in) added 2026-11-07, see the end.
 
 ## Why
@@ -117,7 +118,12 @@ Today there are two lists: the collector's `collector/src/core/catalog.ts` (rich
 (`@ai-governance/catalog`), used by the collector, the gateway and the extension's settings. One version string;
 the feed, the report and the Shadow AI page all say which version they used.
 
-### 2. AI-domain feed (4 days)
+### 2. AI-domain feed (4 days) — built, beta
+Built as planned. Differences: the gateway's own address isn't removed from the feed (it's never an AI domain);
+the exception is in the rule instead. Azure OpenAI and AI Foundry go in as wildcards (`*.openai.azure.com`);
+regional Vertex AI hosts and Bedrock/SageMaker can't be written as a domain and are left to the AWS lock (and a
+later GCP lock). The Zscaler and Netskope files follow their documented API shapes but haven't been loaded into
+either product yet. The preview reads a findings file in the browser; storing uploads is week 3.
 - `GET /public/feeds/{tenant}/{feedToken}/{format}`: unauthenticated by design (firewalls fetch feeds
   anonymously); a long random token per feed, revocable, rate-limited, and every fetch logged with the
   firewall's address so the dashboard shows "last fetched by 203.0.113.4, 2 hours ago".
@@ -140,7 +146,11 @@ extension governs them). `stillDirect` is per path; the fix names apps and peopl
   in `reports/` (the collector keeps them already).
 - Tests: share maths on fixtures, gateway identities by role, IP and host; trend across three findings files.
 
-### 4. AWS lock generator (3 days)
+### 4. AWS lock generator (3 days) — built, beta
+Built with one correction: an SCP can't be deployed by a StackSet, so the template is an
+`AWS::Organizations::Policy` for the management account (or the delegated administrator). `Converse` and
+`ConverseStream` are covered by `bedrock:InvokeModel*`. Validation is our structural checks; the Access
+Analyzer `ValidatePolicy` test isn't written yet.
 - Dashboard → **Enforcement** → AWS: enter (or read from the deployment) the gateway role ARN and account IDs;
   download the SCP and VPC endpoint policies as JSON and as a CloudFormation StackSet snippet.
 - **Would be blocked:** principals from the uploaded findings that call Bedrock/SageMaker and aren't the gateway.

@@ -65,16 +65,22 @@ export const ADMIN_ACTIONS: Record<string, string> = {
   'POST /v1/log-export/destinations/:destinationId/rotate-secret': 'log_export.secret_rotated',
   'POST /v1/log-export/dead-letters/:entryId/retry': 'log_export.dead_letter_retried',
   'DELETE /v1/log-export/dead-letters/:entryId': 'log_export.dead_letter_discarded',
+  'POST /v1/enforcement/feeds': 'feed.created',
+  'PATCH /v1/enforcement/feeds/:feedId': 'feed.updated',
+  'POST /v1/enforcement/feeds/:feedId/rotate': 'feed.token_rotated',
+  'DELETE /v1/enforcement/feeds/:feedId': 'feed.revoked',
+  'PUT /v1/enforcement/aws': 'aws_lock.settings_saved',
+  'POST /v1/enforcement/aws/generate': 'aws_lock.generated',
 };
 
 /** Traffic and machine routes: not admin activity (decisions and sign-ins cover them). */
-const NOT_ADMIN = [/^\/v1\/chat\//, /^\/v1\/proxy\//, /^\/v1\/shadow-ai\/events/, /^\/v1\/reporting\//, /^\/v1\/ai\//,
+const NOT_ADMIN = [/^\/v1\/enforcement\/feeds\/preview$/, /^\/v1\/chat\//, /^\/v1\/proxy\//, /^\/v1\/shadow-ai\/events/, /^\/v1\/reporting\//, /^\/v1\/ai\//,
   /^\/v1\/multimodal/, /^\/connector\//, /^\/mcp\//, /^\/oauth\//, /^\/public\//, /^\/health/, /^\/internal\//, /^\/\.well-known\//];
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /** IDs worth keeping from a created record's response. Raw keys and secrets are never among them. */
-const ID_FIELDS = ['keyId', 'policyId', 'ruleId', 'serverId', 'apiId', 'modelConfigId', 'connectorId', 'destinationId', 'licenseId', 'approvalId', 'version'];
+const ID_FIELDS = ['feedId', 'keyId', 'policyId', 'ruleId', 'serverId', 'apiId', 'modelConfigId', 'connectorId', 'destinationId', 'licenseId', 'approvalId', 'version'];
 
 export function actionFor(method: string, route: string): string | null {
   if (!MUTATING.has(method) || NOT_ADMIN.some((r) => r.test(route))) return null;

@@ -372,6 +372,33 @@ node collector/dist/cli.js report --out ./results --company "Acme"
     ),
   },
   {
+    slug: 'locking-ai-traffic',
+    title: 'Locking AI traffic',
+    summary: 'Make Probaline the only way AI leaves: a domain feed for firewalls and an AWS policy, previewed against your own logs.',
+    body: (
+      <>
+        <P>Routing apps through Probaline is the first half. The second is closing the other paths, so the collector report’s share through Probaline can reach 100%. Probaline writes the rules; you apply them in tools you already run. Both are in beta. Open <strong>Enforcement</strong> in the dashboard.</P>
+        <H2>Preview first</H2>
+        <P>Choose a findings file from the collector (<C>reports/findings-&lt;day&gt;.json</C>). The page shows who each lock would stop before you apply it. The file is read in your browser and sent only with each preview; it isn’t stored.</P>
+        <H2>Firewalls, web gateways and DNS: the AI-domain feed</H2>
+        <P>A feed is a list of AI domains from the Probaline catalog, by kind (model APIs, chat apps, coding assistants, cloud AI endpoints, AI in work apps), minus the tools you allowed on the Shadow AI page. Your firewall fetches it by URL and blocks it for everyone except the gateway’s outbound addresses.</P>
+        <Table head={['Format', 'For', 'Rule']} rows={[
+          ['Domain list', 'Palo Alto Networks External Dynamic List, FortiGate external threat feed, Check Point', 'Block for all sources; allow the gateway’s addresses above it'],
+          ['Zscaler', 'A custom URL category (JSON for the ZIA API)', 'URL filtering rule: block, except the gateway’s location'],
+          ['Netskope', 'A URL list (JSON for the API)', 'Real-time Protection: block, with an exception for the gateway'],
+          ['DNS RPZ', 'BIND, Infoblox, PowerDNS', 'Load as a response policy zone; exempt the gateway'],
+          ['Hosts file', 'Single machines and labs', 'Exact names only, for testing'],
+        ]} />
+        <P>The address contains a long random token and is shown once. Anyone with it can read the list (public domain names only). Each feed shows when it was last fetched and from which address. <strong>New address</strong> stops the old one at once; <strong>Revoke</strong> deletes the feed.</P>
+        <H2>AWS: only the gateway calls Bedrock and SageMaker</H2>
+        <P>Enter the gateway’s IAM role and an emergency role. Probaline writes a service control policy that refuses <C>bedrock:InvokeModel*</C>, batch inference and <C>sagemaker:InvokeEndpoint*</C> to every other role, a matching VPC endpoint policy, and a CloudFormation template for your management account. AWS has no warn-only mode for these, so the page lists who would be refused, from your findings, first.</P>
+        <P>Attach to one OU first. SCPs don’t apply to the management account or service-linked roles, and Bedrock agents and knowledge bases call models with their own roles: add those to the exceptions if you use them.</P>
+        <H2>Not built yet</H2>
+        <P>One row per path showing open, previewing or locked beside the measured share, with stored findings uploads; locking your own APIs to agents coming through Probaline; finding MCP servers on laptops.</P>
+      </>
+    ),
+  },
+  {
     slug: 'mcp',
     title: 'MCP servers',
     summary: 'Give AI agents your APIs as tools: people sign in, writes wait for approval, every call is checked and recorded.',
@@ -446,6 +473,17 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           [<C>POST /v1/log-export/destinations/:id/test</C>, 'Send a sample record now'],
           [<C>GET /v1/log-export/dead-letters</C>, 'Batches that weren’t delivered; POST …/:id/retry or DELETE …/:id'],
         ]} />
+        <H2>Enforcement (dashboard sign-in, beta)</H2>
+        <Table head={['Endpoint', 'Purpose']} rows={[
+          [<C>GET /v1/enforcement</C>, 'Feeds, formats and rules, the gateway’s outbound addresses, saved AWS settings'],
+          [<C>POST /v1/enforcement/feeds</C>, 'New feed: name, categories. Returns its addresses once'],
+          [<C>PATCH · DELETE /v1/enforcement/feeds/:id</C>, 'Rename or change categories; revoke'],
+          [<C>POST /v1/enforcement/feeds/:id/rotate</C>, 'New address; the old one stops'],
+          [<C>POST /v1/enforcement/feeds/preview</C>, 'Domains and what they’d stop, for categories and an optional findings file'],
+          [<C>PUT /v1/enforcement/aws</C>, 'Save the gateway role, emergency role and targets'],
+          [<C>POST /v1/enforcement/aws/generate</C>, 'The SCP, VPC endpoint policy and CloudFormation template, and who they’d refuse'],
+          [<C>GET /public/feeds/:tenant/:token/:format</C>, 'The feed, for firewalls: no sign-in, the token is the credential; domains, zscaler, netskope, rpz, hosts'],
+        ]} />
         <H2>Headers</H2>
         <Table head={['Header', 'Meaning']} rows={[
           [<C>Authorization: Bearer …</C>, 'Your Probaline API key (in proxy mode, the provider key)'],
@@ -491,6 +529,7 @@ npx cdk deploy --all --context stage=prod`}</Code>
           [<C>OBJECT_STORE</C>, <><C>s3</C> (default) or <C>file</C></>],
           [<C>LOG_EXPORT_ALLOW_PRIVATE_DESTINATIONS</C>, <><C>true</C> lets log export reach a SIEM inside your network</>],
           [<C>LOG_EXPORT_WORKER</C>, <><C>off</C> stops a gateway from sending log export batches</>],
+          [<C>GATEWAY_EGRESS_IPS</C>, 'Your gateway’s outbound addresses, comma separated, for the “block except from the gateway” rules'],
         ]} />
         <Note>Provider API keys (for OpenAI and others) are still kept in AWS Secrets Manager, so a PostgreSQL deployment still needs it for now. Storing them encrypted in the database is next.</Note>
         <H2>From GitHub</H2>

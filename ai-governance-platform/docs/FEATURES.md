@@ -46,6 +46,7 @@ to let requests through instead; those are flagged in their evidence record.
 | Compliance | SOC 2, HIPAA, EU AI Act on/off, controls in place, which need a manual review |
 | Users | Roles, and how to add people in Cognito (local demo accounts in development) |
 | Activity | Every admin change and sign-in: who, what, when, from where; filter by changes, sign-ins, refused |
+| Enforcement (beta) | An AI-domain feed firewalls, web gateways and DNS fetch by URL (Palo Alto, FortiGate, Zscaler, Netskope, RPZ, hosts), with when and from where each was last fetched; a generated AWS service control policy, VPC endpoint policy and CloudFormation template so only the gateway calls Bedrock and SageMaker; both previewed against a collector findings file |
 | Log export (beta) | Send decisions, admin activity and sign-ins to Splunk, Datadog, Elastic, Sumo Logic or any OpenTelemetry or HTTPS collector; test button; retries and a list of undelivered batches |
 
 Spend, License and Settings use the same design.

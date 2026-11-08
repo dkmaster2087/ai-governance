@@ -32,6 +32,8 @@ import { mcpConnectorRoutes } from './routes/mcp-connectors.routes';
 import { adminActivity } from './activity/admin-activity';
 import { activityRoutes } from './routes/activity.routes';
 import { logExportRoutes } from './routes/log-export.routes';
+import { enforcementRoutes } from './routes/enforcement.routes';
+import { feedRoutes } from './routes/feeds.routes';
 
 export async function buildApp() {
   const securityConfig = getSecurityConfig();
@@ -71,6 +73,7 @@ export async function buildApp() {
   // Routes
   await app.register(healthRoutes, { prefix: '/health' });
   await app.register(contactRoutes, { prefix: '/public' });
+  await app.register(feedRoutes, { prefix: '/public' });
   await app.register(aiRoutes, { prefix: '/v1' });
   await app.register(modelConfigRoutes, { prefix: '/v1' });
   await app.register(tenantRoutes, { prefix: '/v1' });
@@ -87,6 +90,7 @@ export async function buildApp() {
   await app.register(policiesRoutes, { prefix: '/v1' });
   await app.register(activityRoutes, { prefix: '/v1' });
   await app.register(logExportRoutes, { prefix: '/v1' });
+  await app.register(enforcementRoutes, { prefix: '/v1' });
   // MCP servers: admin API under /v1/mcp/…, and the address agents connect to at /mcp/<tenant>/<server>.
   await app.register(mcpRoutes);
   await app.register(mcpOauthRoutes);

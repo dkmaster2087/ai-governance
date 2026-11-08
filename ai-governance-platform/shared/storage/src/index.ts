@@ -53,6 +53,8 @@ export const SPECS = {
   activity: (): CollectionSpec => ({ name: 'activity', table: env('ACTIVITY_TABLE', 'ai-gov-activity-dev'), partitionKey: 'tenantId', sortKey: 'eventKey', ttlField: 'ttl' }),
   /** Log export: destinations (`dest#<id>`) and batches that could not be delivered (`dead#<time>#<id>`). */
   logExport: (): CollectionSpec => ({ name: 'log_export', table: env('LOG_EXPORT_TABLE', 'ai-gov-log-export-dev'), partitionKey: 'tenantId', sortKey: 'recordKey', ttlField: 'ttl' }),
+  /** Lock and verify: AI-domain feeds (`feed#<id>`) and lock settings (`aws#settings`). */
+  enforcement: (): CollectionSpec => ({ name: 'enforcement', table: env('ENFORCEMENT_TABLE', 'ai-gov-enforcement-dev'), partitionKey: 'tenantId', sortKey: 'recordKey' }),
 };
 
 export type CollectionName = keyof typeof SPECS;
