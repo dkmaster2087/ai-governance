@@ -25,6 +25,35 @@ export interface FormatGuide { id: FeedFormat; label: string; products: string; 
 
 export interface AwsSettings { gatewayRoleArn: string; breakGlassRoleArn?: string; targetIds?: string[]; sagemaker?: boolean }
 
+export type PathState = 'open' | 'previewing' | 'locked';
+export interface Caller { who: string; services: string[]; count: number; fix?: string }
+
+export interface PathStatus {
+  id: string;
+  direction: 'out' | 'in';
+  title: string;
+  lock: string;
+  anchor?: 'feed' | 'aws';
+  coming?: boolean;
+  measuredElsewhere?: string;
+  state: PathState;
+  stateUpdatedAt?: string;
+  measured?: { to: string; share: number | null; through: number; direct: number; gatewaySeen: boolean; measuredBy?: string; stillDirectCount: number; stillDirect: Caller[] };
+  trend: Array<{ to: string; share: number }>;
+  warning?: string;
+}
+
+export interface StoredFindings {
+  findingsId: string;
+  from?: string;
+  to: string;
+  catalogVersion?: string;
+  uploadedAt: string;
+  uploadedBy?: string;
+  fileName?: string;
+  services: number;
+}
+
 export interface Enforcement {
   catalogVersion: string;
   egressIps: string[];
@@ -35,6 +64,8 @@ export interface Enforcement {
   maxFeeds: number;
   approvedTools: string[];
   aws: AwsSettings;
+  paths: PathStatus[];
+  findings: StoredFindings[];
 }
 
 export interface Blocked { who: string; services: string[]; count: number; identityKnown?: boolean }
@@ -85,30 +116,50 @@ export async function feedContent(feedId: string, format: FeedFormat): Promise<s
   return (await gateway.get<string>(`/v1/enforcement/feeds/${feedId}/content/${format}`, { responseType: 'text', transformResponse: (d) => d })).data;
 }
 
-export async function previewFeed(categories: FeedCategory[], findings?: Findings): Promise<FeedPreview> {
-  return (await gateway.post('/v1/enforcement/feeds/preview', { categories, ...(findings ? { findings } : {}) })).data;
+/** Previews use the latest stored findings file. */
+export async function previewFeed(categories: FeedCategory[]): Promise<FeedPreview> {
+  return (await gateway.post('/v1/enforcement/feeds/preview', { categories })).data;
+}
+
+export async function setPathState(pathId: string, state: PathState): Promise<{ path: PathStatus }> {
+  return (await gateway.put(`/v1/enforcement/paths/${pathId}`, { state })).data;
+}
+
+export async function uploadFindings(findings: Findings, fileName?: string): Promise<{ findingsId: string }> {
+  return (await gateway.post('/v1/enforcement/findings', { findings, ...(fileName ? { fileName } : {}) })).data;
+}
+
+export async function deleteFindings(findingsId: string): Promise<void> {
+  await gateway.delete(`/v1/enforcement/findings/${findingsId}`);
 }
 
 export async function saveAws(settings: AwsSettings): Promise<void> {
   await gateway.put('/v1/enforcement/aws', settings);
 }
 
-export async function generateAws(settings: AwsSettings, findings?: Findings): Promise<AwsLock> {
-  return (await gateway.post('/v1/enforcement/aws/generate', { ...settings, ...(findings ? { findings } : {}) })).data;
+export async function generateAws(settings: AwsSettings): Promise<AwsLock> {
+  return (await gateway.post('/v1/enforcement/aws/generate', settings)).data;
 }
 
-/** Only the fields previews read, so a large findings file stays a small request. */
+/** Only the fields the page and previews use, capped, so a large findings file stays a small request. */
 export function slimFindings(raw: unknown): Findings {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new Error('This isn’t a findings file.');
   const f = raw as Record<string, any>;
   if (!Array.isArray(f.services) || typeof f.to !== 'string') throw new Error('This isn’t a collector findings file (reports/findings-<day>.json).');
-  const caller = (c: any) => ({ who: String(c.who), services: (c.services ?? []).map(String), count: Number(c.count) || 0 });
+  const caller = (c: any) => ({ who: String(c.who), services: (c.services ?? []).map(String), count: Number(c.count) || 0, ...(typeof c.fix === 'string' ? { fix: c.fix } : {}) });
   return {
     to: f.to,
+    ...(typeof f.from === 'string' ? { from: f.from } : {}),
     catalogVersion: typeof f.catalogVersion === 'string' ? f.catalogVersion : undefined,
     services: f.services.map((s: any) => ({ id: String(s.id), name: String(s.name), category: String(s.category), people: Number(s.people) || 0, machines: Number(s.machines) || 0, count: Number(s.count) || 0 })),
-    ...(Array.isArray(f.cloudAi) ? { cloudAi: f.cloudAi.map(caller) } : {}),
-    ...(Array.isArray(f.directApi) ? { directApi: f.directApi.map(caller) } : {}),
-    ...(Array.isArray(f.paths) ? { paths: f.paths.map((p: any) => ({ id: String(p.id), stillDirect: (p.stillDirect ?? []).map(caller) })) } : {}),
+    ...(Array.isArray(f.cloudAi) ? { cloudAi: f.cloudAi.slice(0, 200).map(caller) } : {}),
+    ...(Array.isArray(f.directApi) ? { directApi: f.directApi.slice(0, 200).map(caller) } : {}),
+    ...(Array.isArray(f.paths) ? {
+      paths: f.paths.map((p: any) => ({
+        id: String(p.id), share: typeof p.share === 'number' ? p.share : null, through: Number(p.through) || 0, direct: Number(p.direct) || 0,
+        gatewaySeen: p.gatewaySeen === true, ...(typeof p.measuredBy === 'string' ? { measuredBy: p.measuredBy } : {}),
+        stillDirectCount: Number(p.stillDirectCount) || 0, stillDirect: (p.stillDirect ?? []).slice(0, 50).map(caller),
+      })),
+    } : {}),
   };
 }

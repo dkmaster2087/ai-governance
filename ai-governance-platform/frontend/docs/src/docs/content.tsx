@@ -378,8 +378,10 @@ node collector/dist/cli.js report --out ./results --company "Acme"
     body: (
       <>
         <P>Routing apps through Probaline is the first half. The second is closing the other paths, so the collector report’s share through Probaline can reach 100%. Probaline writes the rules; you apply them in tools you already run. Both are in beta. Open <strong>Enforcement</strong> in the dashboard.</P>
-        <H2>Preview first</H2>
-        <P>Choose a findings file from the collector (<C>reports/findings-&lt;day&gt;.json</C>). The page shows who each lock would stop before you apply it. The file is read in your browser and sent only with each preview; it isn’t stored.</P>
+        <H2>One row per path</H2>
+        <P>The page lists each way AI can go around Probaline: apps calling model APIs over the internet, apps in AWS calling Bedrock or SageMaker, and people in browsers going out; agents calling your APIs and MCP servers on laptops coming in (those two are coming). For each, you set <strong>Open</strong>, <strong>Previewing</strong> or <strong>Locked</strong>; beside it the page shows what your logs say: the share through Probaline, the trend, and who still goes direct. When a path is marked locked but traffic still goes direct in findings after that day, or no findings have come in since, the row says so.</P>
+        <H2>Findings files</H2>
+        <P>After each collector run, upload <C>reports/findings-&lt;day&gt;.json</C>. Probaline keeps the share per path, the services in use and who still goes direct (no log lines; people stay as codes) for 400 days, up to 100 files. The latest is used to preview each lock: who it would stop before you apply it.</P>
         <H2>Firewalls, web gateways and DNS: the AI-domain feed</H2>
         <P>A feed is a list of AI domains from the Probaline catalog, by kind (model APIs, chat apps, coding assistants, cloud AI endpoints, AI in work apps), minus the tools you allowed on the Shadow AI page. Your firewall fetches it by URL and blocks it for everyone except the gateway’s outbound addresses.</P>
         <Table head={['Format', 'For', 'Rule']} rows={[
@@ -394,7 +396,7 @@ node collector/dist/cli.js report --out ./results --company "Acme"
         <P>Enter the gateway’s IAM role and an emergency role. Probaline writes a service control policy that refuses <C>bedrock:InvokeModel*</C>, batch inference and <C>sagemaker:InvokeEndpoint*</C> to every other role, a matching VPC endpoint policy, and a CloudFormation template for your management account. AWS has no warn-only mode for these, so the page lists who would be refused, from your findings, first.</P>
         <P>Attach to one OU first. SCPs don’t apply to the management account or service-linked roles, and Bedrock agents and knowledge bases call models with their own roles: add those to the exceptions if you use them.</P>
         <H2>Not built yet</H2>
-        <P>One row per path showing open, previewing or locked beside the measured share, with stored findings uploads; locking your own APIs to agents coming through Probaline; finding MCP servers on laptops.</P>
+        <P>Locking your own APIs to agents coming through Probaline; finding MCP servers on laptops; findings sent by the collector without an upload.</P>
       </>
     ),
   },
@@ -479,7 +481,9 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           [<C>POST /v1/enforcement/feeds</C>, 'New feed: name, categories. Returns its addresses once'],
           [<C>PATCH · DELETE /v1/enforcement/feeds/:id</C>, 'Rename or change categories; revoke'],
           [<C>POST /v1/enforcement/feeds/:id/rotate</C>, 'New address; the old one stops'],
-          [<C>POST /v1/enforcement/feeds/preview</C>, 'Domains and what they’d stop, for categories and an optional findings file'],
+          [<C>POST /v1/enforcement/feeds/preview</C>, 'Domains and what they’d stop, for categories; uses the latest findings file'],
+          [<C>PUT /v1/enforcement/paths/:id</C>, 'Set a path open, previewing or locked'],
+          [<C>POST /v1/enforcement/findings</C>, 'Upload a collector findings file (kept trimmed, 400 days); DELETE …/:id removes one'],
           [<C>PUT /v1/enforcement/aws</C>, 'Save the gateway role, emergency role and targets'],
           [<C>POST /v1/enforcement/aws/generate</C>, 'The SCP, VPC endpoint policy and CloudFormation template, and who they’d refuse'],
           [<C>GET /public/feeds/:tenant/:token/:format</C>, 'The feed, for firewalls: no sign-in, the token is the credential; domains, zscaler, netskope, rpz, hosts'],

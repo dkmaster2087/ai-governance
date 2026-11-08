@@ -23,6 +23,16 @@ const data = {
   maxFeeds: 10,
   approvedTools: ['claude'],
   aws: { gatewayRoleArn: GW },
+  paths: [
+    { id: 'out_model_api', direction: 'out', title: 'Apps calling model APIs over the internet', lock: 'AI-domain feed', anchor: 'feed', state: 'locked', stateUpdatedAt: '2026-11-01T00:00:00Z',
+      measured: { to: '2026-11-07', share: 0.6, through: 60, direct: 40, gatewaySeen: true, measuredBy: 'AWS Route 53 Resolver DNS query logs', stillDirectCount: 5, stillDirect: [{ who: 'host:app-1', services: ['OpenAI API'], count: 30 }, { who: 'host:app-2', services: ['OpenAI API'], count: 5 }, { who: 'host:app-3', services: ['OpenAI API'], count: 2 }] },
+      trend: [{ to: '2026-10-24', share: 0.4 }, { to: '2026-11-07', share: 0.6 }],
+      warning: 'Marked locked, but 5 callers still go direct in findings to 2026-11-07. The lock may not be applied everywhere.' },
+    { id: 'out_cloud_ai', direction: 'out', title: 'Apps in AWS calling Bedrock or SageMaker', lock: 'Service control policy', anchor: 'aws', state: 'open', trend: [] },
+    { id: 'out_browser', direction: 'out', title: 'People using AI tools in a browser', lock: 'Browser extension', state: 'open', trend: [], measuredElsewhere: 'Measured by the browser extension on the Shadow AI page.' },
+    { id: 'in_agents', direction: 'in', title: 'Agents calling your APIs directly', lock: 'Signed calls', state: 'open', trend: [], coming: true },
+  ],
+  findings: [{ findingsId: 'fi1', from: '2026-10-08', to: '2026-11-07', catalogVersion: '2026-11-07', uploadedAt: '2026-11-08T09:00:00Z', fileName: 'findings-2026-11-07.json', services: 13 }],
 };
 const urls = Object.fromEntries(['domains', 'zscaler', 'netskope', 'rpz', 'hosts'].map((f) => [f, `https://gw.example/public/feeds/t/fd2.secret/${f}`]));
 const createFeed = vi.fn(async (..._a: unknown[]) => ({ feedId: 'fd2', urls, feed: data.feeds[0] }));
@@ -32,6 +42,8 @@ const generateAws = vi.fn(async (..._a: unknown[]) => ({
   problems: [], notes: ['Attach to one OU first.'],
   wouldBeBlocked: [{ who: 'role:claims-bot', services: ['Amazon Bedrock'], count: 40, identityKnown: true }, { who: 'ip:10.0.0.5', services: ['Amazon Bedrock'], count: 6, identityKnown: false }],
 }));
+const setPathState = vi.fn(async (..._a: unknown[]) => ({ path: data.paths[1] }));
+const uploadFindings = vi.fn(async (..._a: unknown[]) => ({ findingsId: 'fi2' }));
 vi.mock('../lib/enforcement-api', async (orig) => ({
   ...(await orig<typeof import('../lib/enforcement-api')>()),
   getEnforcement: vi.fn(async () => data),
@@ -39,6 +51,9 @@ vi.mock('../lib/enforcement-api', async (orig) => ({
   previewFeed: (...a: unknown[]) => previewFeed(...a),
   generateAws: (...a: unknown[]) => generateAws(...a),
   saveAws: vi.fn(async () => undefined),
+  setPathState: (...a: unknown[]) => setPathState(...a),
+  uploadFindings: (...a: unknown[]) => uploadFindings(...a),
+  deleteFindings: vi.fn(async () => undefined),
   rotateFeed: vi.fn(), revokeFeed: vi.fn(), updateFeed: vi.fn(), feedContent: vi.fn(async () => 'chatgpt.com\n'),
 }));
 import { EnforcementPage } from '../pages/EnforcementPage';
@@ -60,22 +75,38 @@ describe('Enforcement page', () => {
     expect(screen.getAllByText('Beta').length).toBeGreaterThan(1);
   });
 
-  it('previews a new feed from a findings file, creates it and shows the addresses once', async () => {
+  it('shows each path: state, measured share, trend, who is still direct, and a warning when they disagree', async () => {
+    renderPage();
+    const row = await screen.findByRole('article', { name: 'Apps calling model APIs over the internet' });
+    expect(row).toHaveTextContent('60%');
+    expect(row).toHaveTextContent('60 of 100 in AWS Route 53 Resolver DNS query logs');
+    expect(row).toHaveTextContent(/Trend: .*40% → .*60%/);
+    expect(row).toHaveTextContent('Still direct: host:app-1, host:app-2, host:app-3 and 2 more.');
+    expect(row).toHaveTextContent('Marked locked, but 5 callers still go direct');
+    expect(screen.getByRole('article', { name: 'Apps in AWS calling Bedrock or SageMaker' })).toHaveTextContent('Not measured yet');
+    expect(screen.getByRole('article', { name: 'Agents calling your APIs directly' })).toHaveTextContent('Coming');
+    fireEvent.click(screen.getByRole('group', { name: 'State of Apps in AWS calling Bedrock or SageMaker' }).querySelector('button:nth-child(2)')!);
+    await waitFor(() => expect(setPathState).toHaveBeenCalledWith('out_cloud_ai', 'previewing'));
+  });
+
+  it('uploads a findings file trimmed to what the page uses, and previews a new feed from the stored findings', async () => {
     renderPage();
     const file = new File([JSON.stringify(FINDINGS)], 'findings-2026-11-07.json', { type: 'application/json' });
     fireEvent.change(await screen.findByLabelText('Findings file'), { target: { files: [file] } });
-    expect(await screen.findByText(/Using findings up to/)).toBeInTheDocument();
+    await waitFor(() => expect(uploadFindings).toHaveBeenCalled());
+    const [sent, name] = uploadFindings.mock.calls[0] as [Record<string, any>, string];
+    expect(name).toBe('findings-2026-11-07.json');
+    expect(sent).not.toHaveProperty('sources');
+    expect(sent.paths[0]).toMatchObject({ id: 'cloud_ai', share: 0.5 });
+    expect(screen.getByText(/13 services · catalog 2026-11-07/)).toBeInTheDocument();
+
     fireEvent.click(screen.getByRole('button', { name: 'New feed' }));
     expect(await screen.findByText(/ChatGPT \(12 users or devices\)/)).toBeInTheDocument();
-    expect(screen.getByText('host:app-1')).toBeInTheDocument();
-    // Only the fields previews need go to the gateway.
-    const sent = previewFeed.mock.calls.at(-1)![1] as Record<string, unknown>;
-    expect(sent).not.toHaveProperty('sources');
-    expect(JSON.stringify(sent)).not.toContain('fix');
+    expect(screen.getByText('host:app-1', { selector: 'code' })).toBeInTheDocument();
+    expect(previewFeed).toHaveBeenCalledWith(['model_api', 'chat']);
     fireEvent.click(screen.getByRole('button', { name: 'Create feed' }));
     expect(await screen.findByText('Copy the feed address now. It won’t be shown again.')).toBeInTheDocument();
     expect(screen.getByText(urls.domains)).toBeInTheDocument();
-    expect(screen.getByText('Block it except from 203.0.113.4.')).toBeInTheDocument();
     expect(createFeed).toHaveBeenCalledWith({ name: 'Firewalls', categories: ['model_api', 'chat'] });
   });
 
@@ -86,7 +117,7 @@ describe('Enforcement page', () => {
     expect(screen.getByText(/Seen by address only/)).toBeInTheDocument();
     expect(screen.getByText('Attach to one OU first.')).toBeInTheDocument();
     expect(screen.getAllByRole('button', { name: 'Download' })).toHaveLength(3);
-    await waitFor(() => expect(generateAws).toHaveBeenCalledWith(expect.objectContaining({ gatewayRoleArn: GW, sagemaker: true }), undefined));
+    await waitFor(() => expect(generateAws).toHaveBeenCalledWith(expect.objectContaining({ gatewayRoleArn: GW, sagemaker: true })));
   });
 
   it('refuses files that aren’t findings', () => {

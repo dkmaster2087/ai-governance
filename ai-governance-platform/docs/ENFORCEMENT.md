@@ -2,7 +2,7 @@
 
 Status: streaming built (apps and proxy mode); lock and verify steps 1 (one catalog) and 3 (share through
 Probaline in the collector) built 2026-11-07; steps 2 (AI-domain feed) and 4 (AWS lock) built 2026-11-08, beta;
-the rest is planned. Written 2026-10-31; build plan for lock and
+step 5 (Enforcement page) built 2026-11-08, beta; the rest is planned. Written 2026-10-31; build plan for lock and
 verify in both directions (AI going out, agents coming in) added 2026-11-07, see the end.
 
 ## Why
@@ -158,7 +158,11 @@ Analyzer `ValidatePolicy` test isn't written yet.
 - Tests: policy JSON validated against the IAM policy grammar (aws-sdk `ValidatePolicy` via Access Analyzer in a
   test that skips without credentials, plus our own structural checks); the gateway role is never denied.
 
-### 5. Enforcement page in the dashboard (5 days)
+### 5. Enforcement page in the dashboard (5 days) — built, beta
+Built as planned. Findings are trimmed on upload (no `sources`, still-direct capped at 50 per path) so one file is
+one record, and old files are pruned on upload rather than by a table expiry. "Locked" with no findings dated
+after the lock is a warning too, so a lock nobody has verified doesn't look done. The browser path shows no share:
+the extension measures it on the Shadow AI page. Incoming paths are listed as Coming.
 One page, both directions, a row per path: **Open / Previewing / Locked**, the share through Probaline, the
 would-be-blocked list, and the artifact to install. "Locked" is what the admin says; the share and the
 still-direct list are what the logs show, side by side, so a lock that wasn't applied is visible.

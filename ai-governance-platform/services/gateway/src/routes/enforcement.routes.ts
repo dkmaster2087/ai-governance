@@ -10,6 +10,9 @@ import {
 } from '../enforcement/feed-formats';
 import { Feed, feedStore, MAX_FEEDS, newFeedId, newToken } from '../enforcement/feed-store';
 import { AwsLockInput, awsLockPreview, feedPreview, FindingsLike, generateAwsLock, LockInputError } from '../enforcement/aws-lock';
+import {
+  findingsStore, FindingsError, PATH_STATES, PathId, PATHS, PathState, PathStateRecord, pathStatus, StoredFindings, trimFindings,
+} from '../enforcement/paths';
 
 const logger = createLogger('gateway:enforcement');
 
@@ -61,6 +64,17 @@ export async function approvedTools(tenantId: string): Promise<string[]> {
   return Object.entries(policy.decisions).filter(([, d]) => d === 'allowed').map(([id]) => id);
 }
 
+/** A stored findings file as the page lists it. */
+export const findingsView = (f: StoredFindings) => ({
+  findingsId: f.findingsId, from: f.from, to: f.to, catalogVersion: f.catalogVersion, uploadedAt: f.uploadedAt, uploadedBy: f.uploadedBy,
+  fileName: f.fileName, services: f.services.length,
+});
+
+/** The findings a preview uses: the one sent with it, or the latest stored. */
+async function findingsFor(tenantId: string, sent?: FindingsLike): Promise<FindingsLike | null> {
+  return sent ?? ((await findingsStore().latest(tenantId)) as FindingsLike | null);
+}
+
 interface AwsSettings { gatewayRoleArn?: string; breakGlassRoleArn?: string; targetIds?: string[]; sagemaker?: boolean }
 
 export async function enforcementRoutes(app: FastifyInstance) {
@@ -68,8 +82,9 @@ export async function enforcementRoutes(app: FastifyInstance) {
   const base = (request: FastifyRequest) => publicBase(request);
 
   app.get('/enforcement', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
-    const [feeds, approved, aws] = await Promise.all([
+    const [feeds, approved, aws, states, findings] = await Promise.all([
       store().list(request.tenantId), approvedTools(request.tenantId), store().getSettings<AwsSettings>(request.tenantId, 'aws'),
+      store().getSettings<Partial<Record<PathId, PathStateRecord>>>(request.tenantId, 'paths'), findingsStore().list(request.tenantId),
     ]);
     return {
       catalogVersion: CATALOG_VERSION,
@@ -81,7 +96,46 @@ export async function enforcementRoutes(app: FastifyInstance) {
       maxFeeds: MAX_FEEDS,
       approvedTools: approved,
       aws: { ...(aws ?? {}), gatewayRoleArn: aws?.gatewayRoleArn || process.env.GATEWAY_ROLE_ARN || '' },
+      paths: pathStatus(states ?? {}, findings),
+      findings: findings.map(findingsView),
     };
+  });
+
+  // ── Paths and findings files ───────────────────────────────────────────────────────────────────────────────
+
+  /** What the admin says about a path. The page shows it next to what the findings show. */
+  app.put<{ Params: { pathId: string } }>('/enforcement/paths/:pathId', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
+    const def = PATHS.find((p) => p.id === request.params.pathId);
+    if (!def) return reply.status(404).send(bad('Unknown path', 'NOT_FOUND'));
+    if (def.coming) return reply.status(409).send(bad('This path can’t be locked with Probaline yet', 'NOT_AVAILABLE'));
+    const parsed = z.object({ state: z.enum(PATH_STATES as [PathState, ...PathState[]]) }).safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send(bad(firstIssue(parsed.error), 'INVALID_STATE'));
+    const states = (await store().getSettings<Partial<Record<PathId, PathStateRecord>>>(request.tenantId, 'paths')) ?? {};
+    states[def.id] = { state: parsed.data.state, updatedAt: new Date().toISOString(), ...(request.userId ? { updatedBy: request.userId } : {}) };
+    await store().saveSettings(request.tenantId, 'paths', states, request.userId);
+    return { path: pathStatus(states, await findingsStore().list(request.tenantId)).find((p) => p.id === def.id) };
+  });
+
+  /** Keep a collector findings file: trimmed to what the page uses, kept 400 days, at most 100. */
+  app.post('/enforcement/findings', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
+    const body = (request.body ?? {}) as { findings?: unknown; fileName?: unknown };
+    try {
+      const trimmed = trimFindings(body.findings);
+      const saved = await findingsStore().save({
+        ...trimmed, tenantId: request.tenantId, ...(request.userId ? { uploadedBy: request.userId } : {}),
+        ...(typeof body.fileName === 'string' ? { fileName: body.fileName.replace(/[^\w.\- ]/g, '').slice(0, 120) } : {}),
+      });
+      logger.info('Findings uploaded', { tenantId: request.tenantId, findingsId: saved.findingsId, to: saved.to });
+      return reply.status(201).send({ findings: findingsView(saved), findingsId: saved.findingsId });
+    } catch (err) {
+      if (err instanceof FindingsError) return reply.status(400).send(bad(err.message, 'INVALID_FINDINGS'));
+      throw err;
+    }
+  });
+
+  app.delete<{ Params: { findingsId: string } }>('/enforcement/findings/:findingsId', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
+    if (!(await findingsStore().remove(request.tenantId, request.params.findingsId))) return reply.status(404).send(bad('Findings file not found', 'NOT_FOUND'));
+    return reply.status(204).send();
   });
 
   // ── Feeds ──────────────────────────────────────────────────────────────────────────────────────────────────
@@ -144,10 +198,11 @@ export async function enforcementRoutes(app: FastifyInstance) {
     if (!parsed.success) return reply.status(400).send(bad(firstIssue(parsed.error)));
     const approved = await approvedTools(request.tenantId);
     const entries = feedEntries(parsed.data.categories, approved);
+    const f = await findingsFor(request.tenantId, parsed.data.findings as FindingsLike | undefined);
     return {
       domains: entries.length,
       sample: entries.slice(0, 12).map((e) => e.domain),
-      ...(parsed.data.findings ? { wouldBeBlocked: feedPreview(parsed.data.findings as FindingsLike, parsed.data.categories, approved), findingsTo: parsed.data.findings.to } : {}),
+      ...(f ? { wouldBeBlocked: feedPreview(f, parsed.data.categories, approved), findingsTo: f.to } : {}),
     };
   });
 
@@ -168,9 +223,10 @@ export async function enforcementRoutes(app: FastifyInstance) {
   app.post('/enforcement/aws/generate', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const parsed = awsBody.extend({ findings: findings.optional() }).safeParse(request.body);
     if (!parsed.success) return reply.status(400).send(bad(firstIssue(parsed.error), 'INVALID_LOCK'));
-    const { findings: f, ...input } = parsed.data;
+    const { findings: sent, ...input } = parsed.data;
     try {
       const files = generateAwsLock(input as AwsLockInput);
+      const f = await findingsFor(request.tenantId, sent as FindingsLike | undefined);
       return {
         ...files,
         ...(f ? { wouldBeBlocked: awsLockPreview(f as FindingsLike, input as AwsLockInput), findingsTo: f.to } : {}),

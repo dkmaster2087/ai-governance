@@ -282,3 +282,139 @@ describe('enforcement API and the public feed', () => {
     expect(actions.sort()).toEqual(['aws_lock.generated', 'aws_lock.settings_saved']);
   });
 });
+
+// ── Paths and stored findings (week 3) ───────────────────────────────────────────────────────────────────────
+
+import { FindingsError, FindingsStore, FINDINGS_MAX, pathStatus, StoredFindings, trimFindings } from '../enforcement/paths';
+
+const stored = (to: string, share: number | null, stillDirect: number, gatewaySeen = true, id = to): StoredFindings => ({
+  tenantId: T, recordKey: `findings#${to}#${id}`, findingsId: id, to, uploadedAt: `${to}T12:00:00.000Z`, services: [],
+  paths: [{ id: 'model_api', share, through: 10, direct: stillDirect * 5, gatewaySeen, stillDirectCount: stillDirect, stillDirect: Array.from({ length: stillDirect }, (_, i) => ({ who: `host:app-${i}`, services: ['OpenAI API'], count: 5 })) }],
+});
+
+describe('path status', () => {
+  it('lists every path, with coming ones marked and unmeasured ones explained', () => {
+    const rows = pathStatus({}, []);
+    expect(rows.map((r) => r.id)).toEqual(['out_model_api', 'out_cloud_ai', 'out_browser', 'in_agents', 'in_laptop_mcp']);
+    expect(rows.every((r) => r.state === 'open')).toBe(true);
+    expect(rows.filter((r) => r.coming).map((r) => r.id)).toEqual(['in_agents', 'in_laptop_mcp']);
+    expect(rows[2].measuredElsewhere).toMatch(/browser extension/);
+    expect(rows[0].measured).toBeUndefined();
+  });
+
+  it('shows the latest share, a trend one point per day, and only days that saw the gateway', () => {
+    // Newest first, as stored. Two uploads for 11-07: the later one (listed first) wins.
+    const findings = [stored('2026-11-07', 0.9, 1, true, 'b'), stored('2026-11-07', 0.8, 2, true, 'a'), stored('2026-10-31', 0, 6, false), stored('2026-10-24', 0.5, 4)];
+    const row = pathStatus({}, findings)[0];
+    expect(row.measured).toMatchObject({ to: '2026-11-07', share: 0.9, stillDirectCount: 1 });
+    expect(row.trend).toEqual([{ to: '2026-10-24', share: 0.5 }, { to: '2026-11-07', share: 0.9 }]);
+  });
+
+  it('warns when a path marked locked still has traffic going direct, or nothing has been measured since', () => {
+    const locked = { out_model_api: { state: 'locked' as const, updatedAt: '2026-11-01T09:00:00.000Z' } };
+    expect(pathStatus(locked, [stored('2026-11-07', 0.9, 2)])[0].warning).toMatch(/2 callers still go direct in findings to 2026-11-07/);
+    expect(pathStatus(locked, [stored('2026-10-31', 0.9, 2)])[0].warning).toMatch(/no findings since/);
+    expect(pathStatus(locked, [stored('2026-11-07', 1, 0)])[0].warning).toBeUndefined();
+    expect(pathStatus({ out_model_api: { state: 'previewing', updatedAt: '2026-11-01T09:00:00.000Z' } }, [stored('2026-11-07', 0.9, 2)])[0].warning).toBeUndefined();
+    // Coming paths ignore any saved state.
+    expect(pathStatus({ in_agents: { state: 'locked', updatedAt: 'x' } }, [])[3].state).toBe('open');
+  });
+});
+
+describe('findings files', () => {
+  const file = (to: string) => ({
+    from: '2026-10-01', to, catalogVersion: '2026-11-07', generatedAt: 'x', totals: {}, sources: [{ label: 'not kept' }],
+    services: [{ id: 'chatgpt', name: 'ChatGPT', vendor: 'OpenAI', category: 'chat', people: 3, machines: 0, count: 9 }],
+    directApi: Array.from({ length: 500 }, (_, i) => ({ who: `host:${i}`, services: ['OpenAI API'], count: 1 })),
+    paths: [{ id: 'model_api', title: 'x', share: 0.25, through: 1, direct: 3, measuredBy: 'DNS', gatewaySeen: true, sources: [], stillDirectCount: 80,
+      stillDirect: Array.from({ length: 80 }, (_, i) => ({ who: `host:${i}`, services: ['OpenAI API'], count: 1, sources: ['DNS'], fix: 'Route it.' })) }],
+  });
+
+  it('keeps only what the page uses, capped', () => {
+    const t = trimFindings(file('2026-11-07'));
+    expect(t).not.toHaveProperty('sources');
+    expect(t).not.toHaveProperty('totals');
+    expect(t.directApi).toHaveLength(200);
+    expect(t.paths![0]).toMatchObject({ share: 0.25, stillDirectCount: 80, measuredBy: 'DNS' });
+    expect(t.paths![0].stillDirect).toHaveLength(50);
+    expect(t.paths![0].stillDirect[0]).toEqual({ who: 'host:0', services: ['OpenAI API'], count: 1, fix: 'Route it.' });
+    expect(() => trimFindings({ to: 'yesterday', services: [] })).toThrow(FindingsError);
+    expect(() => trimFindings([])).toThrow(FindingsError);
+  });
+
+  it('keeps at most 100 files and nothing older than 400 days', async () => {
+    const s = new FindingsStore();
+    const old = new Date('2025-09-01T00:00:00Z');
+    await s.save({ ...trimFindings(file('2025-08-31')), tenantId: T }, old);
+    const now = new Date('2026-11-08T00:00:00Z');
+    for (let i = 0; i < FINDINGS_MAX + 2; i++) await s.save({ ...trimFindings(file('2026-11-07')), tenantId: T }, new Date(now.getTime() + i));
+    const all = await s.list(T);
+    expect(all).toHaveLength(FINDINGS_MAX);
+    expect(all.some((f) => f.to === '2025-08-31')).toBe(false);
+  });
+});
+
+describe('enforcement API: paths and findings', () => {
+  let app: FastifyInstance;
+  beforeEach(async () => {
+    await collection('tenants').put({ tenantId: T, name: 'Acme' });
+    app = Fastify();
+    app.decorateRequest('principal', null);
+    app.addHook('onRequest', async (req) => {
+      req.principal = { kind: 'user', homeTenantId: T, userId: 'u_admin', role: 'tenant_admin' };
+      req.tenantId = T; req.userId = 'u_admin'; req.correlationId = 'c';
+    });
+    await app.register(createAdminActivityPlugin());
+    await app.register(enforcementRoutes, { prefix: '/v1' });
+    await app.register(activityRoutes, { prefix: '/v1' });
+  });
+  afterEach(() => app.close());
+
+  const findingsFile = {
+    to: '2026-11-07', catalogVersion: '2026-11-07',
+    services: [{ id: 'chatgpt', name: 'ChatGPT', category: 'chat', people: 12, machines: 0, count: 300 }],
+    paths: [
+      { id: 'model_api', share: 0.6, through: 60, direct: 40, gatewaySeen: true, measuredBy: 'AWS Route 53 Resolver DNS query logs', stillDirectCount: 1, stillDirect: [{ who: 'host:app-1', services: ['OpenAI API'], count: 40 }] },
+      { id: 'cloud_ai', share: 0.67, through: 20, direct: 10, gatewaySeen: true, stillDirectCount: 1, stillDirect: [{ who: 'role:claims-bot', services: ['Amazon Bedrock'], count: 10 }] },
+    ],
+  };
+
+  it('stores a findings file, shows it per path, and uses it for previews', async () => {
+    const up = await app.inject({ method: 'POST', url: '/v1/enforcement/findings', payload: { fileName: 'findings-2026-11-07.json', findings: findingsFile } });
+    expect(up.statusCode).toBe(201);
+    const view = (await app.inject({ method: 'GET', url: '/v1/enforcement' })).json();
+    expect(view.findings).toEqual([expect.objectContaining({ to: '2026-11-07', fileName: 'findings-2026-11-07.json', services: 1 })]);
+    expect(view.paths[0].measured).toMatchObject({ share: 0.6, stillDirectCount: 1 });
+    expect(view.paths[1].measured).toMatchObject({ share: 0.67 });
+
+    // Previews without a file use the stored one.
+    const preview = (await app.inject({ method: 'POST', url: '/v1/enforcement/feeds/preview', payload: { categories: ['chat'] } })).json();
+    expect(preview.findingsTo).toBe('2026-11-07');
+    expect(preview.wouldBeBlocked.services[0].id).toBe('chatgpt');
+    const gen = (await app.inject({ method: 'POST', url: '/v1/enforcement/aws/generate', payload: { gatewayRoleArn: GW } })).json();
+    expect(gen.wouldBeBlocked.map((w: any) => w.who)).toEqual(['role:claims-bot']);
+
+    expect((await app.inject({ method: 'POST', url: '/v1/enforcement/findings', payload: { findings: { hello: 1 } } })).statusCode).toBe(400);
+    expect((await app.inject({ method: 'DELETE', url: `/v1/enforcement/findings/${up.json().findingsId}` })).statusCode).toBe(204);
+    expect((await app.inject({ method: 'GET', url: '/v1/enforcement' })).json().findings).toEqual([]);
+  });
+
+  it('records the admin’s state for a path and warns when the logs disagree', async () => {
+    const set = await app.inject({ method: 'PUT', url: '/v1/enforcement/paths/out_model_api', payload: { state: 'locked' } });
+    expect(set.statusCode).toBe(200);
+    expect(set.json().path).toMatchObject({ state: 'locked' });
+    expect(set.json().path.warning).toMatch(/no findings since/);
+    // Findings dated today or later count as "since the lock".
+    const today = new Date().toISOString().slice(0, 10);
+    await app.inject({ method: 'POST', url: '/v1/enforcement/findings', payload: { findings: { ...findingsFile, to: today } } });
+    const row = (await app.inject({ method: 'GET', url: '/v1/enforcement' })).json().paths[0];
+    expect(row.warning).toMatch(/1 caller still goes direct/);
+
+    expect((await app.inject({ method: 'PUT', url: '/v1/enforcement/paths/in_agents', payload: { state: 'locked' } })).statusCode).toBe(409);
+    expect((await app.inject({ method: 'PUT', url: '/v1/enforcement/paths/nope', payload: { state: 'locked' } })).statusCode).toBe(404);
+    expect((await app.inject({ method: 'PUT', url: '/v1/enforcement/paths/out_cloud_ai', payload: { state: 'shut' } })).statusCode).toBe(400);
+
+    const actions = (await app.inject({ method: 'GET', url: '/v1/activity?category=admin' })).json().items.map((i: any) => i.action).sort();
+    expect(actions).toEqual(['enforcement_path.state_changed', 'findings.uploaded']);
+  });
+});

@@ -1,12 +1,13 @@
 import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import clsx from 'clsx';
 import {
-  AwsLock, AwsSettings, Blocked, createFeed, Enforcement, Feed, FeedCategory, feedContent, FeedFormat, Findings, generateAws,
-  getEnforcement, NewFeedUrls, previewFeed, revokeFeed, rotateFeed, saveAws, slimFindings,
+  AwsLock, AwsSettings, Blocked, createFeed, deleteFindings, Enforcement, Feed, FeedCategory, feedContent, FeedFormat, generateAws,
+  getEnforcement, NewFeedUrls, PathState, PathStatus, previewFeed, revokeFeed, rotateFeed, saveAws, setPathState, slimFindings, uploadFindings,
 } from '../lib/enforcement-api';
 import { errorMessage } from '../lib/rules-api';
-import { Button, Note, Panel, SectionLabel, Switch, formatCount } from '../components/kit/primitives';
+import { Button, Note, Panel, Segmented, SectionLabel, Switch, formatCount } from '../components/kit/primitives';
 
 const Beta = () => <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-line-subtle text-ink-soft">Beta</span>;
 const input = 'min-h-[42px] px-3 border border-line-strong rounded-lg bg-white w-full';
@@ -55,31 +56,92 @@ const readText = (file: File) => new Promise<string>((resolve, reject) => {
   r.readAsText(file);
 });
 
-// ── Findings file ───────────────────────────────────────────────────────────────────────────────────────────
+// ── Paths ───────────────────────────────────────────────────────────────────────────────────────────────────
 
-function FindingsPicker({ findings, onChange }: { findings: Findings | null; onChange: (f: Findings | null) => void }) {
-  const [error, setError] = useState<string | null>(null);
+const pct = (x: number) => `${Math.round(x * 100)}%`;
+const STATES: Array<{ value: PathState; label: string }> = [
+  { value: 'open', label: 'Open' }, { value: 'previewing', label: 'Previewing' }, { value: 'locked', label: 'Locked' },
+];
+
+function PathRow({ p }: { p: PathStatus }) {
+  const qc = useQueryClient();
+  const set = useMutation({ mutationFn: (state: PathState) => setPathState(p.id, state), onSuccess: () => qc.invalidateQueries({ queryKey: ['enforcement'] }) });
+  const m = p.measured;
   return (
-    <Panel aria-label="Preview from your logs" className="px-6 py-5 flex flex-col gap-2">
-      <SectionLabel>Preview from your logs</SectionLabel>
+    <Panel as="article" aria-label={p.title} className={clsx('px-6 py-5 flex flex-col gap-3', p.warning && 'border-stop')}>
+      <div className="flex flex-wrap justify-between gap-3">
+        <div className="min-w-0">
+          <h3 className="m-0 text-lg font-semibold">{p.title}</h3>
+          <p className="m-0 text-sm text-ink-muted">Lock: {p.lock}{p.anchor && <> · <a href={`#${p.anchor}`} className="font-semibold text-ink">set it up</a></>}</p>
+        </div>
+        {p.coming
+          ? <span className="self-start text-xs font-semibold px-2 py-0.5 rounded-full bg-line-subtle text-ink-soft">Coming</span>
+          : <div className="max-w-full overflow-x-auto"><Segmented label={`State of ${p.title}`} options={STATES} value={p.state} onChange={(v) => set.mutate(v)} /></div>}
+      </div>
+      {set.isError && <p role="alert" className="m-0 text-sm text-stop">{errorMessage(set.error)}</p>}
+      {p.warning && <p role="alert" className="m-0 text-sm font-semibold text-stop">{p.warning}</p>}
+      {p.coming && <p className="m-0 text-sm text-ink-muted">Not built yet. This path stays open until it is.</p>}
+      {p.measuredElsewhere && <p className="m-0 text-sm text-ink-muted">{p.measuredElsewhere} <Link to="/shadow-ai" className="font-semibold text-ink">Shadow AI</Link></p>}
+      {!p.coming && !p.measuredElsewhere && !m && <p className="m-0 text-sm text-ink-muted">Not measured yet. Upload a findings file below.</p>}
+      {m && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:gap-6">
+          <div className="sm:w-[150px] shrink-0">
+            <div className={clsx('text-[34px] leading-none font-bold tracking-[-0.02em]', !m.gatewaySeen && 'text-stop')}>{m.share === null ? '–' : pct(m.share)}</div>
+            <div className="text-xs text-ink-muted mt-1">through Probaline</div>
+          </div>
+          <div className="flex-1 min-w-0 flex flex-col gap-1.5 text-sm">
+            <p className="m-0 text-ink-muted">{formatCount(m.through)} of {formatCount(m.through + m.direct)} in {m.measuredBy ?? 'the collector’s logs'}, findings to {day(m.to)}.</p>
+            {!m.gatewaySeen && <p className="m-0 text-ink-muted">The gateway wasn’t seen in these logs: name it with <code className="font-mono">--gateway</code> when you run the collector.</p>}
+            {p.trend.length > 1 && <p className="m-0">Trend: {p.trend.map((t) => `${day(t.to)} ${pct(t.share)}`).join(' → ')}</p>}
+            {m.stillDirectCount === 0
+              ? <p className="m-0 font-semibold">Nothing goes around Probaline on this path.</p>
+              : <p className="m-0"><strong>Still direct:</strong> {m.stillDirect.slice(0, 3).map((c) => c.who).join(', ')}{m.stillDirectCount > 3 ? ` and ${formatCount(m.stillDirectCount - 3)} more` : ''}.</p>}
+          </div>
+        </div>
+      )}
+    </Panel>
+  );
+}
+
+// ── Findings files ──────────────────────────────────────────────────────────────────────────────────────────
+
+function FindingsFiles({ data }: { data: Enforcement }) {
+  const qc = useQueryClient();
+  const [error, setError] = useState<string | null>(null);
+  const refresh = () => qc.invalidateQueries({ queryKey: ['enforcement'] });
+  const upload = useMutation({ mutationFn: ({ f, name }: { f: ReturnType<typeof slimFindings>; name: string }) => uploadFindings(f, name), onSuccess: () => { setError(null); refresh(); }, onError: (e) => setError(errorMessage(e)) });
+  const remove = useMutation({ mutationFn: deleteFindings, onSuccess: refresh });
+  return (
+    <Panel aria-label="Findings files" className="px-6 py-5 flex flex-col gap-3">
+      <SectionLabel>Findings files</SectionLabel>
       <p className="m-0 text-sm text-ink-muted max-w-[760px]">
-        Choose a findings file from the collector (<code className="font-mono">reports/findings-&lt;day&gt;.json</code>) to see who each lock would stop before you apply it.
-        The file is read in your browser and sent only with each preview; it isn’t stored.
+        Upload <code className="font-mono">reports/findings-&lt;day&gt;.json</code> from the collector after each run. Probaline keeps the share per path, the services in use and who still goes direct (no log lines; people stay as codes) for 400 days, for the trend above and the previews below.
       </p>
       <div className="flex flex-wrap items-center gap-3">
-        <label className="inline-flex items-center min-h-[42px] px-4 rounded-lg border border-line-strong bg-white font-semibold text-sm cursor-pointer">
-          {findings ? 'Choose another file' : 'Choose findings file'}
+        <label className="inline-flex items-center min-h-[42px] px-4 rounded-lg bg-ink text-white font-semibold text-sm cursor-pointer">
+          {upload.isPending ? 'Uploading…' : 'Upload findings file'}
           <input type="file" accept="application/json,.json" className="sr-only" aria-label="Findings file" onChange={async (e) => {
             const file = e.target.files?.[0];
             e.target.value = '';
             if (!file) return;
-            try { onChange(slimFindings(JSON.parse(await readText(file)))); setError(null); } catch (err) { setError((err as Error).message.startsWith('This') ? (err as Error).message : 'That file isn’t valid JSON.'); }
+            try { upload.mutate({ f: slimFindings(JSON.parse(await readText(file))), name: file.name }); } catch (err) { setError((err as Error).message.startsWith('This') ? (err as Error).message : 'That file isn’t valid JSON.'); }
           }} />
         </label>
-        {findings && <span className="text-sm">Using findings up to <strong>{day(findings.to)}</strong>.</span>}
-        {findings && <button type="button" className="text-sm underline" onClick={() => onChange(null)}>Clear</button>}
       </div>
       {error && <p role="alert" className="m-0 text-sm text-stop">{error}</p>}
+      {data.findings.length === 0
+        ? <p className="m-0 text-sm text-ink-muted">None yet.</p>
+        : (
+          <ul className="m-0 p-0 list-none flex flex-col">
+            {data.findings.slice(0, 8).map((f, i) => (
+              <li key={f.findingsId} className="flex flex-wrap justify-between items-center gap-2 py-2 border-t border-line-subtle text-sm">
+                <span><strong>{f.from ? `${day(f.from)} to ` : 'To '}{day(f.to)}</strong>{i === 0 && <span className="text-ink-muted"> · used for previews</span>}<span className="block text-xs text-ink-muted">{f.fileName ?? 'findings'} · {f.services} services · catalog {f.catalogVersion ?? 'unknown'} · uploaded {when(f.uploadedAt)}</span></span>
+                <button type="button" className="text-sm underline" onClick={() => remove.mutate(f.findingsId)}>Delete</button>
+              </li>
+            ))}
+          </ul>
+        )}
+      {data.findings.length > 8 && <p className="m-0 text-xs text-ink-muted">And {data.findings.length - 8} older files.</p>}
     </Panel>
   );
 }
@@ -108,10 +170,10 @@ function FeedUrls({ data, created, onDone }: { data: Enforcement; created: NewFe
   );
 }
 
-function FeedForm({ data, findings, onCreated, onCancel }: { data: Enforcement; findings: Findings | null; onCreated: (c: NewFeedUrls) => void; onCancel: () => void }) {
+function FeedForm({ data, latestTo, onCreated, onCancel }: { data: Enforcement; latestTo?: string; onCreated: (c: NewFeedUrls) => void; onCancel: () => void }) {
   const [name, setName] = useState('Firewalls');
   const [cats, setCats] = useState<FeedCategory[]>(data.defaultCategories);
-  const preview = useQuery({ queryKey: ['feed-preview', cats, findings?.to], queryFn: () => previewFeed(cats, findings ?? undefined), enabled: cats.length > 0 });
+  const preview = useQuery({ queryKey: ['feed-preview', cats, latestTo], queryFn: () => previewFeed(cats), enabled: cats.length > 0 });
   const create = useMutation({ mutationFn: () => createFeed({ name, categories: cats }), onSuccess: onCreated });
   const toggle = (c: FeedCategory) => setCats((cur) => cur.includes(c) ? cur.filter((x) => x !== c) : [...cur, c]);
   const blocked = preview.data?.wouldBeBlocked;
@@ -135,11 +197,11 @@ function FeedForm({ data, findings, onCreated, onCancel }: { data: Enforcement; 
           <p className="m-0"><strong>{formatCount(preview.data.domains)} domains</strong>, such as {preview.data.sample.slice(0, 5).join(', ')}.</p>
           {blocked && (
             <>
-              <p className="m-0">From your findings, this would stop: {blocked.services.length === 0 ? 'nothing in use.' : blocked.services.map((s) => `${s.name} (${formatCount(s.people + s.machines)} users or devices)`).join(', ')}</p>
+              <p className="m-0">From findings to {day(preview.data.findingsTo)}, this would stop: {blocked.services.length === 0 ? 'nothing in use.' : blocked.services.map((s) => `${s.name} (${formatCount(s.people + s.machines)} users or devices)`).join(', ')}</p>
               {blocked.apps.length > 0 && <><p className="m-0 font-semibold">Apps calling model APIs directly that would lose access until routed through Probaline:</p><BlockedTable rows={blocked.apps} /></>}
             </>
           )}
-          {!findings && <p className="m-0 text-ink-muted">Choose a findings file above to see who this would stop.</p>}
+          {!latestTo && <p className="m-0 text-ink-muted">Upload a findings file above to see who this would stop.</p>}
         </div>
       )}
       {create.isError && <p role="alert" className="m-0 text-sm text-stop">{errorMessage(create.error)}</p>}
@@ -203,11 +265,11 @@ function FeedCard({ f, data, onUrls }: { f: Feed; data: Enforcement; onUrls: (c:
 
 // ── AWS ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
-function AwsLockPanel({ data, findings }: { data: Enforcement; findings: Findings | null }) {
+function AwsLockPanel({ data, latestTo }: { data: Enforcement; latestTo?: string }) {
   const [s, setS] = useState<AwsSettings>({ sagemaker: true, ...data.aws });
   const [targets, setTargets] = useState((data.aws.targetIds ?? []).join(', '));
   const [result, setResult] = useState<AwsLock | null>(null);
-  useEffect(() => { setResult(null); }, [findings]);
+  useEffect(() => { setResult(null); }, [latestTo]);
   const settings = (): AwsSettings => ({
     gatewayRoleArn: s.gatewayRoleArn.trim(),
     ...(s.breakGlassRoleArn?.trim() ? { breakGlassRoleArn: s.breakGlassRoleArn.trim() } : {}),
@@ -215,14 +277,14 @@ function AwsLockPanel({ data, findings }: { data: Enforcement; findings: Finding
     sagemaker: s.sagemaker !== false,
   });
   const save = useMutation({ mutationFn: () => saveAws(settings()) });
-  const gen = useMutation({ mutationFn: () => generateAws(settings(), findings ?? undefined), onSuccess: setResult });
+  const gen = useMutation({ mutationFn: () => generateAws(settings()), onSuccess: setResult });
   const files = result ? [
     { name: 'probaline-scp.json', label: 'Service control policy', hint: 'Organizations → Policies → Service control policies. Attach to one OU first.', body: result.serviceControlPolicy },
     { name: 'probaline-vpc-endpoint-policy.json', label: 'VPC endpoint policy', hint: 'On the bedrock-runtime and sagemaker.runtime interface endpoints, if you use them.', body: result.vpcEndpointPolicy },
     { name: 'probaline-scp-cloudformation.json', label: 'CloudFormation template', hint: 'Deploy in the management account (or the delegated administrator for Organizations).', body: result.cloudFormation },
   ] : [];
   return (
-    <Panel aria-label="AWS lock" className="px-6 py-5 flex flex-col gap-4">
+    <Panel aria-label="AWS lock" className="px-6 py-5 flex flex-col gap-4 scroll-mt-24">
       <div>
         <div className="flex items-center gap-3"><h2 className="m-0 text-xl font-semibold">AWS: only the gateway calls Bedrock and SageMaker</h2><Beta /></div>
         <p className="m-0 mt-1 text-sm text-ink-muted max-w-[760px]">A service control policy for your AWS organization that refuses direct model calls from every role except the gateway’s and an emergency role. AWS has no warn-only mode for these, so check who it would stop first.</p>
@@ -249,8 +311,8 @@ function AwsLockPanel({ data, findings }: { data: Enforcement; findings: Finding
         <div className="flex flex-col gap-4">
           {result.problems.map((p) => <p key={p} role="alert" className="m-0 text-sm text-stop font-semibold">{p}</p>)}
           <div className="flex flex-col gap-2">
-            <SectionLabel>Would be refused</SectionLabel>
-            {result.wouldBeBlocked ? <BlockedTable rows={result.wouldBeBlocked} aws /> : <p className="m-0 text-sm text-ink-muted">Choose a findings file above to see who this would refuse.</p>}
+            <SectionLabel>Would be refused{result.findingsTo ? `, from findings to ${day(result.findingsTo)}` : ''}</SectionLabel>
+            {result.wouldBeBlocked ? <BlockedTable rows={result.wouldBeBlocked} aws /> : <p className="m-0 text-sm text-ink-muted">Upload a findings file above to see who this would refuse.</p>}
           </div>
           <ul className="m-0 pl-5 text-sm text-ink-soft flex flex-col gap-1">{result.notes.map((n) => <li key={n}>{n}</li>)}</ul>
           {files.map((f) => {
@@ -274,7 +336,6 @@ function AwsLockPanel({ data, findings }: { data: Enforcement; findings: Finding
 export function EnforcementPage() {
   const qc = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['enforcement'], queryFn: getEnforcement, refetchInterval: 30_000 });
-  const [findings, setFindings] = useState<Findings | null>(null);
   const [adding, setAdding] = useState(false);
   const [urls, setUrls] = useState<NewFeedUrls | null>(null);
 
@@ -286,7 +347,7 @@ export function EnforcementPage() {
           <Beta />
         </div>
         <p className="m-0 mt-1.5 text-ink-muted text-[15px] max-w-[760px]">
-          Close the paths around Probaline. Probaline writes the rules; you apply them in your firewall and AWS organization. Then the collector report shows the share through Probaline, and anything still going direct.
+          Each way AI can go around Probaline, what you’ve done about it, and what your logs show. Probaline writes the rules; you apply them in your firewall and AWS organization. Upload the collector’s findings after each run to keep the share current.
         </p>
       </div>
 
@@ -295,9 +356,17 @@ export function EnforcementPage() {
 
       {data && (
         <>
-          <FindingsPicker findings={findings} onChange={setFindings} />
+          <section aria-label="Paths" className="flex flex-col gap-3">
+            <h2 className="m-0 text-xl font-semibold">AI going out</h2>
+            {data.paths.filter((p) => p.direction === 'out').map((p) => <PathRow key={p.id} p={p} />)}
+            <h2 className="m-0 mt-2 text-xl font-semibold">Agents coming in</h2>
+            {data.paths.filter((p) => p.direction === 'in').map((p) => <PathRow key={p.id} p={p} />)}
+            <p className="m-0 text-xs text-ink-muted max-w-[760px]">The state is what you set; the share and who still goes direct come from the latest findings file. When they disagree, the row says so.</p>
+          </section>
 
-          <section aria-label="AI-domain feed" className="flex flex-col gap-3">
+          <FindingsFiles data={data} />
+
+          <section id="feed" aria-label="AI-domain feed" className="flex flex-col gap-3 scroll-mt-24">
             <div className="flex flex-wrap justify-between items-end gap-3">
               <div>
                 <div className="flex items-center gap-3"><h2 className="m-0 text-xl font-semibold">Firewalls and DNS: AI only from the gateway</h2><Beta /></div>
@@ -311,18 +380,14 @@ export function EnforcementPage() {
             {urls && <FeedUrls data={data} created={urls} onDone={() => setUrls(null)} />}
             {adding && (
               <Panel aria-label="New feed" className="px-6 py-5">
-                <FeedForm data={data} findings={findings} onCancel={() => setAdding(false)} onCreated={(c) => { setAdding(false); setUrls(c); qc.invalidateQueries({ queryKey: ['enforcement'] }); }} />
+                <FeedForm data={data} latestTo={data.findings[0]?.to} onCancel={() => setAdding(false)} onCreated={(c) => { setAdding(false); setUrls(c); qc.invalidateQueries({ queryKey: ['enforcement'] }); }} />
               </Panel>
             )}
             {data.feeds.length === 0 && !adding && <Panel className="px-6"><Note title="No feeds yet.">Create one, then add its address to your firewall as an external list.</Note></Panel>}
             {data.feeds.map((f) => <FeedCard key={f.feedId} f={f} data={data} onUrls={setUrls} />)}
           </section>
 
-          <AwsLockPanel data={data} findings={findings} />
-
-          <p className="m-0 text-xs text-ink-muted max-w-[760px]">
-            Coming next: one row per path showing open, previewing or locked next to the measured share, a kit to lock your own APIs to agents coming through Probaline, and finding MCP servers on laptops.
-          </p>
+          <div id="aws" className="scroll-mt-24"><AwsLockPanel data={data} latestTo={data.findings[0]?.to} /></div>
         </>
       )}
     </div>

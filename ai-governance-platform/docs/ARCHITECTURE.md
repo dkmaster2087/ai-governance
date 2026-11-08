@@ -77,7 +77,7 @@ S3-compatible store) or a directory, chosen by `OBJECT_STORE`. Design and limits
 | Metrics (expire) | `metrics` | by tenant and period prefix |
 | Admin activity and sign-ins (400-day expiry), + archive file | `activity` | by tenant, sorted by `<time>#<id>` |
 | Log destinations (secrets in Secrets Manager) and undelivered batches (30-day expiry) | `log-export` / `log_export` | by tenant; `dest#…` and `dead#…` |
-| AI-domain feeds (token hashes only) and lock settings | `enforcement` | by tenant; `feed#…`, `aws#settings` |
+| AI-domain feeds (token hashes only), lock and path settings, uploaded findings (400 days, at most 100, trimmed) | `enforcement` | by tenant; `feed#…`, `aws#settings`, `paths#settings`, `findings#<to>#<id>` |
 
 ## Logs
 
@@ -136,8 +136,11 @@ Plan and status: [ENFORCEMENT.md](ENFORCEMENT.md).
   `aws:PrincipalArn` is the gateway role or the emergency role, a matching VPC endpoint policy, and a
   CloudFormation template (`AWS::Organizations::Policy`) for the management account. Structural checks run on
   every policy; Access Analyzer validation is not wired yet.
-- **Previews:** the page reads a collector findings file in the browser and sends only the fields previews need;
-  nothing is stored. Week 3 adds stored findings uploads.
+- **Paths and findings:** an admin uploads the collector's findings file; the gateway keeps a trimmed copy
+  (share per path, services in use, still-direct callers; no log lines, people as codes) for 400 days, at most
+  100 per tenant, pruned on upload. Each path's row puts the admin's state beside the latest measured share and
+  warns when a path marked locked still has direct traffic in findings dated after the lock, or has none since.
+  Previews use the latest stored findings.
 
 ## Websites
 

@@ -1,6 +1,8 @@
 // End-to-end tests of lock and verify, week 2: an AI-domain feed fetched by token like a firewall would, its
 // fetch logged, its address rotated and revoked; tools allowed on the Shadow AI page left out; and the AWS lock
-// written with a preview from a collector findings file. Every change is in the tenant's admin activity.
+// written with a preview from a collector findings file. Week 3: findings files stored per tenant, each path's
+// state next to its measured share, and a warning when a path marked locked still has traffic going direct.
+// Every change is in the tenant's admin activity.
 //
 // Needs the local stack: scripts/dev-local.sh start (or --postgres). Run with: npm run test:e2e
 import { test, describe, before, after } from 'node:test';
@@ -42,7 +44,11 @@ before(async () => {
   B = await ensureTenant('E2E enforcement B', 'e2e-enf-b@example.com');
 });
 
+const uploaded = [];
+
 after(async () => {
+  for (const f of uploaded) await call('DELETE', `/v1/enforcement/findings/${f.findingsId}`, { headers: as(f.tenantId) });
+  await call('PUT', '/v1/enforcement/paths/out_model_api', { headers: as(A), body: { state: 'open' } });
   for (const f of feeds) await call('DELETE', `/v1/enforcement/feeds/${f.feedId}`, { headers: as(f.tenantId) });
   await call('PUT', '/v1/shadow-ai/policy', { headers: as(A), body: { decisions: { claude: null } } });
 });
@@ -149,5 +155,46 @@ describe('AWS lock', () => {
 
     const actions = (await call('GET', '/v1/activity?category=admin', { headers: as(A) })).body.items.map((i) => i.action);
     assert.ok(actions.includes('aws_lock.generated') && actions.includes('aws_lock.settings_saved'));
+  });
+});
+
+describe('paths and findings files', () => {
+  const today = new Date().toISOString().slice(0, 10);
+  const file = (to, share, still) => ({
+    from: '2026-10-01', to, catalogVersion: '2026-11-07', sources: [{ label: 'dropped on upload' }],
+    services: [{ id: 'chatgpt', name: 'ChatGPT', vendor: 'OpenAI', category: 'chat', people: 4, machines: 0, count: 50 }],
+    paths: [{ id: 'model_api', share, through: share * 100, direct: (1 - share) * 100, gatewaySeen: true, measuredBy: 'AWS Route 53 Resolver DNS query logs',
+      stillDirectCount: still, stillDirect: Array.from({ length: still }, (_, i) => ({ who: `host:app-${i}`, services: ['OpenAI API'], count: 10, fix: 'Route it.' })) }],
+  });
+
+  test('uploaded findings show per path with a trend; a lock the logs contradict is flagged; tenants are separate', async () => {
+    for (const [to, share, still] of [['2026-10-24', 0.4, 6], [today, 0.8, 2]]) {
+      const up = await call('POST', '/v1/enforcement/findings', { headers: as(A), body: { fileName: `findings-${to}.json`, findings: file(to, share, still) } });
+      assert.equal(up.status, 201, JSON.stringify(up.body));
+      uploaded.push({ tenantId: A, findingsId: up.body.findingsId });
+    }
+    let view = (await call('GET', '/v1/enforcement', { headers: as(A) })).body;
+    let row = view.paths.find((p) => p.id === 'out_model_api');
+    assert.equal(row.measured.share, 0.8);
+    assert.equal(row.measured.stillDirectCount, 2);
+    assert.deepEqual(row.trend.map((t) => t.share), [0.4, 0.8]);
+    assert.equal(view.findings[0].to, today);
+    assert.equal((await call('GET', '/v1/enforcement', { headers: as(B) })).body.findings.length, 0);
+
+    const locked = await call('PUT', '/v1/enforcement/paths/out_model_api', { headers: as(A), body: { state: 'locked' } });
+    assert.equal(locked.status, 200);
+    assert.match(locked.body.path.warning, /2 callers still go direct/);
+    assert.equal((await call('PUT', '/v1/enforcement/paths/in_agents', { headers: as(A), body: { state: 'locked' } })).status, 409);
+
+    // Previews use the latest stored findings when none are sent.
+    const preview = await call('POST', '/v1/enforcement/feeds/preview', { headers: as(A), body: { categories: ['chat'] } });
+    assert.equal(preview.body.findingsTo, today);
+    assert.equal(preview.body.wouldBeBlocked.services[0].id, 'chatgpt');
+
+    const actions = (await call('GET', '/v1/activity?category=admin', { headers: as(A) })).body.items.map((i) => i.action);
+    assert.ok(actions.includes('findings.uploaded') && actions.includes('enforcement_path.state_changed'));
+
+    assert.equal((await call('POST', '/v1/enforcement/findings', { headers: as(A), body: { findings: { not: 'findings' } } })).status, 400);
+    assert.equal((await call('POST', '/v1/enforcement/findings', { headers: as(A, 'tenant_auditor'), body: { findings: file(today, 1, 0) } })).status, 403);
   });
 });

@@ -71,6 +71,9 @@ export const ADMIN_ACTIONS: Record<string, string> = {
   'DELETE /v1/enforcement/feeds/:feedId': 'feed.revoked',
   'PUT /v1/enforcement/aws': 'aws_lock.settings_saved',
   'POST /v1/enforcement/aws/generate': 'aws_lock.generated',
+  'PUT /v1/enforcement/paths/:pathId': 'enforcement_path.state_changed',
+  'POST /v1/enforcement/findings': 'findings.uploaded',
+  'DELETE /v1/enforcement/findings/:findingsId': 'findings.deleted',
 };
 
 /** Traffic and machine routes: not admin activity (decisions and sign-ins cover them). */
@@ -80,7 +83,7 @@ const NOT_ADMIN = [/^\/v1\/enforcement\/feeds\/preview$/, /^\/v1\/chat\//, /^\/v
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 
 /** IDs worth keeping from a created record's response. Raw keys and secrets are never among them. */
-const ID_FIELDS = ['feedId', 'keyId', 'policyId', 'ruleId', 'serverId', 'apiId', 'modelConfigId', 'connectorId', 'destinationId', 'licenseId', 'approvalId', 'version'];
+const ID_FIELDS = ['findingsId', 'feedId', 'keyId', 'policyId', 'ruleId', 'serverId', 'apiId', 'modelConfigId', 'connectorId', 'destinationId', 'licenseId', 'approvalId', 'version'];
 
 export function actionFor(method: string, route: string): string | null {
   if (!MUTATING.has(method) || NOT_ADMIN.some((r) => r.test(route))) return null;
