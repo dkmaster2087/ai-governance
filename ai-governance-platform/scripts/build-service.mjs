@@ -38,7 +38,7 @@ fs.rmSync(out, { recursive: true, force: true });
 fs.mkdirSync(out, { recursive: true });
 
 // bytenode can also target Electron, which we never use.
-const common = { bundle: true, platform: 'node', target: 'node20', format: 'cjs', minify: true, legalComments: 'none', sourcemap: false, logLevel: 'warning', external: ['electron'] };
+const common = { bundle: true, platform: 'node', target: 'node24', format: 'cjs', minify: true, legalComments: 'none', sourcemap: false, logLevel: 'warning', external: ['electron'] };
 
 // 1. The service, with everything it uses, in one file. Optional native add-ons it never loads stay out.
 await build({

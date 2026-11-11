@@ -15,7 +15,7 @@ permissions:
   contents: read
 
 env:
-  NODE_VERSION: '20'
+  NODE_VERSION: '24'
 
 defaults:
   run:
@@ -38,9 +38,9 @@ jobs:
         options: >-
           --health-cmd "pg_isready -U probaline" --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -120,8 +120,8 @@ jobs:
       matrix:
         storage: [dynamodb, postgres]
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -141,7 +141,7 @@ jobs:
         run: npm run test:e2e
       - name: Service logs
         if: failure()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with: { name: 'e2e-logs-${{ matrix.storage }}', path: ai-governance-platform/.dev-logs/, retention-days: 7 }
       - name: Stop
         if: always()
@@ -152,9 +152,9 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with:
           node-version: ${{ env.NODE_VERSION }}
           cache: npm
@@ -179,6 +179,20 @@ jobs:
         env:
           CDK_DEFAULT_REGION: us-east-1
 
+  audit:
+    name: Dependency audit
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: ${{ env.NODE_VERSION }}
+      # Known high or critical vulnerabilities in shipped packages fail the build, unless recorded in
+      # security/accepted-risks.json with a reason and a review date (SECURITY.md).
+      - name: Check shipped packages for known vulnerabilities
+        run: node scripts/audit-check.mjs
+
   images:
     name: Image · ${{ matrix.name }}
     runs-on: ubuntu-latest
@@ -195,7 +209,7 @@ jobs:
           - { name: collector, dockerfile: collector/Dockerfile, context: ., kind: agent }
           - { name: connector, dockerfile: connector/Dockerfile, context: ., kind: agent }
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       # Build only, to prove each Dockerfile works; pushing happens in deploy.yml (services) and release-agents.yml.
       - name: Build image
@@ -209,3 +223,12 @@ jobs:
           echo "$files" | grep -q '^app/app.jsc$'
           ! echo "$files" | grep -E '^app/.*\.(ts|map)$|^app/app\.js$|^app/node_modules/|^bin/(sh|bash)$|^usr/bin/npm'
           docker rm "$id" > /dev/null
+      # Known high or critical vulnerabilities with a fix available, in the base image or the packages inside.
+      - name: Scan image for vulnerabilities
+        uses: anchore/scan-action@27805bf3b4e84b4a5c980df22ed233c00390a439 # v7.4.2
+        with:
+          image: probaline-${{ matrix.name }}:ci
+          severity-cutoff: high
+          only-fixed: true
+          fail-build: true
+          output-format: table

@@ -23,7 +23,7 @@ const chatRequestSchema = z.object({
       role: z.enum(['user', 'assistant', 'system']),
       content: z.string(),
     })
-  ),
+  ).min(1).max(1000), // a cap: zod 3 collects an error per bad item, so an endless list could exhaust memory
   max_tokens: z.number().optional(),
   temperature: z.number().min(0).max(2).optional(),
   stream: z.boolean().optional().default(false),

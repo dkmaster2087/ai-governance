@@ -31,7 +31,7 @@ scripts/            Local development helpers
 
 ## Run it locally
 
-Requires Docker and Node.js 20+.
+Requires Docker and Node.js 22+ (CI and the images use Node 24).
 
 ```bash
 npm install
@@ -61,6 +61,11 @@ node scripts/load-test.mjs                # time the checks add, and how much a 
 
 CI runs the unit tests, builds every image (checking no readable code ships) and runs the end-to-end suite on
 DynamoDB and on PostgreSQL. Restoring from backups: [docs/RESTORE-RUNBOOK.md](docs/RESTORE-RUNBOOK.md).
+
+**Security checks.** CI also fails on a known high or critical vulnerability: in shipped packages
+(`node scripts/audit-check.mjs`, with exceptions only in `security/accepted-risks.json`, each with a reason and a
+review date) and in every image (Grype, for ones with a fix). CodeQL scans the code; Dependabot proposes updates.
+How to report a vulnerability and how fast we fix: [SECURITY.md](../SECURITY.md).
 
 The connector and collector images, which customers run, are published by pushing a tag
 `connector-v<version>` or `collector-v<version>` (`.github/workflows/release-agents.yml`): signed, with a bill

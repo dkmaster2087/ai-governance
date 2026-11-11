@@ -1,0 +1,13 @@
+{
+  "about": "High or critical advisories in shipped packages that can't be fixed yet. Each needs a reason (why it can't be exploited, or what limits it) and a date to look again. scripts/audit-check.mjs fails CI for anything not listed here, and for anything past its date.",
+  "accepted": [
+    {
+      "advisory": "GHSA-mrhx-c7xc-m3w5",
+      "package": "zod",
+      "severity": "high",
+      "reason": "Memory exhaustion needs a list with no length limit. Every list the gateway accepts from callers now has a maximum (chat messages 1,000, model tags 50; checked in services/gateway/src/routes). The other services only accept signed calls from the gateway. Fixed in zod 4, a breaking upgrade across all services.",
+      "accepted": "2026-11-10",
+      "reviewBy": "2026-12-15"
+    }
+  ]
+}

@@ -177,3 +177,19 @@ Tests: gateway 307 (including a check that changing `X-Forwarded-For` on each re
 limit), infra 39; CDK synth passes for dev and prod. Still to check on the first deploy: that CloudFormation
 fills the secret into CloudFront's header and the firewall rule (both use a Secrets Manager reference), and
 that a dashboard user's address in the activity trail is their own.
+
+## Security process: what was done (2026-11-10)
+
+A vulnerability policy and checks on every push, so a known flaw can't ship unnoticed.
+
+| Done | Still to check |
+|---|---|
+| `SECURITY.md`: private reporting through GitHub, acknowledgement in 2 business days, fix times by severity (critical: hosted 72 hours, release 7 days; high: 7 / 14 days), how customers are told, supported versions. | A security email address once the domain is set; turning on private vulnerability reporting and Dependabot security updates in the repository settings. |
+| Dependency audit in CI (`scripts/audit-check.mjs`): high or critical in shipped packages fails the build unless accepted in `security/accepted-risks.json` with a reason and a review date. | First run on GitHub. |
+| Image scan in CI (Grype) for every image: high or critical with a fix fails the build. | First run on GitHub. |
+| CodeQL (security-extended) on pushes, pull requests and weekly. Dependabot for npm, base images and Actions. Every Action pinned to a commit. | First CodeQL results. |
+| **Fixed what the first scans found:** 1 critical and 8 high in shipped packages (fast-jwt, fastify, axios, form-data, fast-uri, find-my-way, js-yaml, brace-expansion) by updating within their versions. Node 20 reached end of life in April 2026 and its images had stopped getting fixes (OpenSSL critical, Node highs): images, CI, deploy and the two Lambda functions move to Node 24 on Debian 13. All seven images now scan clean. | Node 24 on a deployed stage. |
+| One high accepted until 2026-12-15: zod 3 can exhaust memory on a huge list with no length limit. Every list callers can send now has a maximum (chat messages 1,000; model tags 50). | Upgrade to zod 4 (breaking, all services). |
+
+Moderate findings left for Dependabot: the dashboard's router (React Router 6 → 7), the collector's Google Cloud
+Storage client (major update), and a part bundled inside the AWS CDK (deploy-time only).

@@ -50,7 +50,7 @@ export class InternalKeys extends Construct {
       removalPolicy,
     });
     const fn = new lambda.Function(this, 'MakeKeys', {
-      runtime: lambda.Runtime.NODEJS_20_X,
+      runtime: lambda.Runtime.NODEJS_24_X,
       handler: 'index.handler',
       code: lambda.Code.fromInline(HANDLER),
       timeout: cdk.Duration.seconds(30),

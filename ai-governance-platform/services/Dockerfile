@@ -5,9 +5,9 @@
 # source maps, no npm, no node_modules, no shell, not root.
 
 # The runtime image. Bytecode runs only on the Node that compiled it, so it's compiled in this same image.
-ARG RUNTIME=gcr.io/distroless/nodejs20-debian12:nonroot
+ARG RUNTIME=gcr.io/distroless/nodejs24-debian13:nonroot
 
-FROM node:20-bookworm-slim AS bundle
+FROM node:24-trixie-slim AS bundle
 ARG SERVICE
 WORKDIR /repo
 COPY package.json package-lock.json ./

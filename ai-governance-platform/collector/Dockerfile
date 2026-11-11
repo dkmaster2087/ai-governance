@@ -8,9 +8,9 @@
 #
 # What ships: the collector as V8 bytecode plus a small loader, on a distroless Node image. No source, no npm,
 # no node_modules, no shell, not root.
-ARG RUNTIME=gcr.io/distroless/nodejs20-debian12:nonroot
+ARG RUNTIME=gcr.io/distroless/nodejs24-debian13:nonroot
 
-FROM node:20-bookworm-slim AS bundle
+FROM node:24-trixie-slim AS bundle
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY collector/package.json collector/

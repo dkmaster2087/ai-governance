@@ -1,0 +1,40 @@
+# Static analysis of Probaline's own code (TypeScript and JavaScript) for security flaws: injection, unsafe
+# redirects, weak crypto, secrets in code and the like. Results appear under the repository's Security tab.
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+  schedule:
+    - cron: '17 4 * * 1' # Mondays, so new CodeQL rules are run over unchanged code too
+
+permissions:
+  contents: read
+
+jobs:
+  analyze:
+    name: Analyze (JavaScript and TypeScript)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: github/codeql-action/init@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        with:
+          languages: javascript-typescript
+          queries: security-extended
+          config: |
+            paths:
+              - ai-governance-platform
+            paths-ignore:
+              - '**/node_modules'
+              - '**/dist'
+              - '**/__tests__'
+              - ai-governance-platform/tests
+      - uses: github/codeql-action/analyze@33d7b85da1a04171e211befe2c739303b9a4c066 # v4
+        with:
+          category: /language:javascript-typescript

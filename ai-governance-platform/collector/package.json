@@ -8,7 +8,7 @@
   },
   "scripts": {
     "build": "tsc",
-    "bundle:lambda": "esbuild src/aws/lambda.ts --bundle --platform=node --target=node20 --outfile=dist-lambda/index.js && cd dist-lambda && rm -f ../probaline-collector-aws.zip && zip -q ../probaline-collector-aws.zip index.js",
+    "bundle:lambda": "esbuild src/aws/lambda.ts --bundle --platform=node --target=node24 --outfile=dist-lambda/index.js && cd dist-lambda && rm -f ../probaline-collector-aws.zip && zip -q ../probaline-collector-aws.zip index.js",
     "test": "jest --runInBand",
     "clean": "rm -rf dist dist-lambda probaline-collector-aws.zip"
   },

@@ -123,7 +123,7 @@ Resources:
     Properties:
       FunctionName: !Sub '${AWS::StackName}-collector'
       Description: Probaline collector. Reads log files, keeps AI matches as daily counts, builds the report.
-      Runtime: nodejs20.x
+      Runtime: nodejs24.x
       Handler: index.handler
       Architectures: [arm64]
       MemorySize: 1024
