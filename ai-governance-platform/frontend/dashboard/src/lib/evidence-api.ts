@@ -13,7 +13,12 @@ export interface EvidenceListItem {
   user: string;
   model: string;
   reason?: string;
+  /** An agent's tool call through an MCP server. */
+  mcp?: { server: string; tool: string };
+  /** Sent, but the AI provider or the API refused or failed. */
+  unanswered?: true;
 }
+
 
 export interface EvidenceList {
   items: EvidenceListItem[];

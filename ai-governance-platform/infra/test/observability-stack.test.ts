@@ -32,4 +32,9 @@ describe('ObservabilityStack', () => {
       template.hasResourceProperties('AWS::CloudWatch::Alarm', { MetricName: name, Namespace: 'probaline/prod' });
     }
   });
+  it('creates the Glue database before the table that names it', () => {
+    const table = Object.values(template.findResources('AWS::Glue::Table'))[0] as any;
+    const dbId = Object.keys(template.findResources('AWS::Glue::Database'))[0];
+    expect(table.DependsOn).toEqual(expect.arrayContaining([dbId]));
+  });
 });

@@ -7,7 +7,7 @@ import { useAuth } from '../lib/auth';
 import { Button, Note, Panel, Segmented } from '../components/kit/primitives';
 
 /** Plain words for each action. Unknown ones fall back to the action name. */
-const ACTION_LABEL: Record<string, string> = {
+export const ACTION_LABEL: Record<string, string> = {
   'rule.created': 'Added a rule', 'rule.updated': 'Changed a rule', 'rule.deleted': 'Deleted a rule',
   'gateway_settings.updated': 'Changed gateway settings', 'policy.created': 'Added a policy', 'policy.updated': 'Changed a policy', 'policy.deleted': 'Deleted a policy',
   'api_key.created': 'Created an API key', 'api_key.revoked': 'Revoked an API key', 'api_key.rotated': 'Replaced an API key', 'api_key.deleted': 'Deleted an API key',
@@ -25,6 +25,9 @@ const ACTION_LABEL: Record<string, string> = {
   'log_export.created': 'Added a log destination', 'log_export.updated': 'Changed a log destination', 'log_export.deleted': 'Removed a log destination',
   'log_export.tested': 'Tested a log destination', 'log_export.secret_rotated': 'Replaced a signing secret', 'log_export.dead_letter_retried': 'Resent undelivered records',
   'log_export.dead_letter_discarded': 'Discarded undelivered records',
+  'enforcement_path.state_changed': 'Changed how a path is locked', 'findings.uploaded': 'Uploaded a findings file', 'findings.deleted': 'Deleted a findings file',
+  'feed.created': 'Created an AI-domain feed', 'feed.updated': 'Changed an AI-domain feed', 'feed.token_rotated': 'Replaced a feed address', 'feed.revoked': 'Revoked an AI-domain feed',
+  'aws_lock.settings_saved': 'Saved the AWS lock settings', 'aws_lock.generated': 'Generated the AWS lock policies', 'metrics.reset': 'Reset usage counters',
   'sign_in.dashboard': 'Signed in to the dashboard', 'sign_in.api_key': 'API key refused', 'sign_in.mcp': 'Signed in for MCP servers',
   'sign_in.mcp_agent_allowed': 'Allowed an agent', 'sign_in.mcp_agent_refused': 'Refused an agent', 'sign_in.mcp_refresh_reused': 'Reused sign-in token (sign-in ended)',
   'sign_in.mcp_refresh': 'Company sign-in refused a renewal', 'sign_in.mcp_signed_out': 'Agent signed out',

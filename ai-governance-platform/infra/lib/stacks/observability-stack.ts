@@ -134,7 +134,8 @@ export class ObservabilityStack extends cdk.Stack {
     });
 
     // Glue Table for audit logs (JSON format in S3)
-    new glue.CfnTable(this, 'AuditLogsTable', {
+    // The table names its database by string, so CloudFormation needs the dependency spelled out.
+    const glueTable = new glue.CfnTable(this, 'AuditLogsTable', {
       catalogId: this.account,
       databaseName: `${prefix.replace(/-/g, '_')}_logs_${stage}`,
       tableInput: {
@@ -179,6 +180,7 @@ export class ObservabilityStack extends cdk.Stack {
     });
 
     glueDatabase.node.addDependency(auditLogBucket);
+    glueTable.addDependency(glueDatabase);
 
     new cdk.CfnOutput(this, 'DashboardUrl', {
       value: `https://${this.region}.console.aws.amazon.com/cloudwatch/home#dashboards:name=${prefix}-overview-${stage}`,

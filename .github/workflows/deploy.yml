@@ -58,7 +58,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: '${{ env.NODE_VERSION }}', cache: npm, cache-dependency-path: ai-governance-platform/package-lock.json }
       - run: npm ci
-      - run: npm run build -w shared/types -w shared/utils -w infra
+      - run: npm run build -w shared/catalog -w shared/types -w shared/utils -w infra
       - name: CDK bootstrap (idempotent)
         working-directory: ai-governance-platform/infra
         run: npx cdk bootstrap
@@ -155,7 +155,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: '${{ env.NODE_VERSION }}', cache: npm, cache-dependency-path: ai-governance-platform/package-lock.json }
       - run: npm ci
-      - run: npm run build -w shared/types -w shared/utils -w infra
+      - run: npm run build -w shared/catalog -w shared/types -w shared/utils -w infra
       - name: Internal service certificates (made once, kept in Secrets Manager)
         run: node scripts/internal-pki.mjs aws --prefix "$PREFIX" --stage "${{ inputs.stage }}" --region "$AWS_REGION"
       - name: CDK deploy all stacks
@@ -233,7 +233,7 @@ jobs:
             export VITE_API_URL="$WEBSITE_URL/api" VITE_DASHBOARD_URL="$DASHBOARD_URL"
           fi
           node scripts/check-build-env.mjs "$SITE"
-          npm run build -w shared/types -w shared/utils
+          npm run build -w shared/catalog -w shared/types -w shared/utils
           npm run build -w "frontend/$SITE"
       - name: Upload and refresh the CDN
         env:
@@ -260,7 +260,7 @@ jobs:
       - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
         with: { node-version: '${{ env.NODE_VERSION }}', cache: npm, cache-dependency-path: ai-governance-platform/package-lock.json }
       - run: npm ci
-      - run: npm run build -w shared/types -w shared/utils -w infra
+      - run: npm run build -w shared/catalog -w shared/types -w shared/utils -w infra
       - name: CDK destroy all stacks
         working-directory: ai-governance-platform/infra
         env:

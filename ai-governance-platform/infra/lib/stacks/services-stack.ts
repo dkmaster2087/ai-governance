@@ -77,7 +77,7 @@ export class ServicesStack extends cdk.Stack {
     const internalUrl = (name: string, port: number) => `https://${name}.${internalDomain}:${port}`;
     // Each service's certificate, made by scripts/internal-pki.mjs (run before deploying).
     const tlsSecrets = (name: string) => {
-      const secret = secretsmanager.Secret.fromSecretNameV2(this, `${name}Tls`, `${prefix}/${stage}/internal-tls/${name}`);
+      const secret = secretsmanager.Secret.fromSecretNameV2(this, `${name}Tls`, `${prefix}/${stage}/internal-tls/${name}/tls`);
       return {
         INTERNAL_TLS_CA: ecs.Secret.fromSecretsManager(secret, 'ca'),
         INTERNAL_TLS_CERT: ecs.Secret.fromSecretsManager(secret, 'cert'),
@@ -244,7 +244,8 @@ export class ServicesStack extends cdk.Stack {
         DATA_PROTECTION_URL: internalUrl('data-protection', 3002),
         ANALYTICS_URL: internalUrl('analytics', 3003),
         ALLOWED_ORIGINS: '', // None needed: browsers reach the gateway through CloudFront on the site's own address
-        ...(gatewayUrl ? { PUBLIC_GATEWAY_URL: gatewayUrl } : {}),
+        // Without a public address (dev stages), the load balancer's own: identity tokens and MCP sign-in name it.
+        PUBLIC_GATEWAY_URL: gatewayUrl ?? `http://${this.loadBalancer.loadBalancerDnsName}`,
         COGNITO_USER_POOL_ID: props.userPool.userPoolId,
         COGNITO_CLIENT_ID: props.userPoolClient.userPoolClientId,
         PROVIDER_KEYS_SECRET_PREFIX: providerKeysPrefix,
@@ -298,6 +299,8 @@ export class ServicesStack extends cdk.Stack {
     // The Enforcement page writes lock policies that allow only this role (e.g. on Bedrock).
     this.gatewayService.taskDefinition.defaultContainer?.addEnvironment('GATEWAY_ROLE_ARN', this.gatewayService.taskDefinition.taskRole.roleArn);
     auditLogsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
+    // Shared counters: per-key and MCP rate limits, alert windows, spend, and the daily key-rotation lock.
+    metricsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     if (emailFrom) {
       // Send only from this account's verified identities.
       this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({

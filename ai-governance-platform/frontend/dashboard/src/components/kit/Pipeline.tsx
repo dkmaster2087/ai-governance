@@ -69,7 +69,9 @@ export function Pipeline({ summary }: { summary: GatewaySummary }) {
       drop: { count: checks.personalData.cleaned, verb: 'cleaned, then sent', detail: 'personal data removed in place', kind: 'cleaned' },
     },
   ];
-  const lanes = [summary.received, afterPolicy, afterSecrets, summary.delivered];
+  // Everything that passed the checks was sent; some of it the provider refused or failed to answer.
+  const unanswered = summary.unanswered ?? 0;
+  const lanes = [summary.received, afterPolicy, afterSecrets, summary.delivered + unanswered];
 
   return (
     <div className="overflow-x-auto">
@@ -128,6 +130,9 @@ export function Pipeline({ summary }: { summary: GatewaySummary }) {
         ))}
         <div style={{ gridColumn: 9, gridRow: 1 }} className="pl-2">
           <List title="Delivered to" items={summary.providers} />
+          {unanswered > 0 && (
+            <p className="m-0 mt-2 text-xs text-ink-muted">{formatCount(unanswered)} sent but not answered: the provider refused or failed. See Evidence.</p>
+          )}
         </div>
       </div>
     </div>

@@ -29,6 +29,20 @@ export interface EvidenceListItem {
   user: string;
   model: string;
   reason?: string;
+  /** An agent's tool call through an MCP server (model is then mcp:<server>/<tool>). */
+  mcp?: { server: string; tool: string };
+  /** Sent, but the AI provider or the API refused or failed, so nothing came back. */
+  unanswered?: true;
+}
+
+/** True for an agent's MCP tool call rather than a prompt to a model. */
+export const isMcpCall = (l: AuditLog) => l.metadata?.kind === 'mcp_tool_call';
+
+/** Sent after the checks, but no answer came back (the provider or API refused or failed). */
+export function unanswered(l: AuditLog): boolean {
+  if (l.eventType === 'request_blocked') return false;
+  if (isMcpCall(l)) return !!l.metadata?.backendError || Number(l.metadata?.backendStatus ?? 0) >= 400;
+  return !!l.metadata?.providerError;
 }
 
 function toItem(l: AuditLog): EvidenceListItem {
@@ -40,6 +54,8 @@ function toItem(l: AuditLog): EvidenceListItem {
     user: l.userId || 'anonymous',
     model: l.modelId,
     ...(l.eventType === 'request_blocked' ? { reason: l.metadata?.policyReason || l.triggeredRules?.[l.triggeredRules.length - 1] || 'Blocked by policy' } : {}),
+    ...(isMcpCall(l) ? { mcp: { server: l.metadata?.mcpServer ?? 'an MCP server', tool: l.metadata?.mcpTool ?? 'a tool' } } : {}),
+    ...(unanswered(l) ? { unanswered: true as const } : {}),
   };
 }
 
@@ -184,22 +200,25 @@ export function buildEvidenceRecord(log: AuditLog, retentionDays: number, onHold
         ? { label: 'Personal data removed', detail: 'before the prompt left the company.', kind: 'cleaned' }
         : { label: 'No personal data found', detail: 'the prompt was sent as written.', kind: 'neutral' });
     }
-    steps.push({
-      label: `Delivered to ${provider}`,
-      detail: `${log.modelId} answered in ${log.latencyMs} ms using ${log.inputTokens + log.outputTokens} tokens.`,
-      kind: 'delivered',
-    });
+    steps.push(log.metadata?.providerError
+      ? { label: `Sent to ${provider}, not answered`, detail: `${provider} refused or failed: ${log.metadata.providerError}`, kind: 'skipped' }
+      : {
+        label: `Delivered to ${provider}`,
+        detail: `${log.modelId} answered in ${log.latencyMs} ms using ${log.inputTokens + log.outputTokens} tokens.`,
+        kind: 'delivered',
+      });
   }
 
   const headline =
     outcome === 'stopped' ? `A ${log.appId || 'request'} prompt was stopped and never reached ${provider}.`
     : outcome === 'cleaned' ? `A ${log.appId || 'request'} prompt was cleaned of ${log.piiDetected && secretsRedacted(log) ? 'secrets and personal data' : secretsRedacted(log) ? 'secrets' : 'personal data'}, then sent to ${provider}.`
     : `A ${log.appId || 'request'} prompt passed every check and was sent to ${provider}.`;
+  const unanswered = log.metadata?.providerError ? ` ${provider} didn’t answer.` : '';
 
   return {
     requestId: log.requestId,
     outcome,
-    headline,
+    headline: headline + unanswered,
     time: log.timestamp,
     app: log.appId || 'unknown',
     user: log.userId || 'anonymous',

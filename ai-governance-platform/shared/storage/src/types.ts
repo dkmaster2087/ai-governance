@@ -88,8 +88,11 @@ export type BackendKind = 'dynamodb' | 'postgres' | 'memory';
 export interface RecordStore {
   readonly kind: BackendKind;
   collection<T extends object = Item>(spec: CollectionSpec): Collection<T>;
-  /** Throws if the store can't be reached. Used by health checks. */
-  ping(): Promise<void>;
+  /**
+   * Throws if the store can't be reached. Used by health checks. Pass a collection the service can read: on
+   * DynamoDB that table is described, which the service's read permission covers.
+   */
+  ping(spec?: CollectionSpec): Promise<void>;
   close(): Promise<void>;
 }
 

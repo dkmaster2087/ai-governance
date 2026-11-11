@@ -50,7 +50,7 @@ jobs:
         run: npm ci
 
       - name: Build shared packages
-        run: npm run build -w shared/types -w shared/utils -w shared/storage
+        run: npm run build -w shared/catalog -w shared/types -w shared/utils -w shared/storage
 
       - name: Storage (memory and PostgreSQL)
         working-directory: ai-governance-platform/shared/storage
@@ -164,7 +164,7 @@ jobs:
         run: npm ci
 
       - name: Build shared packages
-        run: npm run build -w shared/types -w shared/utils -w shared/storage
+        run: npm run build -w shared/catalog -w shared/types -w shared/utils -w shared/storage
 
       - name: Build services and collector
         run: npm run build -w services/gateway -w services/policy-engine -w services/data-protection -w services/analytics -w services/reporting-agent -w collector -w connector

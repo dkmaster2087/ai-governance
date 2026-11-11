@@ -1,6 +1,6 @@
 import Fastify, { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { allPages, collection, records } from '@ai-governance/storage';
+import { allPages, collection, records, SPECS } from '@ai-governance/storage';
 import { AuditLog } from '@ai-governance/types';
 import { createLogger, INTERNAL_HEADER, InternalAuthError, InternalCaller, InternalTls, peerService, tlsServerOptions, TrustedKey, verifyInternal } from '@ai-governance/utils';
 import { isModelTraffic, queryAuditLogs } from './reports/audit-query';
@@ -92,7 +92,7 @@ export async function buildApp(opts: { trusted: TrustedKey[]; tls?: InternalTls 
 
   app.get('/health', async () => ({ status: 'healthy', service: 'analytics' }));
   app.get('/health/ready', async (_req, reply) => {
-    try { await records().ping(); return { status: 'ready' }; } catch (err) {
+    try { await records().ping(SPECS.auditLogs()); return { status: 'ready' }; } catch (err) {
       return reply.status(503).send({ status: 'degraded', error: (err as Error).message });
     }
   });

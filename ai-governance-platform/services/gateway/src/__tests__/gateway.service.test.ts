@@ -102,6 +102,17 @@ describe('GatewayService', () => {
     expect(mockAuditService.prototype.log).toHaveBeenCalledTimes(1);
   });
 
+  it('records a case file when the provider refuses, then passes the error on', async () => {
+    mockPolicyClient.prototype.evaluate.mockResolvedValue({ allowed: true, action: 'allow', triggeredRules: [], riskScore: 0 });
+    mockProviderRouter.prototype.route.mockRejectedValue(new Error('Provider bedrock: model is not available for this account'));
+
+    await expect(service.processRequest(mockRequest)).rejects.toThrow('not available');
+    expect(mockAuditService.prototype.log).toHaveBeenCalledTimes(1);
+    const [request, response] = mockAuditService.prototype.log.mock.calls[0];
+    expect(request.metadata?.providerError).toBe('Provider bedrock: model is not available for this account');
+    expect(response).toMatchObject({ content: '', outputTokens: 0, finishReason: 'error' });
+  });
+
   describe('each model\'s settings', () => {
     const allow = { allowed: true, action: 'allow' as const, triggeredRules: [], riskScore: 0 };
     const addModel = (extra: object) => collection('models').put({

@@ -11,7 +11,7 @@
  *
  *   node scripts/internal-pki.mjs aws --prefix ai-gov --stage prod [--region us-east-1] [--renew]
  *       AWS: keep the CA and each service's certificate in Secrets Manager as
- *       <prefix>/<stage>/internal-tls/<service> = {"ca","cert","key"}. Run before `cdk deploy`; existing
+ *       <prefix>/<stage>/internal-tls/<service>/tls = {"ca","cert","key"}. Run before `cdk deploy`; existing
  *       secrets are kept. --renew issues new service certificates from the same CA (then redeploy).
  *
  * Service certificates last 397 days; the CA 10 years.
@@ -78,11 +78,14 @@ function aws(flags) {
     // Services find each other at <service>.<prefix>-<stage>.internal (Cloud Map, set up by CDK).
     const namespace = `${prefix}-${stage}.internal`;
     for (const s of SERVICES) {
-      const existing = get(`${base}/${s}`);
+      // `/tls` at the end: a name ending in a hyphen and six characters (policy-engine) is taken by Secrets
+      // Manager as carrying its random suffix, and ECS then can't fetch it.
+      const name = `${base}/${s}/tls`;
+      const existing = get(name);
       if (existing && !flags.renew) continue;
       makeCert(work, s, [`${s}.${namespace}`]);
-      put(`${base}/${s}`, { ca: caPem, cert: fs.readFileSync(path.join(work, `${s}.pem`), 'utf8'), key: fs.readFileSync(path.join(work, `${s}.key`), 'utf8') }, !!existing);
-      console.log(`${existing ? 'Renewed' : 'Created'} ${base}/${s}`);
+      put(name, { ca: caPem, cert: fs.readFileSync(path.join(work, `${s}.pem`), 'utf8'), key: fs.readFileSync(path.join(work, `${s}.key`), 'utf8') }, !!existing);
+      console.log(`${existing ? 'Renewed' : 'Created'} ${name}`);
     }
   } finally {
     fs.rmSync(work, { recursive: true, force: true });

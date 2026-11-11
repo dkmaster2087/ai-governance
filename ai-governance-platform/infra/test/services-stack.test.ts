@@ -37,6 +37,32 @@ describe('ServicesStack', () => {
     expect(JSON.stringify(gw.Environment.find((e: any) => e.Name === 'GATEWAY_EGRESS_IPS').Value)).toContain('EIP');
   });
 
+  it('names TLS secrets so Secrets Manager never mistakes the end of the name for its random suffix', () => {
+    // ECS fetches secrets CDK knows only by name; a name ending in "-" and six characters ("policy-engine")
+    // is read as name "policy" plus a suffix, and the fetch is refused.
+    const defs = Object.values(template.findResources('AWS::ECS::TaskDefinition')) as any[];
+    const refs = JSON.stringify(defs.map((d) => d.Properties.ContainerDefinitions[0].Secrets));
+    for (const name of ['policy-engine', 'data-protection', 'analytics', 'gateway']) expect(refs).toContain(`internal-tls/${name}/tls`);
+    expect(refs).not.toMatch(/internal-tls\/[a-z-]*-[A-Za-z0-9]{6}:/);
+  });
+
+  it('lets the gateway write the shared counters (rate limits, alerts, key rotation) in the metrics table', () => {
+    // CDK moves overflow statements into managed policies once the role's inline policy is full.
+    const policies = [...Object.values(template.findResources('AWS::IAM::Policy')), ...Object.values(template.findResources('AWS::IAM::ManagedPolicy'))] as any[];
+    const gateway = policies.filter((p) => JSON.stringify(p.Properties.Roles).includes('GatewayTaskDefTaskRole'));
+    const statements = gateway.flatMap((p) => p.Properties.PolicyDocument.Statement);
+    const onMetrics = statements.filter((s: any) => JSON.stringify(s.Resource).includes('MetricsTable'));
+    expect(JSON.stringify(onMetrics.map((s: any) => s.Action))).toContain('dynamodb:UpdateItem');
+  });
+
+  it('gives the gateway a public address even without -c gatewayUrl (the load balancer), never localhost', () => {
+    const defs = Object.values(template.findResources('AWS::ECS::TaskDefinition')) as any[];
+    const gw = defs.map((d) => d.Properties.ContainerDefinitions[0]).find((c: any) => c.Name === 'GatewayContainer');
+    const url = gw.Environment.find((e: any) => e.Name === 'PUBLIC_GATEWAY_URL');
+    expect(url).toBeDefined();
+    expect(JSON.stringify(url.Value)).not.toContain('localhost');
+  });
+
   it('runs four services, each on the image built from this commit', () => {
     template.resourceCountIs('AWS::ECS::Service', 4);
     template.resourceCountIs('AWS::ECR::Repository', 0); // they live in the registry stack, created first

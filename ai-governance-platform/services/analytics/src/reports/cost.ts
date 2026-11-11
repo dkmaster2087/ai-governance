@@ -1,3 +1,4 @@
+import { isMcpCall } from './evidence';
 import { AuditLog } from '@ai-governance/types';
 
 /** Spend views over a company's model traffic (estimated from tokens and each model's prices). */
@@ -64,7 +65,8 @@ export function ruleActivity(logs: AuditLog[]) {
       stopped: logs.filter((l) => l.eventType === 'request_blocked' && l.metadata?.check === 'secrets').length,
       redacted: logs.filter((l) => l.eventType !== 'request_blocked' && l.metadata?.secretsRedacted).length,
     },
-    cleaned: logs.filter((l) => l.eventType !== 'request_blocked' && l.piiDetected).length,
+    // Personal data removed from prompts (check 3 on the Rules page); MCP results cleaned for agents aren't prompts.
+    cleaned: logs.filter((l) => l.eventType !== 'request_blocked' && l.piiDetected && !isMcpCall(l)).length,
   };
 }
 

@@ -10,7 +10,10 @@ export interface GatewaySummary {
   received: number;
   stopped: number;
   cleaned: number;
+  /** Sent and answered. */
   delivered: number;
+  /** Sent after the checks, but the provider refused or failed (older gateways leave it out). */
+  unanswered?: number;
   sources: Array<{ name: string; count: number }>;
   checks: {
     policy: { stopped: number };
@@ -27,6 +30,8 @@ export interface GatewaySummary {
     user: string;
     model: string;
     reason?: string;
+    /** Sent after the checks, but the provider refused or failed. */
+    unanswered?: true;
   }>;
   shadowAi: { people: number; visits: number };
 }

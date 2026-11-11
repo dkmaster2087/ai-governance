@@ -3,6 +3,7 @@ import { useQuery } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { fetchGatewaySummary, GatewaySummary, RangeKey, RANGE_LABELS } from '../lib/gateway-api';
+import { describeDecision, TONE_CLASS } from '../lib/decisions';
 import { Pipeline } from '../components/kit/Pipeline';
 import { ArrowLink, ButtonLink, Note, Panel, SectionLabel, Segmented, formatCount } from '../components/kit/primitives';
 
@@ -69,18 +70,6 @@ function decisionsFrom(summary: GatewaySummary): Decision[] {
     });
   }
   return out;
-}
-
-const OUTCOME_STYLE = {
-  stopped: { verb: 'Stopped', className: 'text-stop' },
-  cleaned: { verb: 'Cleaned', className: 'text-ink' },
-  delivered: { verb: 'Delivered', className: 'text-ink-muted' },
-} as const;
-
-function sentence(e: GatewaySummary['recent'][number]): string {
-  if (e.outcome === 'stopped') return `a ${e.app} request to ${e.model}: ${e.reason ?? 'blocked by policy'}.`;
-  if (e.outcome === 'cleaned') return `personal data from a ${e.app} prompt, then sent it to ${e.model}.`;
-  return `a ${e.app} request to ${e.model} with no findings.`;
 }
 
 function timeOf(iso: string): string {
@@ -176,12 +165,12 @@ export function GatewayPage() {
                   <ArrowLink to="/evidence">Evidence log</ArrowLink>
                 </div>
                 {data.recent.map((e, i) => {
-                  const style = OUTCOME_STYLE[e.outcome];
+                  const line = describeDecision(e);
                   return (
                     <div key={i} className="grid grid-cols-[84px_1fr] gap-3 py-[11px] border-b border-line-subtle last:border-b-0">
                       <span className="font-mono text-xs text-ink-muted pt-0.5">{timeOf(e.time)}</span>
                       <span>
-                        <span className={clsx('font-bold', style.className)}>{style.verb}</span> {sentence(e)}
+                        <span className={clsx('font-bold', TONE_CLASS[line.tone])}>{line.verb}</span> {line.text}
                         <span className="block text-xs text-ink-muted">{e.user}</span>
                       </span>
                     </div>

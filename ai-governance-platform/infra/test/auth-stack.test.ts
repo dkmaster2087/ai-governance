@@ -47,6 +47,13 @@ describe('AuthStack', () => {
     template.resourceCountIs('AWS::Cognito::UserPoolClient', 1);
   });
 
+  it('lets the client write every required attribute (Cognito refuses the client otherwise), but not company or role', () => {
+    const client = Object.values(template.findResources('AWS::Cognito::UserPoolClient'))[0] as any;
+    const writes: string[] = client.Properties.WriteAttributes;
+    expect(writes).toEqual(expect.arrayContaining(['email', 'given_name', 'family_name']));
+    expect(writes.some((w) => w.startsWith('custom:'))).toBe(false);
+  });
+
   it('self sign-up is disabled', () => {
     template.hasResourceProperties('AWS::Cognito::UserPool', {
       AdminCreateUserConfig: { AllowAdminCreateUserOnly: true },

@@ -35,7 +35,7 @@ const renderPage = (url = '/evidence') => render(
 describe('Evidence page', () => {
   it('lists decisions as sentences', async () => {
     renderPage();
-    expect(await screen.findByText(/a billing-api request: Block confidential keywords\./)).toBeInTheDocument();
+    expect(await screen.findByText(/a billing-api request to gpt-4o: Block confidential keywords\./)).toBeInTheDocument();
     expect(screen.getByText('2 records')).toBeInTheDocument();
   });
 

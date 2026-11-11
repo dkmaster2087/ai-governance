@@ -45,12 +45,14 @@ export const PROVIDER_LABEL: Record<string, string> = {
 
 /** Suggestions only; any model ID the provider accepts works. */
 export const MODEL_SUGGESTIONS: Record<ModelProvider, string[]> = {
+  // Any model Bedrock hosts works (the gateway uses Bedrock's Converse API). Cross-region inference profiles
+  // (us.…) are what most accounts have access to; the account must have the model enabled in Bedrock.
   bedrock: [
-    'anthropic.claude-3-5-sonnet-20241022-v2:0',
-    'anthropic.claude-3-haiku-20240307-v1:0',
-    'amazon.titan-text-express-v1',
-    'meta.llama3-70b-instruct-v1:0',
-    'mistral.mistral-large-2402-v1:0',
+    'us.anthropic.claude-sonnet-5',
+    'us.anthropic.claude-fable-5',
+    'us.amazon.nova-2-lite-v1:0',
+    'us.amazon.nova-micro-v1:0',
+    'us.amazon.nova-premier-v1:0',
   ],
   openai: ['gpt-4o', 'gpt-4o-mini', 'gpt-4-turbo', 'o3-mini'],
 };

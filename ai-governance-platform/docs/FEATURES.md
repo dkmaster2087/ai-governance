@@ -22,8 +22,8 @@ to let requests through instead; those are flagged in their evidence record.
 
 ## How traffic arrives
 
-- **Apps:** OpenAI-compatible `POST /v1/chat/completions` with a Probaline API key. Providers: Amazon Bedrock and
-  OpenAI-compatible APIs. `stream: true` returns OpenAI-format server-sent events; personal data in the answer is
+- **Apps:** OpenAI-compatible `POST /v1/chat/completions` with a Probaline API key. Providers: any model on Amazon
+  Bedrock (Claude, Amazon Nova, Llama, Mistral and others, through Bedrock's Converse API) and OpenAI-compatible APIs. `stream: true` returns OpenAI-format server-sent events; personal data in the answer is
   masked as it streams, and the case file is written when the stream ends (also if the app disconnects).
 - **IDEs (beta):** the corporate proxy sends provider calls to `/v1/proxy/{openai|anthropic|cohere|mistral}/…`
   with an `X-Probaline-Key` header; the developer's own provider key passes through untouched.

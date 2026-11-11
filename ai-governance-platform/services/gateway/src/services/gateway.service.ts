@@ -128,6 +128,13 @@ export class GatewayService {
     return { requestId, normalizedRequest: afterSecrets, protectedRequest, policyResult, degraded };
   }
 
+  /** Case file for a request the provider refused or couldn't answer. */
+  private async recordFailure(prep: Awaited<ReturnType<GatewayService['prepare']>>, err: unknown, latencyMs: number) {
+    const reason = ((err as Error)?.message ?? 'no answer').replace(/\s+/g, ' ').slice(0, 200);
+    const empty: NormalizedAIResponse = { requestId: prep.requestId, provider: prep.protectedRequest.provider, modelId: prep.protectedRequest.modelId, content: '', inputTokens: 0, outputTokens: 0, latencyMs, finishReason: 'error', timestamp: new Date().toISOString() };
+    await this.record(prep, empty, latencyMs, { providerError: reason });
+  }
+
   /** Audit record for a completed (or abandoned) request. */
   private async record(prep: Awaited<ReturnType<GatewayService['prepare']>>, response: NormalizedAIResponse, latencyMs: number, extra: Record<string, string> = {}) {
     const { normalizedRequest, policyResult, degraded } = prep;
@@ -143,7 +150,14 @@ export class GatewayService {
     const prep = await this.prepare(input);
 
     const startTime = Date.now();
-    const response = await this.providerRouter.route(prep.protectedRequest);
+    let response: NormalizedAIResponse;
+    try {
+      response = await this.providerRouter.route(prep.protectedRequest);
+    } catch (err) {
+      // The prompt left for the provider (after the checks), so it still gets a case file, marked unanswered.
+      await this.recordFailure(prep, err, Date.now() - startTime);
+      throw err;
+    }
     const latencyMs = Date.now() - startTime;
 
     // Scan the response for PII leakage (in-process)

@@ -1,5 +1,5 @@
 import { AuditLog } from '@ai-governance/types';
-import { outcomeOf, secretsRedacted } from './evidence';
+import { outcomeOf, secretsRedacted, unanswered } from './evidence';
 
 /** What happened to AI traffic in a time range, shaped for the dashboard's pipeline view. */
 export interface GatewaySummary {
@@ -10,7 +10,10 @@ export interface GatewaySummary {
   received: number;
   stopped: number;
   cleaned: number;
+  /** Sent and answered. */
   delivered: number;
+  /** Sent after the checks, but the provider refused or failed. */
+  unanswered: number;
   sources: Array<{ name: string; count: number }>;
   checks: {
     policy: { stopped: number };
@@ -29,6 +32,7 @@ export interface GatewaySummary {
     user: string;
     model: string;
     reason?: string;
+    unanswered?: true;
   }>;
   shadowAi: { people: number; visits: number };
 }
@@ -66,10 +70,12 @@ export function summarizeGatewayTraffic(
   secretsActive = true
 ): GatewaySummary {
   const stoppedLogs = logs.filter(isStopped);
-  const deliveredLogs = logs.filter((l) => !isStopped(l));
-  const cleaned = deliveredLogs.filter((l) => outcomeOf(l) === 'cleaned').length;
-  const personalDataCleaned = deliveredLogs.filter((l) => l.piiDetected).length;
-  const secretsRedactedCount = deliveredLogs.filter(secretsRedacted).length;
+  const sentLogs = logs.filter((l) => !isStopped(l));
+  const deliveredLogs = sentLogs.filter((l) => !unanswered(l));
+  // The checks ran on everything sent, answered or not.
+  const cleaned = sentLogs.filter((l) => outcomeOf(l) === 'cleaned').length;
+  const personalDataCleaned = sentLogs.filter((l) => l.piiDetected).length;
+  const secretsRedactedCount = sentLogs.filter(secretsRedacted).length;
   const secretsStopped = stoppedLogs.filter((l) => l.metadata?.check === 'secrets').length;
   const policyStopped = stoppedLogs.length - secretsStopped;
 
@@ -89,6 +95,7 @@ export function summarizeGatewayTraffic(
       user: l.userId || 'anonymous',
       model: l.modelId,
       ...(isStopped(l) ? { reason: stopReason(l) } : {}),
+      ...(unanswered(l) ? { unanswered: true as const } : {}),
     }));
 
   return {
@@ -99,6 +106,7 @@ export function summarizeGatewayTraffic(
     stopped: stoppedLogs.length,
     cleaned,
     delivered: deliveredLogs.length,
+    unanswered: sentLogs.length - deliveredLogs.length,
     sources,
     checks: {
       policy: { stopped: policyStopped },

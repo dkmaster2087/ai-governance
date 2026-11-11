@@ -29,6 +29,13 @@ describe('evidence record', () => {
     expect(r.steps[4].detail).toBe('gpt-4o answered in 412 ms using 30 tokens.');
   });
 
+  it('says when the provider didn’t answer, after the prompt was cleaned and sent', () => {
+    const r = buildEvidenceRecord(log({ piiDetected: true, inputTokens: 0, outputTokens: 0, responseHash: '', metadata: { providerError: 'Provider openai: quota exceeded' } }), 90);
+    expect(r.outcome).toBe('cleaned');
+    expect(r.headline).toBe('A billing-api prompt was cleaned of personal data, then sent to OpenAI. OpenAI didn’t answer.');
+    expect(r.steps[4]).toEqual({ label: 'Sent to OpenAI, not answered', detail: 'OpenAI refused or failed: Provider openai: quota exceeded', kind: 'skipped' });
+  });
+
   it('is explicit when a check was skipped because it was down', () => {
     const r = buildEvidenceRecord(log({ metadata: { governanceDegraded: 'policy_evaluation' } }), 90);
     expect(r.steps[1]).toMatchObject({ label: 'Policy rules skipped', kind: 'skipped' });
@@ -84,5 +91,33 @@ describe('evidence list', () => {
     expect(page.items).toHaveLength(2);
     expect(page.nextOffset).toBe(2);
     expect(listEvidence(logs, { limit: 2, offset: 2 }).nextOffset).toBeNull();
+  });
+});
+
+describe('what lists and counts say about unanswered requests and agents', () => {
+  const { summarizeGatewayTraffic } = jest.requireActual('../reports/gateway-summary');
+  const { ruleActivity } = jest.requireActual('../reports/cost');
+  const range = { from: '2026-10-27T00:00:00.000Z', to: '2026-10-28T00:00:00.000Z' };
+  const refused = log({ requestId: 'r', piiDetected: true, metadata: { providerError: 'Provider bedrock: not available' } });
+  const answered = log({ requestId: 'a' });
+  const mcp = log({ requestId: 'm', piiDetected: true, modelId: 'mcp:people/getPerson', metadata: { kind: 'mcp_tool_call', mcpServer: 'people', mcpTool: 'getPerson', backendStatus: '200' } });
+
+  it('marks refused requests and agents’ calls in the list', () => {
+    const items = listEvidence([refused, answered, mcp], {}).items;
+    expect(items.find((i) => i.requestId === 'r')).toMatchObject({ unanswered: true, outcome: 'cleaned' });
+    expect(items.find((i) => i.requestId === 'a')?.unanswered).toBeUndefined();
+    expect(items.find((i) => i.requestId === 'm')).toMatchObject({ mcp: { server: 'people', tool: 'getPerson' } });
+  });
+
+  it('counts a refused request as sent and checked, but not delivered', () => {
+    const s = summarizeGatewayTraffic([refused, answered], range);
+    expect(s).toMatchObject({ received: 2, delivered: 1, unanswered: 1, cleaned: 1 });
+    expect(s.checks.personalData.cleaned).toBe(1);
+    expect(s.providers).toEqual([{ name: 'OpenAI', count: 1 }]);
+    expect(s.recent.find((e: { unanswered?: true }) => e.unanswered)).toBeDefined();
+  });
+
+  it('counts personal data removed from prompts on the Rules page, not from agents’ results', () => {
+    expect(ruleActivity([refused, answered, mcp]).cleaned).toBe(1);
   });
 });

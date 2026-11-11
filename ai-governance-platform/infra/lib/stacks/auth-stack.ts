@@ -74,8 +74,10 @@ export class AuthStack extends cdk.Stack {
       readAttributes: new cognito.ClientAttributes()
         .withStandardAttributes({ email: true, emailVerified: true, givenName: true, familyName: true })
         .withCustomAttributes('tenantId', 'role', 'deploymentMode'),
+      // Cognito requires every required attribute to be writable; a new email is verified before it's used.
+      // Company and role (custom attributes) stay read-only.
       writeAttributes: new cognito.ClientAttributes()
-        .withStandardAttributes({ givenName: true, familyName: true }),
+        .withStandardAttributes({ email: true, givenName: true, familyName: true }),
       accessTokenValidity: cdk.Duration.hours(1),
       idTokenValidity: cdk.Duration.hours(1),
       refreshTokenValidity: cdk.Duration.days(30),

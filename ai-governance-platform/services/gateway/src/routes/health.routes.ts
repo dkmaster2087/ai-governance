@@ -1,6 +1,6 @@
 import { FastifyInstance } from 'fastify';
 import axios from 'axios';
-import { records } from '@ai-governance/storage';
+import { records, SPECS } from '@ai-governance/storage';
 import { analyticsClient } from '../clients/analytics.client';
 import { internalHttpsAgent } from '../clients/internal';
 
@@ -26,7 +26,7 @@ async function checkDependency(name: string, fn: () => Promise<void>): Promise<D
 export async function healthRoutes(app: FastifyInstance) {
   // The record store's name in health output: dynamodb, postgres or memory.
   const storeName = () => records().kind;
-  const pingStore = () => records().ping();
+  const pingStore = () => records().ping(SPECS.tenants());
 
   /** Liveness probe — is the process alive? */
   app.get('/', async () => ({

@@ -5,6 +5,7 @@ import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { RangeKey, RANGE_LABELS } from '../lib/gateway-api';
 import { downloadEvidence, EvidenceListItem, EvidenceRecord, fetchEvidence, fetchEvidenceRecord, Outcome } from '../lib/evidence-api';
+import { describeDecision, TONE_CLASS } from '../lib/decisions';
 import { Button, Note, Panel, SectionLabel, Segmented } from '../components/kit/primitives';
 
 const RANGE_OPTIONS = (Object.keys(RANGE_LABELS) as RangeKey[]).map((value) => ({ value, label: RANGE_LABELS[value].button }));
@@ -14,18 +15,6 @@ const OUTCOMES: Array<{ value: Outcome | 'all'; label: string }> = [
   { value: 'cleaned', label: 'Cleaned' },
   { value: 'delivered', label: 'Delivered' },
 ];
-
-const VERB: Record<Outcome, { word: string; className: string }> = {
-  stopped: { word: 'Stopped', className: 'text-stop' },
-  cleaned: { word: 'Cleaned', className: 'text-ink' },
-  delivered: { word: 'Delivered', className: 'text-ink-muted' },
-};
-
-function rowSentence(i: EvidenceListItem): string {
-  if (i.outcome === 'stopped') return `a ${i.app} request: ${i.reason ?? 'blocked by policy'}.`;
-  if (i.outcome === 'cleaned') return `personal data from a ${i.app} prompt, then sent it to ${i.model}.`;
-  return `a ${i.app} request to ${i.model} with no findings.`;
-}
 
 function shortTime(iso: string): string {
   const d = new Date(iso);
@@ -185,14 +174,14 @@ export function EvidencePage() {
               <ul className="m-0 p-0 list-none">
                 {items.map((i) => {
                   const active = i.requestId === current;
-                  const verb = VERB[i.outcome];
+                  const line = describeDecision(i);
                   return (
                     <li key={i.requestId} className="border-b border-line-subtle last:border-b-0">
                       <button type="button" aria-current={active ? 'true' : undefined} onClick={() => update({ id: i.requestId })}
                         className={clsx('w-full text-left grid grid-cols-[72px_1fr] gap-3 px-[18px] py-3.5', active ? 'bg-ink-tint shadow-[inset_3px_0_0_#14213D]' : 'hover:bg-canvas')}>
                         <span className="font-mono text-xs text-ink-muted pt-0.5">{shortTime(i.time)}</span>
                         <span>
-                          <span className={clsx('font-bold', verb.className)}>{verb.word}</span> {rowSentence(i)}
+                          <span className={clsx('font-bold', TONE_CLASS[line.tone])}>{line.verb}</span> {line.text}
                           <span className="block text-xs text-ink-muted">{i.user} · {i.model}</span>
                         </span>
                       </button>

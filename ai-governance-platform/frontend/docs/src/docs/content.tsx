@@ -88,7 +88,7 @@ export const DOCS: DocPage[] = [
         <H2>1. Create an API key</H2>
         <P>In the dashboard, open <strong>More → API keys</strong> and create a key with the <C>chat</C> permission. Copy it: it’s shown once.</P>
         <H2>2. Add a model</H2>
-        <P>Open <strong>More → Models &amp; keys</strong> and add the models your apps use, from Amazon Bedrock or OpenAI. For OpenAI, paste your API key; it’s stored encrypted (AWS Secrets Manager, or your database on a self-hosted install). Bedrock models use the gateway’s AWS role and need no key. To refuse every other model, add an <strong>Approved models</strong> rule.</P>
+        <P>Open <strong>More → Models &amp; keys</strong> and add the models your apps use, from Amazon Bedrock or OpenAI. For OpenAI, paste your API key; it’s stored encrypted (AWS Secrets Manager, or your database on a self-hosted install). Bedrock models use the gateway’s AWS role and need no key; any model Bedrock hosts works (Claude, Amazon Nova, Llama, Mistral), as long as it’s enabled for your AWS account in Bedrock. Use the model or inference profile ID Bedrock shows, such as <C>us.amazon.nova-micro-v1:0</C>. To refuse every other model, add an <strong>Approved models</strong> rule.</P>
         <P>On each model you can also set the <strong>longest answer</strong> an app may ask for (larger requests are capped to it, so one request can’t run up the bill) and <strong>which API keys may use it</strong>. Other keys are refused with <C>MODEL_NOT_ALLOWED</C>, and the refusal is recorded in Evidence.</P>
         <H2>3. Point your app at the gateway</H2>
         <P>The gateway speaks the OpenAI chat completions format. Change the base URL and use your Probaline key:</P>

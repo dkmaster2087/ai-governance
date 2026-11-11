@@ -198,8 +198,14 @@ export class DynamoStore implements RecordStore {
     return new DynamoCollection<T>(spec, this.db);
   }
 
-  async ping() {
-    // Any request proves the endpoint and credentials work; a missing table still answers.
+  async ping(spec?: CollectionSpec) {
+    // Describing a table the service uses proves the endpoint, the credentials and that table, with only the
+    // permissions the service already has (listing tables would need access to every table in the account).
+    if (spec) {
+      const { DescribeTableCommand } = await import('@aws-sdk/client-dynamodb');
+      await this.db.send(new DescribeTableCommand({ TableName: spec.table }) as never);
+      return;
+    }
     const { ListTablesCommand } = await import('@aws-sdk/client-dynamodb');
     await this.db.send(new ListTablesCommand({ Limit: 1 }) as never);
   }

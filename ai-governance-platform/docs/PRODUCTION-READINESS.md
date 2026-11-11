@@ -203,3 +203,54 @@ the catalog; the feeds route records the caller's real address (B7); API key sco
 page's AWS pieces were missing from the stacks and are added: the `enforcement` table (with point-in-time
 recovery), and the gateway's `ENFORCEMENT_TABLE`, `GATEWAY_EGRESS_IPS` (the NAT gateways' addresses, filled in
 automatically) and `GATEWAY_ROLE_ARN`. Still to check on the first deploy.
+
+## First AWS deploy: dev stage (2026-11-10)
+
+All seven stacks deployed to a `dev` stage (us-east-1) from images built on a laptop, reached over the load
+balancer's AWS address (HTTP) and CloudFront's addresses for the sites. Verified: the gateway answers through
+the load balancer and through each site's `/api`; it reaches DynamoDB and the three internal services over mutual
+TLS (`/health/deep` all healthy); unknown or missing keys are refused; the sites serve with HSTS, frame and
+referrer headers; and the gateway logs the caller's real address whether the request comes straight to the load
+balancer or through CloudFront (B7), ignoring a faked `X-Forwarded-For` either way.
+
+Bugs only a real deploy could find, fixed:
+
+| What failed | Why | Fix |
+|---|---|---|
+| Sign-in stack | Cognito requires the app client to be allowed to write every required attribute (email) | Email added to the client's write attributes; company and role stay read-only. Test added. |
+| Policy engine never started | Its TLS secret `…/internal-tls/policy-engine` ends in a hyphen and six letters, which Secrets Manager reads as the random suffix of a secret named `…/policy`, so ECS's fetch was refused | Service certificates are kept as `…/internal-tls/<service>/tls` (`scripts/internal-pki.mjs`). Test guards the naming. |
+| Monitoring stack | The Glue table named its database by string, so CloudFormation created it first | Explicit dependency. Test added. |
+| Health checks reported the database down | `ListTables` needs access to every table in the account | The check describes one table the service already reads. |
+| Deploy workflow would fail | `shared/types` now needs `shared/catalog` built first | Workflows build the catalog first. |
+
+### Live test on the dev stage (2026-11-11)
+
+Signed in as the platform admin, created a company (its admin invited by Cognito email), added a rule, a model
+and an API key, then sent prompts and MCP calls through CloudFront and the load balancer.
+
+Worked: dashboard sign-in; company creation and the admin invite; a rule stops a prompt (`403`) with a full
+case file and highlighted excerpt; personal data masked before the prompt left (Comprehend in AWS); the activity
+trail records each admin change with the person's real address; MCP tools list, a tool call reaches a public
+API with a signed identity token, the result comes back filtered (email, URL, IP masked), and bad arguments are
+refused before the API is called; MCP refuses calls from browser pages.
+
+Bugs found and fixed:
+
+| What failed | Why | Fix |
+|---|---|---|
+| Per-key and MCP rate limits, alert counters and the key-rotation lock silently off | The gateway's role had no access to the `metrics` table (LocalStack doesn't check permissions) | Read/write granted; test checks it, including CDK's overflow managed policies |
+| No case file when the AI provider refused or failed | The audit record was written only after an answer | A case file marked "not answered" with the provider's reason; the prompt did leave, after the checks |
+| Identity tokens on dev named `http://localhost:3000` as issuer | No public address set without `-c gatewayUrl` | Defaults to the load balancer's address |
+
+Answered prompts: the Bedrock connector spoke only Claude's format, so Amazon Nova, Llama and Mistral couldn't
+be used (and this account can't call Claude yet: Claude 3 Haiku is retired, current Claude models need AWS to
+enable them). It now uses Bedrock's Converse API, so any Bedrock model works, with system instructions,
+streaming and token counts; Bedrock's stop reasons are reported as OpenAI's (`stop`, `length`,
+`content_filter`). Tested live with Amazon Nova Micro: a clean prompt, a prompt with personal data (masked
+before it left; the answer never saw the email or phone number) and a streamed answer, each with a full case file
+(model, time, tokens). The dashboard suggests current Bedrock model IDs instead of retired ones.
+
+Found, not fixed yet: the web firewall has no SQL-injection rule set (`AWSManagedRulesSQLiRuleSet`); no
+data store is SQL, but buyers will look for it. Not yet tried on the deployed stage: dashboard sign-in (needs the
+first platform admin), an AI request with a real key, MCP, alerts by email (no SES sender yet), the restore test
+and the load test.
