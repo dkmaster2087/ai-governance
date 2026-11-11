@@ -37,4 +37,9 @@ export interface TenantSettings {
    * 'block' (default) stops the request; 'redact' replaces the secret and sends the rest; 'off' skips the check.
    */
   secretsAction?: 'block' | 'redact' | 'off';
+  /**
+   * Text that tries to take over the AI ("ignore your instructions"), typed or hidden in pasted content (Beta).
+   * 'off' (default) skips the check; 'flag' records it in Evidence and sends the prompt; 'block' stops strong matches.
+   */
+  promptAttackAction?: 'off' | 'flag' | 'block';
 }

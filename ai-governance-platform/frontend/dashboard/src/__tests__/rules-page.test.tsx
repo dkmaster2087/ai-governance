@@ -5,7 +5,8 @@ import { vi } from 'vitest';
 import type { RulesResponse } from '../lib/rules-api';
 
 const data: RulesResponse = {
-  from: '', to: '', failMode: 'closed', secrets: { action: 'block', stopped: 4, redacted: 0 }, cleaned: 31, piiTypes: ['EMAIL', 'SSN'],
+  from: '', to: '', failMode: 'closed', secrets: { action: 'block', stopped: 4, redacted: 0 }, cleaned: 31,
+  promptAttacks: { action: 'off', bedrock: true, stopped: 0, flagged: 0 }, piiTypes: ['EMAIL', 'SSN'],
   rules: [
     { ruleId: 'r_kw', policyId: 'p1', policyName: 'Default', type: 'keyword_block', action: 'block', description: 'Block confidential keywords',
       config: { keywords: ['confidential', 'top secret'] }, enabled: true, policyEnabled: true, effect: 'stops', stopped: 25, flagged: 0 },
@@ -20,6 +21,7 @@ const addRule = vi.fn(async (..._args: unknown[]) => ({}));
 const setSecretsAction = vi.fn(async (..._args: unknown[]) => ({}));
 const deleteRule = vi.fn(async (..._args: unknown[]) => ({}));
 const setFailMode = vi.fn(async (..._args: unknown[]) => ({}));
+const setPromptAttackAction = vi.fn(async (..._args: unknown[]) => ({}));
 vi.mock('../lib/rules-api', async (orig) => ({
   ...(await orig<typeof import('../lib/rules-api')>()),
   fetchRules: vi.fn(async () => data),
@@ -28,6 +30,7 @@ vi.mock('../lib/rules-api', async (orig) => ({
   deleteRule: (...a: unknown[]) => deleteRule(...a),
   setFailMode: (...a: unknown[]) => setFailMode(...a),
   setSecretsAction: (...a: unknown[]) => setSecretsAction(...a),
+  setPromptAttackAction: (...a: unknown[]) => setPromptAttackAction(...a),
 }));
 vi.mock('../lib/auth', () => ({ useAuth: () => ({ user: { tenantId: 't' }, isAdmin: true }) }));
 
@@ -132,5 +135,16 @@ describe('Rules page', () => {
     fireEvent.click(within(check).getByRole('button', { name: 'Turn off' }));
     await waitFor(() => expect(setSecretsAction).toHaveBeenCalled());
     expect(setSecretsAction.mock.calls[0][0]).toBe('off');
+  });
+
+  it('offers prompt attacks as a fourth check, off until turned on, starting with Flag', async () => {
+    renderPage();
+    const check = await screen.findByRole('region', { name: 'Check 4, prompt attacks' });
+    expect(within(check).getByText(/Off\. Prompts are not checked/)).toBeInTheDocument();
+    expect(within(check).getByText('Beta')).toBeInTheDocument();
+    expect(within(check).getByText(/start with Flag and review Evidence/)).toBeInTheDocument();
+    fireEvent.click(within(check).getByRole('button', { name: 'Flag, then send' }));
+    await waitFor(() => expect(setPromptAttackAction).toHaveBeenCalled());
+    expect(setPromptAttackAction.mock.calls[0][0]).toBe('flag');
   });
 });

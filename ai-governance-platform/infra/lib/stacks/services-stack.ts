@@ -10,6 +10,7 @@ import * as logs from 'aws-cdk-lib/aws-logs';
 import * as iam from 'aws-cdk-lib/aws-iam';
 import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import * as kms from 'aws-cdk-lib/aws-kms';
+import * as bedrock from 'aws-cdk-lib/aws-bedrock';
 import { Construct } from 'constructs';
 import type { ServiceName } from './registry-stack';
 import { GatewayFirewall } from '../constructs/gateway-firewall';
@@ -203,6 +204,17 @@ export class ServicesStack extends cdk.Stack {
     // Alerts link to the dashboard when its custom name is known (-c dashboardDomain=app.example.com).
     const dashboardDomain: string | undefined = this.node.tryGetContext('dashboardDomain');
 
+    // Prompt attacks (check 4, Beta): a guardrail with only Bedrock's prompt-attack filter. The gateway calls it
+    // with ApplyGuardrail on the new message only, after secrets and personal data are removed, and only for
+    // companies that turned the check on. Leave it out with -c promptAttackGuardrail=false (phrases only).
+    const attackGuardrail = this.node.tryGetContext('promptAttackGuardrail') === 'false' ? undefined : new bedrock.CfnGuardrail(this, 'PromptAttackGuardrail', {
+      name: `${prefix}-prompt-attacks-${stage}`,
+      description: 'Probaline check 4: prompt-attack filter only',
+      contentPolicyConfig: { filtersConfig: [{ type: 'PROMPT_ATTACK', inputStrength: 'HIGH', outputStrength: 'NONE' }] },
+      blockedInputMessaging: 'Blocked by Probaline: possible prompt attack.',
+      blockedOutputsMessaging: 'Blocked by Probaline.',
+    });
+
     // --- Gateway Service (public-facing) ---
     this.gatewayService = this.createService({
       id: 'Gateway',
@@ -234,6 +246,8 @@ export class ServicesStack extends cdk.Stack {
           MCP_CONNECTORS_TABLE: props.mcpTables.connectors.tableName,
         } : {}),
         ...(emailFrom ? { EMAIL_FROM: emailFrom } : {}),
+        // The working draft: it always has the filter as defined above.
+        ...(attackGuardrail ? { PROMPT_ATTACK_GUARDRAIL_ID: attackGuardrail.attrGuardrailId, PROMPT_ATTACK_GUARDRAIL_VERSION: 'DRAFT' } : {}),
         ...(contactEmail ? { CONTACT_EMAIL_TO: contactEmail } : {}),
         ...(dashboardDomain ? { DASHBOARD_URL: `https://${dashboardDomain}` } : {}),
         ...(props.logTables ? { ACTIVITY_TABLE: props.logTables.activity.tableName, LOG_EXPORT_TABLE: props.logTables.logExport.tableName } : {}),
@@ -314,6 +328,12 @@ export class ServicesStack extends cdk.Stack {
         resources: ['*'],
       })
     );
+    if (attackGuardrail) {
+      this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+        actions: ['bedrock:ApplyGuardrail'],
+        resources: [attackGuardrail.attrGuardrailArn],
+      }));
+    }
 
     // Public ALB listener → Gateway. HTTPS needs a certificate ARN (-c certificateArn=...); without one,
     // non-production stages serve plain HTTP so they can still be deployed and tested.

@@ -121,3 +121,37 @@ describe('what lists and counts say about unanswered requests and agents', () =>
     expect(ruleActivity([refused, answered, mcp]).cleaned).toBe(1);
   });
 });
+
+describe('prompt attacks in evidence (Beta)', () => {
+  const { ruleActivity } = jest.requireActual('../reports/cost');
+  const flagged = log({ metadata: { promptAttackChecked: 'phrases and Bedrock', promptAttack: 'flagged', promptAttackWhy: 'asks the AI to ignore its instructions' } });
+  const stopped = log({
+    eventType: 'request_blocked', triggeredRules: ['Prompt attacks'],
+    metadata: { check: 'prompt_attack', secretsChecked: 'true', promptAttackChecked: 'phrases and Bedrock', promptAttack: 'flagged', promptAttackWhy: 'Bedrock rated it a likely prompt attack (high confidence)', policyReason: 'Looks like a prompt attack: Bedrock rated it a likely prompt attack (high confidence)' },
+  });
+
+  it('shows a flagged prompt as sent, with the reason', () => {
+    const r = buildEvidenceRecord(flagged, 365);
+    expect(r.outcome).toBe('delivered');
+    expect(r.steps.map((s) => s.label)).toEqual(['Received', 'Policy rules passed', 'Secrets', 'No personal data found', 'Flagged: possible prompt attack', 'Delivered to OpenAI']);
+    expect(r.steps[4].detail).toMatch(/^asks the AI to ignore its instructions\. Sent anyway.*checked with phrases and Bedrock/);
+    expect(listEvidence([flagged], {}).items[0].flagged).toBe(true);
+  });
+
+  it('tells a stopped prompt attack apart from a policy rule', () => {
+    const r = buildEvidenceRecord(stopped, 365);
+    expect(r.headline).toBe('A billing-api prompt looked like a prompt attack and never reached OpenAI.');
+    expect(r.steps.map((s) => s.label)).toEqual(['Received', 'Policy rules passed', 'No secrets found', 'No personal data found', 'Stopped: looks like a prompt attack', 'Not sent']);
+    expect(r.steps[1].detail).toBe('no rule matched.');
+    expect(listEvidence([stopped], {}).items[0].flagged).toBeUndefined();
+  });
+
+  it('notes a clean check, and says nothing when the check was off', () => {
+    expect(buildEvidenceRecord(log({ metadata: { promptAttackChecked: 'phrases' } }), 365).steps.map((s) => s.label)).toContain('No prompt attack found');
+    expect(buildEvidenceRecord(log({}), 365).steps.map((s) => s.label).join()).not.toMatch(/prompt attack/);
+  });
+
+  it('counts flagged and stopped prompt attacks for the Rules page', () => {
+    expect(ruleActivity([flagged, stopped, log({})]).promptAttacks).toEqual({ stopped: 1, flagged: 1 });
+  });
+});

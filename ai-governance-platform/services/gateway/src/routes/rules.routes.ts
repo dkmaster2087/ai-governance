@@ -7,6 +7,7 @@ import { PolicyAdminClient } from '../clients/policy-admin.client';
 import { AnalyticsClient, analyticsClient } from '../clients/analytics.client';
 import { applyRuleChange, buildRuleViews, newRule, PII_TYPES, RuleActivity } from '../services/rules';
 import { tenantSettings } from '../services/tenant-settings.service';
+import { promptAttackBedrock } from '../services/prompt-attack';
 import { getSecurityConfig } from '../config/security';
 
 const logger = createLogger('gateway:rules');
@@ -31,12 +32,13 @@ export async function rulesRoutes(app: FastifyInstance) {
   /** Every rule for the tenant, what it did in the last 7 days, and the gateway's fail mode. */
   /** The rules come from the policy engine; what they did comes from analytics, and the page still loads without it. */
   app.get('/rules', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
-    type Activity = { from: string; to: string; rules: RuleActivity; secrets: { stopped: number; redacted: number }; cleaned: number };
-    const [policies, activity, failMode, secretsAction] = await Promise.all([
+    type Activity = { from: string; to: string; rules: RuleActivity; secrets: { stopped: number; redacted: number }; promptAttacks?: { stopped: number; flagged: number }; cleaned: number };
+    const [policies, activity, failMode, secretsAction, promptAttackAction] = await Promise.all([
       engine.list(request.tenantId),
       analyticsClient().optional<Activity>('/internal/v1/rules/activity', AnalyticsClient.callerOf(request)),
       tenantSettings().getFailMode(request.tenantId),
       tenantSettings().getSecretsAction(request.tenantId),
+      tenantSettings().getPromptAttackAction(request.tenantId),
     ]);
     const to = new Date();
     return {
@@ -45,6 +47,13 @@ export async function rulesRoutes(app: FastifyInstance) {
       failMode,
       ...(activity ? {} : { activityUnavailable: true }),
       secrets: { action: secretsAction, stopped: activity?.secrets.stopped ?? 0, redacted: activity?.secrets.redacted ?? 0 },
+      promptAttacks: {
+        action: promptAttackAction,
+        // Without a Bedrock guardrail only the phrase list runs, which catches far less.
+        bedrock: !!promptAttackBedrock(),
+        stopped: activity?.promptAttacks?.stopped ?? 0,
+        flagged: activity?.promptAttacks?.flagged ?? 0,
+      },
       cleaned: activity?.cleaned ?? 0,
       piiTypes: PII_TYPES,
       rules: buildRuleViews(policies, activity?.rules),
@@ -98,6 +107,7 @@ export async function rulesRoutes(app: FastifyInstance) {
   app.get('/gateway/settings', { preHandler: requireAccess(TENANT_READ) }, async (request) => ({
     governanceFailMode: await tenantSettings().getFailMode(request.tenantId),
     secretsAction: await tenantSettings().getSecretsAction(request.tenantId),
+    promptAttackAction: await tenantSettings().getPromptAttackAction(request.tenantId),
     defaultFailMode: getSecurityConfig().governanceFailMode,
   }));
 
@@ -105,13 +115,15 @@ export async function rulesRoutes(app: FastifyInstance) {
     const parsed = z.object({
       governanceFailMode: z.enum(['open', 'closed']).optional(),
       secretsAction: z.enum(['block', 'redact', 'off']).optional(),
-    }).strict().refine((b) => b.governanceFailMode !== undefined || b.secretsAction !== undefined).safeParse(request.body);
+      promptAttackAction: z.enum(['off', 'flag', 'block']).optional(),
+    }).strict().refine((b) => Object.values(b).some((v) => v !== undefined)).safeParse(request.body);
     if (!parsed.success) {
-      return reply.status(400).send({ error: 'Send governanceFailMode (open or closed) and/or secretsAction (block, redact or off)', code: 'INVALID_SETTINGS' });
+      return reply.status(400).send({ error: 'Send governanceFailMode (open or closed), secretsAction (block, redact or off) and/or promptAttackAction (off, flag or block)', code: 'INVALID_SETTINGS' });
     }
     const set: Record<string, unknown> = { updatedAt: new Date().toISOString() };
     if (parsed.data.governanceFailMode) set['settings.governanceFailMode'] = parsed.data.governanceFailMode;
     if (parsed.data.secretsAction) set['settings.secretsAction'] = parsed.data.secretsAction;
+    if (parsed.data.promptAttackAction) set['settings.promptAttackAction'] = parsed.data.promptAttackAction;
     const updated = await collection('tenants').update({ tenantId: request.tenantId }, { set, ifExists: true });
     if (!updated) return reply.status(404).send({ error: 'Tenant not found', code: 'NOT_FOUND' });
     tenantSettings().invalidate(request.tenantId);

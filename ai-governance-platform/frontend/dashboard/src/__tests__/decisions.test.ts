@@ -20,4 +20,9 @@ describe('one line per decision', () => {
     expect(describeDecision({ ...base, outcome: 'cleaned' })).toMatchObject({ verb: 'Cleaned', text: 'personal data from a billing-api prompt, then sent it to gpt-4o.' });
     expect(describeDecision({ ...base, outcome: 'delivered' })).toMatchObject({ verb: 'Delivered', tone: 'muted' });
   });
+
+  it('says when a sent prompt was flagged as a possible prompt attack', () => {
+    expect(describeDecision({ ...base, outcome: 'delivered', flagged: true })).toEqual({ verb: 'Flagged', tone: 'ink', text: 'a billing-api request to gpt-4o as a possible prompt attack; it was sent.' });
+    expect(describeDecision({ ...base, outcome: 'cleaned', flagged: true, removed: { personalData: true } }).text).toBe('personal data from a billing-api prompt, then sent it to gpt-4o. Flagged as a possible prompt attack.');
+  });
 });

@@ -32,7 +32,7 @@ describe('summarizeStopped', () => {
     const secret = (types: string, reason: string) => log({ triggeredRules: ['Secrets detection'], metadata: { check: 'secrets', secretTypes: types, policyReason: reason } });
     const r = summarizeStopped([secret('aws_access_key', 'Contains an AWS access key'), secret('aws_access_key', 'Contains an AWS access key'), secret('github_token', 'Contains a GitHub token')],
       { from: '2026-10-24T06:00:00.000Z', to: '2026-10-28T06:00:00.000Z', secretsActive: true });
-    expect(r.byCheck).toEqual({ policy: 0, secrets: { active: true, stopped: 3 } });
+    expect(r.byCheck).toEqual({ policy: 0, secrets: { active: true, stopped: 3 }, promptAttacks: { stopped: 0 } });
     expect(r.causes.map((c) => [c.reason, c.check, c.count])).toEqual([['Contains an AWS access key', 'secrets', 2], ['Contains a GitHub token', 'secrets', 1]]);
   });
 
@@ -64,5 +64,13 @@ describe('summarizeStopped', () => {
     // 01:00 UTC on the 27th is still the 26th in UTC-6 (offset +360 minutes).
     expect(localDate('2026-10-27T01:00:00.000Z', 360)).toBe('2026-10-26');
     expect(localDate('2026-10-27T01:00:00.000Z', 0)).toBe('2026-10-27');
+  });
+
+  it('groups prompt attacks (Beta) as one cause of their own, apart from policy rules', () => {
+    const attack = (why: string) => log({ triggeredRules: ['Prompt attacks'], metadata: { check: 'prompt_attack', policyReason: `Looks like a prompt attack: ${why}` } });
+    const r = summarizeStopped([attack('asks the AI to ignore its instructions'), attack('Bedrock rated it a likely prompt attack (high confidence)'), log({})],
+      { from: '2026-10-24T06:00:00.000Z', to: '2026-10-28T06:00:00.000Z' });
+    expect(r.byCheck).toMatchObject({ policy: 1, promptAttacks: { stopped: 2 } });
+    expect(r.causes.find((c) => c.check === 'prompt_attack')).toMatchObject({ key: 'prompt_attack', reason: 'Looked like a prompt attack', count: 2 });
   });
 });

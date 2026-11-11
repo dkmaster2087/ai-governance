@@ -32,6 +32,9 @@ const PATTERNS: Pattern[] = [
   { type: 'aws_access_key', label: 'AWS access key', regex: /\b(?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}\b/g },
   { type: 'aws_secret_key', label: 'AWS secret key',
     regex: /\baws[\w.-]{0,20}?(?:secret|sk)[\w.-]{0,20}?["']?\s*[:=]\s*["']?([A-Za-z0-9/+]{40})(?![A-Za-z0-9/+])/gi, group: 1 },
+  // Pasted as a pair without a label ("key AKIA… secret wJal…"): a 40-character secret shortly after an access key ID.
+  { type: 'aws_secret_key', label: 'AWS secret key',
+    regex: /\b(?:AKIA|ASIA|ABIA|ACCA)[A-Z0-9]{16}\b[^\n]{1,80}?(?<![A-Za-z0-9/+])([A-Za-z0-9/+]{40})(?![A-Za-z0-9/+])/g, group: 1 },
   { type: 'anthropic_key', label: 'Anthropic API key', regex: /\bsk-ant-[A-Za-z0-9_-]{32,}/g },
   { type: 'openai_key', label: 'OpenAI API key',
     regex: /\bsk-(?:(?:proj|svcacct|admin)-[A-Za-z0-9_-]{40,}|[A-Za-z0-9]{20}T3BlbkFJ[A-Za-z0-9]{20}|[A-Za-z0-9]{48})(?![A-Za-z0-9_-])/g },

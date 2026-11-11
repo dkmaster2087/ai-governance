@@ -35,6 +35,14 @@ describe('secret detector', () => {
     expect(redactSecrets(text)).not.toContain(text.slice(found[0].start, found[0].end));
   });
 
+  it('finds an unlabelled AWS secret key pasted after its access key, and keeps it out of the evidence', () => {
+    const secret = j('q8Zr2vLx9TfK', '/W3nB7cY1mP5dH0sJ4gA6eU2', 'iR9o');
+    const text = `my key is ${j('AKIA', 'Q3EGRV7XKZ2PLM4N')} and secret ${secret} thanks`;
+    expect(findSecrets(text).map((f) => f.type)).toEqual(['aws_access_key', 'aws_secret_key']);
+    expect(redactSecrets(text)).not.toContain(secret);
+    expect(JSON.stringify(scanTexts([text]).evidence)).not.toContain(secret.slice(0, 12));
+  });
+
   it.each([
     ['the AWS docs example key', j('AKIA', 'IOSFODNN7EXAMPLE')],
     ['a placeholder', 'api_key=<your-api-key>'],

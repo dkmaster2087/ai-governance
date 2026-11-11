@@ -6,7 +6,7 @@ import type { StoppedSummary } from '../lib/gateway-api';
 
 const summary: StoppedSummary = {
   from: '2026-10-21T00:00:00Z', to: '2026-10-28T00:00:00Z', truncated: false, total: 27,
-  byCheck: { policy: 27, secrets: { active: false, stopped: 0 } },
+  byCheck: { policy: 27, secrets: { active: false, stopped: 0 }, promptAttacks: { stopped: 2 } },
   byDay: [{ date: '2026-10-27', count: 20 }, { date: '2026-10-28', count: 7 }],
   causes: [
     { key: 'rule_kw', reason: 'Block confidential keywords', ruleType: 'keyword_block', check: 'policy', count: 25,
@@ -14,6 +14,10 @@ const summary: StoppedSummary = {
       latest: { time: '2026-10-28T10:00:00Z', app: 'billing-api', user: 'j.patel', model: 'gpt-4o', evidence: { before: 'Summarise the ', hit: 'confidential', after: ' memo' } } },
     { key: 'rule_old', reason: 'rule_old', check: 'policy', count: 2, apps: [{ name: 'hr-assistant', count: 2 }], people: 1, topPeople: ['m.chen'],
       latest: { time: '2026-10-27T10:00:00Z', app: 'hr-assistant', user: 'm.chen', model: 'gpt-4o' } },
+    { key: 'secrets:aws_access_key', reason: 'Contains an AWS access key', check: 'secrets', count: 1, apps: [{ name: 'ci', count: 1 }], people: 1, topPeople: ['bot'],
+      latest: { time: '2026-10-27T10:00:00Z', app: 'ci', user: 'bot', model: 'gpt-4o', evidence: { before: 'key ', hit: '[AWS access key]', after: '' } } },
+    { key: 'prompt_attack', reason: 'Looked like a prompt attack', check: 'prompt_attack', count: 2, apps: [{ name: 'mail-bot', count: 2 }], people: 1, topPeople: ['anonymous'],
+      latest: { time: '2026-10-27T10:00:00Z', app: 'mail-bot', user: 'anonymous', model: 'gpt-4o' } },
   ],
 };
 
@@ -49,5 +53,14 @@ describe('StoppedPage', () => {
   it('shows secrets as turned off rather than zero when the check is off', async () => {
     renderPage();
     expect(await screen.findByRole('button', { name: 'Secrets · turned off' })).toBeDisabled();
+  });
+
+  it('names the check that stopped each cause, and offers its own filter for prompt attacks', async () => {
+    renderPage();
+    expect(await screen.findByText('Check 2 · Secrets')).toBeInTheDocument();
+    expect(screen.getByText('Check 4 · Prompt attacks (Beta)')).toBeInTheDocument();
+    expect(screen.getByText(/The text isn’t kept\. Each case file says why/)).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Change the check' })).toHaveLength(2);
+    expect(screen.getByRole('button', { name: 'Prompt attacks · 2' })).toBeInTheDocument();
   });
 });

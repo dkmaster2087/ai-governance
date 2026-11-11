@@ -19,6 +19,8 @@ export interface EvidenceListItem {
   unanswered?: true;
   /** What was removed before sending, for cleaned requests. */
   removed?: { secrets?: true; personalData?: true };
+  /** Sent, but flagged as a possible prompt attack (Beta). */
+  flagged?: true;
 }
 
 

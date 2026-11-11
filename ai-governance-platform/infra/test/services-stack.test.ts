@@ -37,6 +37,19 @@ describe('ServicesStack', () => {
     expect(JSON.stringify(gw.Environment.find((e: any) => e.Name === 'GATEWAY_EGRESS_IPS').Value)).toContain('EIP');
   });
 
+  it('gives the gateway a prompt-attack guardrail it alone may apply', () => {
+    template.hasResourceProperties('AWS::Bedrock::Guardrail', {
+      ContentPolicyConfig: { FiltersConfig: [{ Type: 'PROMPT_ATTACK', InputStrength: 'HIGH', OutputStrength: 'NONE' }] },
+    });
+    const defs = Object.values(template.findResources('AWS::ECS::TaskDefinition')) as any[];
+    const gw = defs.map((d) => d.Properties.ContainerDefinitions[0]).find((c: any) => c.Name === 'GatewayContainer');
+    expect(gw.Environment.map((e: any) => e.Name)).toEqual(expect.arrayContaining(['PROMPT_ATTACK_GUARDRAIL_ID', 'PROMPT_ATTACK_GUARDRAIL_VERSION']));
+    // CDK moves statements into a managed policy once the inline one is full.
+    const apply = JSON.stringify([template.findResources('AWS::IAM::Policy'), template.findResources('AWS::IAM::ManagedPolicy')]);
+    expect(apply).toContain('bedrock:ApplyGuardrail');
+    expect(apply).toMatch(/"Action":"bedrock:ApplyGuardrail","Effect":"Allow","Resource":\{"Fn::GetAtt":\["PromptAttackGuardrail[A-Z0-9]*","GuardrailArn"\]\}/);
+  });
+
   it('names TLS secrets so Secrets Manager never mistakes the end of the name for its random suffix', () => {
     // ECS fetches secrets CDK knows only by name; a name ending in "-" and six characters ("policy-engine")
     // is read as name "policy" plus a suffix, and the fetch is refused.

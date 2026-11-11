@@ -16,6 +16,7 @@ jest.mock('../services/tenant-settings.service', () => ({
   tenantSettings: () => ({
     getFailMode: (...args: unknown[]) => mockGetFailMode(...args),
     getSecretsAction: (...args: unknown[]) => mockGetSecretsAction(...args),
+    getPromptAttackAction: async () => 'off',
   }),
 }));
 

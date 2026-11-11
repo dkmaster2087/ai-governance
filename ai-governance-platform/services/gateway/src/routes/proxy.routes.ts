@@ -7,6 +7,7 @@ import { AuditService } from '../services/audit.service';
 import { requireAccess } from '../auth/guards';
 import { tenantSettings } from '../services/tenant-settings.service';
 import { checkSecrets } from '../services/secrets-check';
+import { checkPromptAttack, latestTurn, promptAttackBedrock, PromptAttackResult, PROMPT_ATTACK_RULE } from '../services/prompt-attack';
 import { redactDeep } from '../services/secret-detector';
 
 const logger = createLogger('gateway:proxy');
@@ -110,6 +111,9 @@ export async function proxyRoutes(app: FastifyInstance) {
     let messages = extractMessages(body);
     const modelId = extractModel(body);
     const auditMetadata: Record<string, string> = { proxyMode: 'true' };
+    /** The prompt-attack verdict (Beta), added to the audit record when it's written. */
+    let promptAttack: Promise<PromptAttackResult> | null = null;
+    const withAttack = async () => (promptAttack ? { ...auditMetadata, ...(await promptAttack).metadata } : auditMetadata);
 
     if (messages.length > 0) {
       const normalizedRequest: NormalizedAIRequest = {
@@ -160,6 +164,19 @@ export async function proxyRoutes(app: FastifyInstance) {
       if (secrets.outcome === 'redacted') {
         body = redactDeep(body).value;
         messages = extractMessages(body);
+      }
+
+      // --- 2c. Prompt attacks (Beta): "flag" is recorded with the answer; "block" waits for the verdict ---
+      const attackAction = await settings.getPromptAttackAction(tenantId);
+      if (attackAction !== 'off') {
+        promptAttack = checkPromptAttack(latestTurn(messages), promptAttackBedrock());
+        const verdict = attackAction === 'block' ? await promptAttack : null;
+        if (verdict?.found && verdict.strong) {
+          const reason = `Looks like a prompt attack: ${verdict.why}`;
+          await auditService.log({ ...normalizedRequest, metadata: { ...auditMetadata, ...verdict.metadata, check: 'prompt_attack' } }, null,
+            { allowed: false, action: 'block', triggeredRules: [PROMPT_ATTACK_RULE], riskScore: 100, reason }, 0);
+          return reply.status(403).send({ error: `Request blocked: ${reason}.`, code: 'PROMPT_ATTACK', requestId, triggeredRules: [PROMPT_ATTACK_RULE] });
+        }
       }
     }
 
@@ -216,12 +233,12 @@ export async function proxyRoutes(app: FastifyInstance) {
       });
       res.on('close', () => upstream.data.destroy());
       upstream.data.pipe(res);
-      upstream.data.on('close', () => {
+      upstream.data.on('close', async () => {
         const latencyMs = Date.now() - startTime;
         if (messages.length === 0) return;
         const auditReq: NormalizedAIRequest = {
           requestId, tenantId, userId, appId: request.appId || 'proxy', provider: provider as any, modelId, messages,
-          metadata: { ...auditMetadata, streamed: 'true' }, timestamp: new Date().toISOString(),
+          metadata: { ...(await withAttack()), streamed: 'true' }, timestamp: new Date().toISOString(),
         };
         auditService.log(
           auditReq,
@@ -254,7 +271,7 @@ export async function proxyRoutes(app: FastifyInstance) {
         const auditReq: NormalizedAIRequest = {
           requestId, tenantId, userId, appId: request.appId || 'proxy',
           provider: provider as any, modelId, messages,
-          metadata: auditMetadata, timestamp: new Date().toISOString(),
+          metadata: await withAttack(), timestamp: new Date().toISOString(),
         };
         await auditService.log(
           auditReq,

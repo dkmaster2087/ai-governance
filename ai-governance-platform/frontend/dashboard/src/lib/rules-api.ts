@@ -23,6 +23,7 @@ export interface RuleView {
 }
 
 export type SecretsAction = 'block' | 'redact' | 'off';
+export type PromptAttackAction = 'off' | 'flag' | 'block';
 
 export interface RulesResponse {
   from: string;
@@ -31,6 +32,8 @@ export interface RulesResponse {
   /** Analytics couldn't say what the rules did: the counts are missing, not zero. */
   activityUnavailable?: boolean;
   secrets: { action: SecretsAction; stopped: number; redacted: number };
+  /** Check 4 (Beta). `bedrock` is false when only the phrase list runs (no guardrail on this install). Older gateways omit it. */
+  promptAttacks?: { action: PromptAttackAction; bedrock: boolean; stopped: number; flagged: number };
   cleaned: number;
   piiTypes: string[];
   rules: RuleView[];
@@ -61,6 +64,8 @@ export const setFailMode = async (governanceFailMode: 'open' | 'closed') =>
   (await gateway.put('/v1/gateway/settings', { governanceFailMode })).data;
 export const setSecretsAction = async (secretsAction: SecretsAction) =>
   (await gateway.put('/v1/gateway/settings', { secretsAction })).data;
+export const setPromptAttackAction = async (promptAttackAction: PromptAttackAction) =>
+  (await gateway.put('/v1/gateway/settings', { promptAttackAction })).data;
 
 /** The error message the gateway sent, if any. */
 export function errorMessage(err: unknown): string {

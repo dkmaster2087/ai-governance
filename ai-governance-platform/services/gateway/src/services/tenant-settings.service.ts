@@ -3,6 +3,7 @@ import { TenantSettings } from '@ai-governance/types';
 import { createLogger } from '@ai-governance/utils';
 import { getSecurityConfig } from '../config/security';
 import type { SecretsAction } from './secret-detector';
+import type { PromptAttackAction } from './prompt-attack';
 
 const logger = createLogger('gateway:tenant-settings');
 
@@ -57,6 +58,12 @@ export class TenantSettingsService {
   async getSecretsAction(tenantId: string): Promise<SecretsAction> {
     const action = (await this.getSettings(tenantId))?.secretsAction;
     return action === 'redact' || action === 'off' ? action : 'block';
+  }
+
+  /** Whether to look for prompt attacks (Beta); off unless the tenant turned it on. */
+  async getPromptAttackAction(tenantId: string): Promise<PromptAttackAction> {
+    const action = (await this.getSettings(tenantId))?.promptAttackAction;
+    return action === 'flag' || action === 'block' ? action : 'off';
   }
 }
 

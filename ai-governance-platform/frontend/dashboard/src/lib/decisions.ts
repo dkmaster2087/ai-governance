@@ -7,8 +7,19 @@ function removedWhat(removed: EvidenceListItem['removed']): string {
   return 'personal data';
 }
 
+type Line = { verb: string; tone: 'stop' | 'ink' | 'muted'; text: string };
+type DecisionFields = Pick<EvidenceListItem, 'outcome' | 'app' | 'model' | 'reason' | 'mcp' | 'unanswered' | 'removed' | 'flagged'>;
+
 /** One line for a decision, the same on the Gateway and Evidence pages. */
-export function describeDecision(i: Pick<EvidenceListItem, 'outcome' | 'app' | 'model' | 'reason' | 'mcp' | 'unanswered' | 'removed'>): { verb: string; tone: 'stop' | 'ink' | 'muted'; text: string } {
+export function describeDecision(i: DecisionFields): Line {
+  if (!i.flagged) return baseLine(i);
+  // A prompt that was sent but looked like an attack (Beta) says so, and stands out from the muted lines.
+  if (i.outcome === 'delivered' && !i.unanswered) return { verb: 'Flagged', tone: 'ink', text: `a ${i.app} request to ${i.model} as a possible prompt attack; it was sent.` };
+  const line = baseLine(i);
+  return { ...line, tone: line.tone === 'muted' ? 'ink' : line.tone, text: `${line.text} Flagged as a possible prompt attack.` };
+}
+
+function baseLine(i: DecisionFields): Line {
   const target = i.mcp ? `${i.mcp.tool} on ${i.mcp.server}` : i.model;
   if (i.outcome === 'stopped') {
     return { verb: 'Stopped', tone: 'stop', text: i.mcp ? `a call to ${target}: ${i.reason ?? 'blocked by policy'}.` : `a ${i.app} request to ${target}: ${i.reason ?? 'blocked by policy'}.` };

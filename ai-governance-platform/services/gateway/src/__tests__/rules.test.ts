@@ -57,7 +57,7 @@ const engine = { list: jest.fn(), create: jest.fn(), update: jest.fn() };
 jest.mock('../clients/policy-admin.client', () => ({ PolicyAdminClient: jest.fn(() => engine) }));
 const activity = { optional: jest.fn(async (): Promise<unknown> => ({ from: 'f', to: 't', rules: { r_kw: { stopped: 3, flagged: 0 } }, secrets: { stopped: 2, redacted: 1 }, cleaned: 4 })) };
 jest.mock('../clients/analytics.client', () => ({ ...jest.requireActual('../clients/analytics.client'), analyticsClient: () => activity }));
-jest.mock('../services/tenant-settings.service', () => ({ tenantSettings: () => ({ getFailMode: async () => 'closed', getSecretsAction: async () => 'block', invalidate: () => {} }) }));
+jest.mock('../services/tenant-settings.service', () => ({ tenantSettings: () => ({ getFailMode: async () => 'closed', getSecretsAction: async () => 'block', getPromptAttackAction: async () => 'off', invalidate: () => {} }) }));
 
 async function appAs(role: 'tenant_admin' | 'tenant_auditor') {
   const { rulesRoutes } = await import('../routes/rules.routes');

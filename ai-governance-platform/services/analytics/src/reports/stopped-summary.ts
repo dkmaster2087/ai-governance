@@ -5,7 +5,7 @@ export interface StoppedCause {
   key: string;
   reason: string;
   ruleType?: string;
-  check: 'policy' | 'secrets';
+  check: 'policy' | 'secrets' | 'prompt_attack';
   count: number;
   apps: Array<{ name: string; count: number }>;
   people: number;
@@ -24,7 +24,7 @@ export interface StoppedSummary {
   to: string;
   truncated: boolean;
   total: number;
-  byCheck: { policy: number; secrets: { active: boolean; stopped: number } };
+  byCheck: { policy: number; secrets: { active: boolean; stopped: number }; promptAttacks?: { stopped: number } };
   /** One entry per calendar day in the viewer's timezone, oldest first. */
   byDay: Array<{ date: string; count: number }>;
   causes: StoppedCause[];
@@ -68,7 +68,9 @@ export function summarizeStopped(
   for (const l of stopped) {
     // The stopping rule is the last one matched; earlier ones only flagged the request.
     // Secret stops share one rule name, so group them by what was found instead.
-    const key = l.metadata?.check === 'secrets'
+    // Prompt attacks (Beta) are one cause: the wording of each verdict differs, the remedy doesn't.
+    const key = l.metadata?.check === 'prompt_attack' ? 'prompt_attack'
+      : l.metadata?.check === 'secrets'
       ? `secrets:${l.metadata.secretTypes || 'unknown'}`
       : l.triggeredRules?.[l.triggeredRules.length - 1] || l.metadata?.policyReason || 'unknown';
     groups.set(key, [...(groups.get(key) ?? []), l]);
@@ -77,7 +79,8 @@ export function summarizeStopped(
   const causes: StoppedCause[] = [...groups.entries()].map(([key, items]): StoppedCause => {
     const latest = items[0];
     // Older records may lack the readable reason; use the newest one that has it.
-    const reason = items.find((i) => i.metadata?.policyReason)?.metadata.policyReason ?? key;
+    const reason = key === 'prompt_attack' ? 'Looked like a prompt attack'
+      : items.find((i) => i.metadata?.policyReason)?.metadata.policyReason ?? key;
     const withEvidence = items.find((i) => i.metadata?.evidenceHit);
     const apps = new Map<string, number>();
     const people = new Map<string, number>();
@@ -91,7 +94,7 @@ export function summarizeStopped(
       key,
       reason,
       ruleType,
-      check: latest.metadata?.check === 'secrets' ? 'secrets' : 'policy',
+      check: latest.metadata?.check === 'secrets' ? 'secrets' : latest.metadata?.check === 'prompt_attack' ? 'prompt_attack' : 'policy',
       count: items.length,
       apps: top(apps, 3),
       people: people.size,
@@ -109,12 +112,13 @@ export function summarizeStopped(
   }).sort((a, b) => b.count - a.count);
 
   const secrets = stopped.filter((l) => l.metadata?.check === 'secrets').length;
+  const attacks = stopped.filter((l) => l.metadata?.check === 'prompt_attack').length;
   return {
     from: range.from,
     to: range.to,
     truncated: range.truncated ?? false,
     total: stopped.length,
-    byCheck: { policy: stopped.length - secrets, secrets: { active: range.secretsActive ?? true, stopped: secrets } },
+    byCheck: { policy: stopped.length - secrets - attacks, secrets: { active: range.secretsActive ?? true, stopped: secrets }, promptAttacks: { stopped: attacks } },
     byDay: [...byDayMap.entries()].map(([date, count]) => ({ date, count })),
     causes,
   };

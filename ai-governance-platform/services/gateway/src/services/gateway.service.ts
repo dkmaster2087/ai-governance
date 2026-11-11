@@ -8,6 +8,7 @@ import { ResponseScanner } from './response-scanner';
 import { StreamMasker } from './stream-masker';
 import { tenantSettings } from './tenant-settings.service';
 import { checkSecrets } from './secrets-check';
+import { checkPromptAttack, latestTurn, promptAttackBedrock, PromptAttackResult, PROMPT_ATTACK_RULE } from './prompt-attack';
 import { ModelConfigRepository } from '../repositories/model-config.repository';
 
 const logger = createLogger('gateway');
@@ -125,7 +126,24 @@ export class GatewayService {
     } catch (err) {
       protectedRequest = whenUnavailable(err, 'pii_masking', afterSecrets);
     }
-    return { requestId, normalizedRequest: afterSecrets, protectedRequest, policyResult, degraded };
+
+    // Check 4 (Beta): prompt attacks, on the cleaned text so no secret or personal data is sent to the check.
+    // "flag" runs alongside the provider call and is recorded with the answer; "block" waits for the verdict.
+    let promptAttack: Promise<PromptAttackResult> | null = null;
+    const attackAction = await this.tenantSettings.getPromptAttackAction(input.tenantId);
+    if (attackAction !== 'off') {
+      promptAttack = checkPromptAttack(latestTurn(protectedRequest.messages), promptAttackBedrock());
+      if (attackAction === 'block') {
+        const verdict = await promptAttack;
+        if (verdict.found && verdict.strong) {
+          const reason = `Looks like a prompt attack: ${verdict.why}`;
+          await this.auditService.log({ ...protectedRequest, metadata: { ...protectedRequest.metadata, ...verdict.metadata, check: 'prompt_attack' } }, null,
+            { allowed: false, action: 'block', triggeredRules: [PROMPT_ATTACK_RULE], riskScore: 100, reason }, 0);
+          throw Object.assign(new Error(`Request blocked: ${reason}.`), { code: 'PROMPT_ATTACK', statusCode: 403, requestId });
+        }
+      }
+    }
+    return { requestId, normalizedRequest: afterSecrets, protectedRequest, policyResult, degraded, promptAttack };
   }
 
   /** Case file for a request the provider refused or couldn't answer. */
@@ -139,7 +157,8 @@ export class GatewayService {
   private async record(prep: Awaited<ReturnType<GatewayService['prepare']>>, response: NormalizedAIResponse, latencyMs: number, extra: Record<string, string> = {}) {
     const { normalizedRequest, policyResult, degraded } = prep;
     let protectedRequest = prep.protectedRequest;
-    const metadata = { ...protectedRequest.metadata, ...extra, ...(degraded.length > 0 ? { governanceDegraded: degraded.join(',') } : {}) };
+    const attack = prep.promptAttack ? (await prep.promptAttack).metadata : {};
+    const metadata = { ...protectedRequest.metadata, ...attack, ...extra, ...(degraded.length > 0 ? { governanceDegraded: degraded.join(',') } : {}) };
     protectedRequest = { ...protectedRequest, metadata };
     // PII was masked if the data protection service changed any message (secrets were already removed before it ran).
     const piiDetected = protectedRequest.messages.some((m, i) => m.content !== normalizedRequest.messages[i]?.content);

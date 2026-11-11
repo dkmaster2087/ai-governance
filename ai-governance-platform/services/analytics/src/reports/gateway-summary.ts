@@ -1,5 +1,5 @@
 import { AuditLog } from '@ai-governance/types';
-import { outcomeOf, secretsRedacted, unanswered } from './evidence';
+import { outcomeOf, promptAttackFlagged, secretsRedacted, unanswered } from './evidence';
 
 /** What happened to AI traffic in a time range, shaped for the dashboard's pipeline view. */
 export interface GatewaySummary {
@@ -98,6 +98,7 @@ export function summarizeGatewayTraffic(
       ...(isStopped(l) ? { reason: stopReason(l) } : {}),
       ...(unanswered(l) ? { unanswered: true as const } : {}),
       ...(outcomeOf(l) === 'cleaned' ? { removed: { ...(secretsRedacted(l) ? { secrets: true as const } : {}), ...(l.piiDetected ? { personalData: true as const } : {}) } } : {}),
+      ...(promptAttackFlagged(l) ? { flagged: true as const } : {}),
     }));
 
   return {

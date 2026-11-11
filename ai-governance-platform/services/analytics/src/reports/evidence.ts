@@ -28,6 +28,19 @@ function secretsStep(log: AuditLog, stoppedBySecrets: boolean): EvidenceStep {
   return { label: 'Secrets', detail: 'not checked for this request (the check was off, or the request predates it).', kind: 'skipped' };
 }
 
+/** The prompt-attack step (check 4, Beta), or nothing when the check didn't run. */
+function promptAttackStep(log: AuditLog, stopped: boolean): EvidenceStep | null {
+  const m = log.metadata ?? {};
+  if (!m.promptAttackChecked) return null;
+  const how = `checked with ${m.promptAttackChecked}`;
+  if (stopped) return { label: 'Stopped: looks like a prompt attack', detail: `${m.promptAttackWhy ?? 'it tried to take over the AI'} (${how}).`, kind: 'stopped' };
+  if (m.promptAttack === 'flagged') return { label: 'Flagged: possible prompt attack', detail: `${m.promptAttackWhy ?? 'it may try to take over the AI'}. Sent anyway, and recorded here for review (${how}).`, kind: 'skipped' };
+  return { label: 'No prompt attack found', detail: `${how}.`, kind: 'neutral' };
+}
+
+/** Flagged as a possible prompt attack but sent. */
+export const promptAttackFlagged = (l: AuditLog) => l.eventType !== 'request_blocked' && l.metadata?.promptAttack === 'flagged';
+
 export interface EvidenceListItem {
   requestId: string;
   time: string;
@@ -42,6 +55,8 @@ export interface EvidenceListItem {
   unanswered?: true;
   /** What was removed before sending, for cleaned requests. */
   removed?: { secrets?: true; personalData?: true };
+  /** Sent, but flagged as a possible prompt attack (Beta). */
+  flagged?: true;
 }
 
 /** True for an agent's MCP tool call rather than a prompt to a model. */
@@ -66,6 +81,7 @@ function toItem(l: AuditLog): EvidenceListItem {
     ...(isMcpCall(l) ? { mcp: { server: l.metadata?.mcpServer ?? 'an MCP server', tool: l.metadata?.mcpTool ?? 'a tool' } } : {}),
     ...(unanswered(l) ? { unanswered: true as const } : {}),
     ...(outcomeOf(l) === 'cleaned' ? { removed: { ...(secretsRedacted(l) ? { secrets: true as const } : {}), ...(l.piiDetected ? { personalData: true as const } : {}) } } : {}),
+    ...(promptAttackFlagged(l) ? { flagged: true as const } : {}),
   };
 }
 
@@ -188,17 +204,26 @@ export function buildEvidenceRecord(log: AuditLog, retentionDays: number, onHold
   ];
 
   const bySecrets = outcome === 'stopped' && log.metadata?.check === 'secrets';
+  const byAttack = outcome === 'stopped' && log.metadata?.check === 'prompt_attack';
   if (degraded.includes('policy_evaluation')) {
     steps.push({ label: 'Policy rules skipped', detail: 'the policy engine was unavailable and this company lets requests through when a check can’t run.', kind: 'skipped' });
-  } else if (outcome === 'stopped' && !bySecrets) {
+  } else if (outcome === 'stopped' && !bySecrets && !byAttack) {
     steps.push({ label: 'Stopped by a policy rule', detail: `“${reason}”.`, kind: 'stopped' });
-  } else if (rules.length > 0) {
-    steps.push({ label: 'Policy rules passed', detail: `${rules.length} ${rules.length === 1 ? 'rule' : 'rules'} flagged it without stopping it.`, kind: 'neutral' });
+  } else if (rules.length > (byAttack ? 1 : 0)) {
+    const n = rules.length - (byAttack ? 1 : 0);
+    steps.push({ label: 'Policy rules passed', detail: `${n} ${n === 1 ? 'rule' : 'rules'} flagged it without stopping it.`, kind: 'neutral' });
   } else {
     steps.push({ label: 'Policy rules passed', detail: 'no rule matched.', kind: 'neutral' });
   }
 
   steps.push(secretsStep(log, bySecrets));
+
+  if (byAttack) {
+    steps.push(log.piiDetected
+      ? { label: 'Personal data removed', detail: 'before the prompt-attack check saw the text.', kind: 'cleaned' }
+      : { label: 'No personal data found', detail: 'the prompt was checked as written.', kind: 'neutral' });
+    steps.push(promptAttackStep(log, true)!);
+  }
 
   if (outcome === 'stopped') {
     steps.push({ label: 'Not sent', detail: `the app was told the request was blocked by company policy. Nothing reached ${provider}.`, kind: 'stopped' });
@@ -210,6 +235,8 @@ export function buildEvidenceRecord(log: AuditLog, retentionDays: number, onHold
         ? { label: 'Personal data removed', detail: 'before the prompt left the company.', kind: 'cleaned' }
         : { label: 'No personal data found', detail: 'the prompt was sent as written.', kind: 'neutral' });
     }
+    const attack = promptAttackStep(log, false);
+    if (attack) steps.push(attack);
     steps.push(log.metadata?.providerError
       ? { label: `Sent to ${provider}, not answered`, detail: `${provider} refused or failed: ${log.metadata.providerError}`, kind: 'skipped' }
       : {
@@ -220,7 +247,8 @@ export function buildEvidenceRecord(log: AuditLog, retentionDays: number, onHold
   }
 
   const headline =
-    outcome === 'stopped' ? `A ${log.appId || 'request'} prompt was stopped and never reached ${provider}.`
+    byAttack ? `A ${log.appId || 'request'} prompt looked like a prompt attack and never reached ${provider}.`
+    : outcome === 'stopped' ? `A ${log.appId || 'request'} prompt was stopped and never reached ${provider}.`
     : outcome === 'cleaned' ? `A ${log.appId || 'request'} prompt was cleaned of ${log.piiDetected && secretsRedacted(log) ? 'secrets and personal data' : secretsRedacted(log) ? 'secrets' : 'personal data'}, then sent to ${provider}.`
     : `A ${log.appId || 'request'} prompt passed every check and was sent to ${provider}.`;
   const unanswered = log.metadata?.providerError ? ` ${provider} didn’t answer.` : '';

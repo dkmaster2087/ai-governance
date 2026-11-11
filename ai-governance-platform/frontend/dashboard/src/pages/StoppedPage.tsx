@@ -8,7 +8,10 @@ import { ArrowLink, ButtonLink, Note, Panel, Segmented, formatCount } from '../c
 const RANGE_OPTIONS = (Object.keys(RANGE_LABELS) as RangeKey[]).map((value) => ({ value, label: RANGE_LABELS[value].button }));
 
 type Cause = StoppedSummary['causes'][number];
-type Filter = 'all' | 'policy' | 'secrets';
+type Filter = 'all' | 'policy' | 'secrets' | 'prompt_attack';
+
+/** Which of the gateway's checks stopped it, as the Rules page numbers them. */
+const CHECK_LABEL: Record<Cause['check'], string> = { policy: 'Check 1 · Policy rules', secrets: 'Check 2 · Secrets', prompt_attack: 'Check 4 · Prompt attacks (Beta)' };
 
 const RULE_KIND: Record<string, string> = {
   keyword_block: 'Keyword rule',
@@ -70,14 +73,16 @@ function CauseCard({ cause, canEditRules }: { cause: Cause; canEditRules: boolea
               {ev.after}
             </>
           ) : (
-            <span className="text-ink-muted">No excerpt kept for these requests (they were stopped before excerpts were recorded).</span>
+            <span className="text-ink-muted">{cause.check === 'prompt_attack'
+              ? 'The text isn’t kept. Each case file says why it looked like an attack.'
+              : 'No excerpt kept for these requests (they were stopped before excerpts were recorded).'}</span>
           )}
         </div>
       </div>
 
       <div className="flex-[1_1_200px] flex flex-col gap-2">
-        <span className="text-xs text-ink-muted">Check 1 · Policy rules{cause.ruleType && RULE_KIND[cause.ruleType] ? ` · ${RULE_KIND[cause.ruleType]}` : ''}</span>
-        {canEditRules && <ButtonLink to="/rules" variant="secondary" className="self-start mt-1.5">Adjust rule</ButtonLink>}
+        <span className="text-xs text-ink-muted">{CHECK_LABEL[cause.check] ?? CHECK_LABEL.policy}{cause.check === 'policy' && cause.ruleType && RULE_KIND[cause.ruleType] ? ` · ${RULE_KIND[cause.ruleType]}` : ''}</span>
+        {canEditRules && <ButtonLink to="/rules" variant="secondary" className="self-start mt-1.5">{cause.check === 'policy' ? 'Adjust rule' : 'Change the check'}</ButtonLink>}
         <ArrowLink to={`/evidence?outcome=stopped&q=${encodeURIComponent(cause.reason)}`} className="self-start">See all {formatCount(cause.count)}</ArrowLink>
       </div>
     </Panel>
@@ -121,6 +126,9 @@ export function StoppedPage() {
             { value: 'policy', label: `Policy rules · ${formatCount(data.byCheck.policy)}` },
             ...(data.byCheck.secrets.active || data.byCheck.secrets.stopped > 0
               ? [{ value: 'secrets', label: `Secrets · ${formatCount(data.byCheck.secrets.stopped)}` }]
+              : []),
+            ...(data.byCheck.promptAttacks?.stopped
+              ? [{ value: 'prompt_attack', label: `Prompt attacks · ${formatCount(data.byCheck.promptAttacks.stopped)}` }]
               : []),
           ] as Array<{ value: Filter; label: string }>).map((f) => (
             <button

@@ -33,6 +33,8 @@ export interface GatewaySummary {
     /** Sent after the checks, but the provider refused or failed. */
     unanswered?: true;
     removed?: { secrets?: true; personalData?: true };
+    /** Sent, but flagged as a possible prompt attack (Beta). */
+    flagged?: true;
   }>;
   shadowAi: { people: number; visits: number };
 }
@@ -69,13 +71,13 @@ export interface StoppedSummary {
   to: string;
   truncated: boolean;
   total: number;
-  byCheck: { policy: number; secrets: { active: boolean; stopped: number } };
+  byCheck: { policy: number; secrets: { active: boolean; stopped: number }; promptAttacks?: { stopped: number } };
   byDay: Array<{ date: string; count: number }>;
   causes: Array<{
     key: string;
     reason: string;
     ruleType?: string;
-    check: 'policy' | 'secrets';
+    check: 'policy' | 'secrets' | 'prompt_attack';
     count: number;
     apps: Array<{ name: string; count: number }>;
     people: number;

@@ -4,7 +4,7 @@ import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import {
   addRule, changeRule, deleteRule, EditableType, errorMessage, fetchRules, isEditableType, RuleView, ruleValues, SecretsAction, setFailMode,
-  setSecretsAction,
+  setSecretsAction, setPromptAttackAction, PromptAttackAction,
 } from '../lib/rules-api';
 import { Button, ConfirmAction, Note, Panel, SectionLabel, Segmented, Switch, formatCount } from '../components/kit/primitives';
 
@@ -67,6 +67,56 @@ function SecretsCard({ secrets, canEdit, onChange, saving }: {
         <span className="font-bold">
           {formatCount(secrets.stopped)} stopped{secrets.redacted > 0 ? ` · ${formatCount(secrets.redacted)} removed` : ''} this week
         </span>
+      </div>
+    </Panel>
+  );
+}
+
+const ATTACK_SENTENCE: Record<PromptAttackAction, string> = {
+  off: 'Off. Prompts are not checked for attempts to take over the AI.',
+  flag: 'Flag attempts to take over the AI, record them in Evidence, and still send.',
+  block: 'Stop clear attempts to take over the AI; flag the rest and send.',
+};
+
+/** Check 4 (Beta): text that tries to take over the AI, typed or hidden in pasted content. */
+function PromptAttackCard({ attacks, canEdit, onChange, saving }: {
+  attacks: { action: PromptAttackAction; bedrock: boolean; stopped: number; flagged: number };
+  canEdit: boolean;
+  onChange: (action: PromptAttackAction) => void;
+  saving: boolean;
+}) {
+  return (
+    <Panel as="article" className={clsx('px-[18px] py-4 flex flex-col gap-3', attacks.action === 'off' && 'border-dashed')}>
+      <p className="m-0 text-base leading-[1.4] font-semibold">{ATTACK_SENTENCE[attacks.action]}</p>
+      <p className="m-0 text-sm text-ink-muted">
+        Such as “ignore your instructions” typed by a person, or hidden in a pasted email, web page or document.
+        Only the new message is checked, after secrets and personal data are removed; your app’s own system prompt is trusted.
+      </p>
+      {attacks.bedrock ? (
+        <p className="m-0 text-sm text-ink-muted">
+          Checked with Amazon Bedrock Guardrails and a list of known phrases. In our tests it caught about two in three attacks, but it also
+          flagged about one in five ordinary prompts, mostly role-play (“Act as a code reviewer”, “You are a helpful assistant for a bakery”),
+          and Stop would have stopped about one in six. So start with Flag and review Evidence before you stop anything. Flag adds no delay;
+          Stop adds about a third of a second to each prompt.
+        </p>
+      ) : (
+        <p className="m-0 text-sm text-stop-text">
+          Bedrock Guardrails isn’t set up on this install, so only a short list of known phrases is checked. It catches few attacks it wasn’t written for.
+        </p>
+      )}
+      {canEdit ? (
+        <Segmented
+          label="When a prompt looks like an attack"
+          value={attacks.action}
+          onChange={(a) => { if (!saving && a !== attacks.action) onChange(a); }}
+          options={[{ value: 'flag', label: 'Flag, then send' }, { value: 'block', label: 'Stop clear attacks' }, { value: 'off', label: 'Off' }]}
+        />
+      ) : null}
+      <div className="flex justify-between items-center gap-3">
+        <span className="font-bold">
+          {formatCount(attacks.flagged)} flagged{attacks.stopped > 0 ? ` · ${formatCount(attacks.stopped)} stopped` : ''} this week
+        </span>
+        <span className="text-xs font-semibold text-ink-muted">Beta</span>
       </div>
     </Panel>
   );
@@ -260,6 +310,7 @@ export function RulesPage() {
   const failMode = useMutation({ mutationFn: setFailMode, onSuccess: refresh });
   const [confirmOpen, setConfirmOpen] = useState(false);
   const secretsAction = useMutation({ mutationFn: setSecretsAction, onSuccess: refresh });
+  const attackAction = useMutation({ mutationFn: setPromptAttackAction, onSuccess: refresh });
 
   const checked = data?.rules.filter((r) => r.effect !== 'not_enforced') ?? [];
   const notEnforced = data?.rules.filter((r) => r.effect === 'not_enforced') ?? [];
@@ -309,6 +360,7 @@ export function RulesPage() {
 
       {failMode.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(failMode.error)}</p>}
       {secretsAction.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(secretsAction.error)}</p>}
+      {attackAction.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(attackAction.error)}</p>}
       {isError && <Panel className="px-6"><Note title="Couldn’t load rules."><button type="button" className="underline font-semibold" onClick={() => refetch()}>Try again</button></Note></Panel>}
       {isLoading && <Panel className="px-6 py-5"><p className="m-0 text-ink-muted">Loading…</p></Panel>}
 
@@ -349,6 +401,16 @@ export function RulesPage() {
               </div>
             </Panel>
           </section>
+
+          {data.promptAttacks && (
+            <section aria-label="Check 4, prompt attacks" className="flex flex-col gap-3">
+              <CheckHeader
+                n={4} name="Prompt attacks" active={data.promptAttacks.action !== 'off'}
+                summary={data.promptAttacks.action === 'off' ? 'off' : `${formatCount(data.promptAttacks.flagged)} flagged`}
+              />
+              <PromptAttackCard attacks={data.promptAttacks} canEdit={isAdmin} saving={attackAction.isPending} onChange={(a) => attackAction.mutate(a)} />
+            </section>
+          )}
         </div>
       )}
 
