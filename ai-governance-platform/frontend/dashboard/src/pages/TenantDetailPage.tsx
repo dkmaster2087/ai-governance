@@ -66,8 +66,10 @@ export function TenantDetailPage() {
       {confirm && (
         <Panel className="px-6 py-4 flex flex-wrap items-center gap-3">
           <span>{suspended ? `Reactivate ${t.name}? Their apps can use the gateway again at once.` : `Suspend ${t.name}? Every request from their apps is refused at once, and their dashboard stops working.`}</span>
-          <Button onClick={() => toggle.mutate()} disabled={toggle.isPending}>{toggle.isPending ? 'Working…' : suspended ? 'Reactivate' : 'Suspend'}</Button>
-          <Button variant="ghost" onClick={() => setConfirm(false)}>Cancel</Button>
+          <span className="inline-flex gap-2">
+            <Button onClick={() => toggle.mutate()} disabled={toggle.isPending}>{toggle.isPending ? 'Working…' : suspended ? 'Reactivate' : 'Suspend'}</Button>
+            <Button variant="ghost" onClick={() => setConfirm(false)}>Cancel</Button>
+          </span>
           {toggle.isError && <p role="alert" className="m-0 w-full text-stop-text font-semibold">{errorMessage(toggle.error)}</p>}
         </Panel>
       )}

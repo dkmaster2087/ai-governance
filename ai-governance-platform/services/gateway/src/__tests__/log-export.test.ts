@@ -73,6 +73,10 @@ describe('admin activity hook', () => {
     expect(actionFor('POST', '/v1/rules')).toBe('rule.created');
     expect(actionFor('POST', '/v1/mcp/servers/:serverId/publish')).toBe('mcp_server.published');
     expect(actionFor('PUT', '/v1/something-new/:id')).toBe('something_new.changed');
+    // People and legal hold are what auditors ask about first, so they get their own names.
+    expect(actionFor('POST', '/v1/users')).toBe('user.invited');
+    expect(actionFor('PATCH', '/v1/users/:email')).toBe('user.changed');
+    expect(actionFor('PUT', '/v1/tenants/:tenantId/legal-hold')).toBe('legal_hold.changed');
     expect(actionFor('GET', '/v1/rules')).toBeNull();
     expect(actionFor('POST', '/v1/chat/completions')).toBeNull();
     expect(actionFor('POST', '/mcp/:tenantId/:serverId')).toBeNull();

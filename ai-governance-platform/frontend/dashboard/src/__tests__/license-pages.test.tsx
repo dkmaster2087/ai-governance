@@ -60,7 +60,7 @@ describe('Tenant license page', () => {
     fireEvent.change(within(form).getByLabelText('License key'), { target: { value: '  pbl_acme_newkey  ' } });
     fireEvent.click(within(form).getByRole('button', { name: 'Add license' }));
     await waitFor(() => expect(activateLicense).toHaveBeenCalledWith('pbl_acme_newkey'));
-    expect(await within(form).findByText(/License added: professional plan/)).toBeInTheDocument();
+    expect(await within(form).findByText(/License added: Professional plan/)).toBeInTheDocument();
   });
 
   it('shows an ended license as expired, and lets an admin remove the active one', async () => {
@@ -68,11 +68,12 @@ describe('Tenant license page', () => {
       status: { state: 'active', endsAt: license.expiresAt },
       licenses: [license, { ...license, licenseId: 'old', status: 'revoked', revokedAt: '2026-09-01T00:00:00Z', plan: 'starter' }],
     };
-    vi.spyOn(window, 'confirm').mockReturnValue(true);
     renderPage();
     const earlier = await screen.findByRole('region', { name: 'Earlier licenses' });
     expect(within(earlier).getByText(/Expired · ended/)).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: 'Remove' }));
+    expect(removeLicense).not.toHaveBeenCalled(); // asks first, in the page
+    fireEvent.click(within(screen.getByRole('group', { name: 'Confirm' })).getByRole('button', { name: 'Remove' }));
     await waitFor(() => expect(removeLicense).toHaveBeenCalledWith('lic1'));
   });
 

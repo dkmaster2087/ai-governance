@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
-  AlertConfig, AlertEvent, AlertInput, AlertKind, AlertRule, createAlert, Delivery, deleteAlert, KIND_LABEL, KINDS, listAlertEvents,
+  AlertConfig, AlertEvent, AlertInput, AlertKind, AlertRule, alertDelivery, createAlert, Delivery, deleteAlert, KIND_LABEL, KINDS, listAlertEvents,
   listAlerts, testAlert, updateAlert,
 } from '../lib/alerts-api';
 import { errorMessage } from '../lib/rules-api';
@@ -43,6 +43,7 @@ export function AlertForm({ rule, onDone, onSecret }: { rule?: AlertRule; onDone
   };
   const num = (k: keyof AlertConfig, v: string) => setConfig((c) => ({ ...c, [k]: Math.max(0, Number(v) || 0) }));
   const emailList = emails.split(/[,\s;]+/).map((e) => e.trim()).filter(Boolean);
+  const emailReady = useQuery({ queryKey: ['alerts', 'delivery'], queryFn: alertDelivery, staleTime: 300_000 }).data?.email;
   const hasWebhook = (webhook.trim() || (rule?.webhook && !removeWebhook));
 
   const save = useMutation({
@@ -70,7 +71,7 @@ export function AlertForm({ rule, onDone, onSecret }: { rule?: AlertRule; onDone
             <legend className="text-sm font-semibold mb-1.5">Tell people when</legend>
             {KINDS.map((k) => (
               <label key={k.value} className={clsx('flex gap-3 items-start p-3 rounded-lg border cursor-pointer', kind === k.value ? 'border-ink bg-ink-tint' : 'border-line')}>
-                <input type="radio" name="kind" value={k.value} checked={kind === k.value} onChange={() => pickKind(k.value)} className="mt-1" />
+                <input type="radio" name="kind" value={k.value} aria-label={k.label} checked={kind === k.value} onChange={() => pickKind(k.value)} className="mt-1" />
                 <span><span className="font-semibold">{k.label}</span><span className="block text-sm text-ink-muted">{k.hint}</span></span>
               </label>
             ))}
@@ -101,6 +102,9 @@ export function AlertForm({ rule, onDone, onSecret }: { rule?: AlertRule; onDone
         <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Email</span>
           <input className={input} value={emails} onChange={(e) => setEmails(e.target.value)} placeholder="security@yourcompany.com, …" />
           <span className="text-xs text-ink-muted">Up to 10 addresses, separated by commas.</span>
+          {emailReady === false && (
+            <span role="note" className="text-xs font-semibold text-stop-text">Email isn’t set up on this Probaline install yet, so alerts can’t be emailed. Use a webhook, or ask whoever runs Probaline to set up email.</span>
+          )}
         </label>
         <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Webhook (optional)</span>
           <input className={input} value={webhook} onChange={(e) => { setWebhook(e.target.value); setRemoveWebhook(false); }}

@@ -34,7 +34,7 @@ export function LicensesPage() {
   return (
     <div className="flex flex-col gap-6 max-w-[1100px]">
       <div className="flex flex-wrap justify-between items-end gap-4">
-        <p className="m-0 text-ink-muted text-[15px]">{licenses ? `${active} active ${active === 1 ? 'license' : 'licenses'} across ${tenants.length} tenants.` : ''}</p>
+        <p className="m-0 text-ink-muted text-[15px]">{licenses ? `${active} active ${active === 1 ? 'license' : 'licenses'} across ${tenants.length} ${tenants.length === 1 ? 'tenant' : 'tenants'}.` : ''}</p>
         {!issuing && <Button onClick={() => setIssuing(true)}>Issue a license</Button>}
       </div>
 

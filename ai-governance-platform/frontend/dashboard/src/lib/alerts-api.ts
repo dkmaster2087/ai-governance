@@ -54,6 +54,8 @@ export const KINDS: Array<{ value: AlertKind; label: string; hint: string; defau
 export const KIND_LABEL = Object.fromEntries(KINDS.map((k) => [k.value, k.label])) as Record<AlertKind, string>;
 
 export const listAlerts = async () => (await gateway.get<AlertRule[]>('/v1/alerts/rules')).data;
+/** Whether this install can send email (EMAIL_FROM set); webhooks always work. */
+export const alertDelivery = async () => (await gateway.get<{ email: boolean }>('/v1/alerts/delivery')).data;
 export const listAlertEvents = async () => (await gateway.get<AlertEvent[]>('/v1/alerts/events')).data;
 export const createAlert = async (input: AlertInput) => (await gateway.post<AlertRule & { signingSecret?: string }>('/v1/alerts/rules', input)).data;
 export const updateAlert = async (ruleId: string, change: Partial<AlertInput>) =>

@@ -5,7 +5,7 @@ import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import { ApiKeySummary, createKey, deleteKey, listKeys, revokeKey, rotateKey, Scope } from '../lib/api-keys-api';
 import { errorMessage } from '../lib/rules-api';
-import { Button, Note, Panel, SectionLabel, Segmented } from '../components/kit/primitives';
+import { Button, ConfirmAction, Note, Panel, SectionLabel, Segmented } from '../components/kit/primitives';
 import { CATEGORIES, CategoryBadge, CategoryGlyph, categoriesOf, categoryStyle, KeyCategory } from '../lib/key-categories';
 
 const SCOPES: Array<{ value: Scope; label: string; hint: string; category: KeyCategory }> = [
@@ -69,9 +69,9 @@ function KeyRow({ k, onNewKey }: { k: ApiKeySummary; onNewKey: (key: string) => 
         <div><dt className="text-xs text-ink-muted">Expires</dt><dd className="m-0">{k.expiresAt ? date(k.expiresAt) : 'Never'}</dd></div>
       </dl>
       <div className="flex gap-2 flex-wrap">
-        {status === 'Active' && <Button variant="secondary" disabled={rotate.isPending} onClick={() => rotate.mutate()}>Replace</Button>}
-        {status === 'Active' && <Button variant="secondary" disabled={revoke.isPending} onClick={() => revoke.mutate()}>Revoke</Button>}
-        {status !== 'Active' && <Button variant="ghost" disabled={remove.isPending} onClick={() => remove.mutate()}>Delete</Button>}
+        {status === 'Active' && <ConfirmAction label="Replace" question={<>Replace {k.name}? The current key stops working now; you’ll see the new one once.</>} onConfirm={() => rotate.mutate()} disabled={rotate.isPending} />}
+        {status === 'Active' && <ConfirmAction label="Revoke" question={<>Revoke {k.name}? Anything using it is refused from now on.</>} onConfirm={() => revoke.mutate()} disabled={revoke.isPending} />}
+        {status !== 'Active' && <ConfirmAction label="Delete" variant="ghost" question={<>Delete {k.name} from the list?</>} onConfirm={() => remove.mutate()} disabled={remove.isPending} />}
       </div>
       {error && <p role="alert" className="basis-full m-0 text-stop-text font-semibold">{errorMessage(error)}</p>}
     </Panel>

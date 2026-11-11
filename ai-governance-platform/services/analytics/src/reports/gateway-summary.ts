@@ -33,6 +33,7 @@ export interface GatewaySummary {
     model: string;
     reason?: string;
     unanswered?: true;
+    removed?: { secrets?: true; personalData?: true };
   }>;
   shadowAi: { people: number; visits: number };
 }
@@ -96,6 +97,7 @@ export function summarizeGatewayTraffic(
       model: l.modelId,
       ...(isStopped(l) ? { reason: stopReason(l) } : {}),
       ...(unanswered(l) ? { unanswered: true as const } : {}),
+      ...(outcomeOf(l) === 'cleaned' ? { removed: { ...(secretsRedacted(l) ? { secrets: true as const } : {}), ...(l.piiDetected ? { personalData: true as const } : {}) } } : {}),
     }));
 
   return {

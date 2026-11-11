@@ -1,14 +1,14 @@
 import { useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
-import { Eye, EyeOff, AlertCircle, Sun, Moon, ArrowRight } from 'lucide-react';
+import { Eye, EyeOff, AlertCircle, ArrowRight } from 'lucide-react';
 import { PlumbMark } from '../components/kit/PlumbMark';
 import { useAuth, getRegisteredAccounts, AUTH_MODE } from '../lib/auth';
 import { useTheme } from '../lib/theme';
 
 export function LoginPage() {
   const { login, completeChallenge } = useAuth();
-  const { isDark, toggle: toggleTheme } = useTheme();
+  const { isDark } = useTheme();
   const navigate = useNavigate();
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
@@ -55,18 +55,6 @@ export function LoginPage() {
 
   return (
     <div className={clsx('min-h-screen flex items-center justify-center p-4 relative overflow-hidden', isDark ? 'bg-[#060810]' : 'bg-[#f0f2f7]')}>
-      {/* Theme toggle */}
-      <button
-        onClick={toggleTheme}
-        className={clsx(
-          'absolute top-5 right-5 p-2.5 rounded-xl transition-all duration-200 z-10',
-          isDark ? 'text-slate-400 hover:text-yellow-400 hover:bg-white/[0.06]' : 'text-gray-400 hover:text-gray-900 hover:bg-gray-100'
-        )}
-        aria-label="Toggle theme"
-      >
-        {isDark ? <Sun className="w-5 h-5" /> : <Moon className="w-5 h-5" />}
-      </button>
-
       {/* Background effects */}
       {isDark && (
         <>

@@ -24,7 +24,7 @@ export const soc2Pack: CompliancePack = {
       controlId: 'SOC2-CC7.2', framework: 'soc2', title: 'Anomaly & Threat Detection',
       description: 'Unusual AI usage patterns trigger alerts for security review.',
       severity: 'high', policyRuleType: 'rate_limit', automatable: true, mappedRuleIds: [],
-      coverage: { kind: 'gap', note: 'Stopped requests and shadow AI are shown on the dashboard, but alerts for unusual usage can’t be set up from the dashboard yet.' },
+      coverage: { kind: 'action', note: 'Set up alerts on the Alerts page (many requests stopped, unapproved AI tools, personal data in answers) and have someone review them; stopped requests and shadow AI are also on the dashboard.' },
     },
     {
       controlId: 'SOC2-CC9.1', framework: 'soc2', title: 'Vendor Risk Management',

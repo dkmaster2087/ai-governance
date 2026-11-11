@@ -32,6 +32,7 @@ export interface GatewaySummary {
     reason?: string;
     /** Sent after the checks, but the provider refused or failed. */
     unanswered?: true;
+    removed?: { secrets?: true; personalData?: true };
   }>;
   shadowAi: { people: number; visits: number };
 }

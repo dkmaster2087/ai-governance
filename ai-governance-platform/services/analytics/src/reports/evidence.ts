@@ -10,11 +10,18 @@ export function outcomeOf(log: AuditLog): Outcome {
   return log.piiDetected || secretsRedacted(log) ? 'cleaned' : 'delivered';
 }
 
+/** A detector's kind (aws_access_key) as people write it (AWS access key). */
+const ACRONYMS: Record<string, string> = { aws: 'AWS', gcp: 'GCP', api: 'API', jwt: 'JWT', ssh: 'SSH', pem: 'PEM', github: 'GitHub', gitlab: 'GitLab', openai: 'OpenAI', npm: 'npm', pypi: 'PyPI', url: 'URL' };
+export function secretLabel(kind: string): string {
+  return kind.split('_').map((w) => ACRONYMS[w.toLowerCase()] ?? w.toLowerCase()).join(' ');
+}
+const withArticle = (s: string) => (s.includes(',') ? s : `${/^[aeiou]/i.test(s) || /^(AWS|API|SSH|npm)\b/.test(s) ? 'an' : 'a'} ${s}`);
+
 /** The secrets step of a case file, from what the audit record says the check did. */
 function secretsStep(log: AuditLog, stoppedBySecrets: boolean): EvidenceStep {
   const m = log.metadata ?? {};
-  const kinds = (m.secretTypes ?? '').split(',').filter(Boolean).map((t) => t.replace(/_/g, ' ')).join(', ');
-  if (stoppedBySecrets) return { label: 'Stopped: secret in the prompt', detail: `found ${kinds || 'a credential'}. The secret itself was not recorded.`, kind: 'stopped' };
+  const kinds = (m.secretTypes ?? '').split(',').filter(Boolean).map(secretLabel).join(', ');
+  if (stoppedBySecrets) return { label: 'Stopped: secret in the prompt', detail: `found ${kinds ? withArticle(kinds) : 'a credential'}. The secret itself was not recorded.`, kind: 'stopped' };
   if (m.secretsRedacted) return { label: 'Secrets removed', detail: `${m.secretsRedacted} found (${kinds}) and replaced before the prompt left the company.`, kind: 'cleaned' };
   if (m.secretsChecked) return { label: 'No secrets found', detail: 'no API keys, tokens, private keys or passwords.', kind: 'neutral' };
   if (log.eventType === 'request_blocked') return { label: 'Secrets', detail: 'not reached; the request was already stopped.', kind: 'skipped' };
@@ -33,6 +40,8 @@ export interface EvidenceListItem {
   mcp?: { server: string; tool: string };
   /** Sent, but the AI provider or the API refused or failed, so nothing came back. */
   unanswered?: true;
+  /** What was removed before sending, for cleaned requests. */
+  removed?: { secrets?: true; personalData?: true };
 }
 
 /** True for an agent's MCP tool call rather than a prompt to a model. */
@@ -56,6 +65,7 @@ function toItem(l: AuditLog): EvidenceListItem {
     ...(l.eventType === 'request_blocked' ? { reason: l.metadata?.policyReason || l.triggeredRules?.[l.triggeredRules.length - 1] || 'Blocked by policy' } : {}),
     ...(isMcpCall(l) ? { mcp: { server: l.metadata?.mcpServer ?? 'an MCP server', tool: l.metadata?.mcpTool ?? 'a tool' } } : {}),
     ...(unanswered(l) ? { unanswered: true as const } : {}),
+    ...(outcomeOf(l) === 'cleaned' ? { removed: { ...(secretsRedacted(l) ? { secrets: true as const } : {}), ...(l.piiDetected ? { personalData: true as const } : {}) } } : {}),
   };
 }
 

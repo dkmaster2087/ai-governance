@@ -6,7 +6,7 @@ import {
   addRule, changeRule, deleteRule, EditableType, errorMessage, fetchRules, isEditableType, RuleView, ruleValues, SecretsAction, setFailMode,
   setSecretsAction,
 } from '../lib/rules-api';
-import { Button, Note, Panel, SectionLabel, Segmented, Switch, formatCount } from '../components/kit/primitives';
+import { Button, ConfirmAction, Note, Panel, SectionLabel, Segmented, Switch, formatCount } from '../components/kit/primitives';
 
 const FRAMEWORK_LABEL: Record<string, string> = { soc2: 'SOC 2', hipaa: 'HIPAA', 'eu-ai-act': 'EU AI Act' };
 
@@ -38,6 +38,7 @@ function SecretsCard({ secrets, canEdit, onChange, saving }: {
   saving: boolean;
 }) {
   const s = SECRETS_SENTENCE[secrets.action];
+  const [confirmOff, setConfirmOff] = useState(false);
   return (
     <Panel as="article" className={clsx('px-[18px] py-4 flex flex-col gap-3', secrets.action === 'off' && 'border-dashed')}>
       <p className="m-0 text-base leading-[1.4] font-semibold">
@@ -51,10 +52,17 @@ function SecretsCard({ secrets, canEdit, onChange, saving }: {
         <Segmented
           label="When a prompt contains a secret"
           value={secrets.action}
-          onChange={(a) => { if (!saving && a !== secrets.action) onChange(a); }}
+          onChange={(a) => { if (saving || a === secrets.action) return; if (a === 'off') setConfirmOff(true); else onChange(a); }}
           options={[{ value: 'block', label: 'Stop the request' }, { value: 'redact', label: 'Remove, then send' }, { value: 'off', label: 'Off' }]}
         />
       ) : null}
+      {confirmOff && (
+        <div role="group" aria-label="Confirm" className="flex flex-wrap items-center gap-2 text-sm">
+          <span>Turn the secrets check off? API keys and passwords in prompts will reach AI providers.</span>
+          <Button type="button" variant="secondary" onClick={() => { setConfirmOff(false); onChange('off'); }}>Turn off</Button>
+          <Button type="button" variant="ghost" onClick={() => setConfirmOff(false)}>Keep it on</Button>
+        </div>
+      )}
       <div className="flex justify-between items-center gap-3">
         <span className="font-bold">
           {formatCount(secrets.stopped)} stopped{secrets.redacted > 0 ? ` · ${formatCount(secrets.redacted)} removed` : ''} this week
@@ -217,7 +225,8 @@ function RuleCard({ rule, canEdit, piiTypes }: { rule: RuleView; canEdit: boolea
                 <button type="button" onClick={() => setEditing(true)} className="min-h-[32px] px-2 font-semibold hover:text-stop">Edit</button>
               )}
               {canEdit && !rule.framework && (
-                <button type="button" onClick={() => remove.mutate()} disabled={remove.isPending} className="min-h-[32px] px-2 text-ink-muted hover:text-stop">Delete</button>
+                <ConfirmAction label="Delete" question={<>Delete “{rule.description}”? What it stops will go through.</>}
+                  onConfirm={() => remove.mutate()} disabled={remove.isPending} triggerClassName="min-h-[32px] px-2 text-ink-muted hover:text-stop" />
               )}
             </span>
           </div>
@@ -249,6 +258,7 @@ export function RulesPage() {
   const refresh = () => queryClient.invalidateQueries({ queryKey: ['rules'] });
   const add = useMutation({ mutationFn: addRule, onSuccess: () => { setAdding(false); refresh(); } });
   const failMode = useMutation({ mutationFn: setFailMode, onSuccess: refresh });
+  const [confirmOpen, setConfirmOpen] = useState(false);
   const secretsAction = useMutation({ mutationFn: setSecretsAction, onSuccess: refresh });
 
   const checked = data?.rules.filter((r) => r.effect !== 'not_enforced') ?? [];
@@ -273,12 +283,21 @@ export function RulesPage() {
             <div className="flex flex-col gap-1">
               <span className="text-xs text-ink-muted">If a check can’t run</span>
               {isAdmin ? (
-                <Segmented
-                  label="If a check can't run"
-                  value={data.failMode}
-                  onChange={(m) => failMode.mutate(m)}
-                  options={[{ value: 'closed', label: 'Block the request' }, { value: 'open', label: 'Let it through, flagged' }]}
-                />
+                <>
+                  <Segmented
+                    label="If a check can't run"
+                    value={data.failMode}
+                    onChange={(m) => { if (m === data.failMode) return; if (m === 'open') setConfirmOpen(true); else failMode.mutate(m); }}
+                    options={[{ value: 'closed', label: 'Block the request' }, { value: 'open', label: 'Let it through, flagged' }]}
+                  />
+                  {confirmOpen && (
+                    <div role="group" aria-label="Confirm" className="flex flex-wrap items-center gap-2 text-sm max-w-[520px]">
+                      <span>Let requests through when a check can’t run? While a check is down, prompts reach AI providers unchecked (each is flagged in Evidence).</span>
+                      <Button type="button" variant="secondary" onClick={() => { setConfirmOpen(false); failMode.mutate('open'); }}>Let them through</Button>
+                      <Button type="button" variant="ghost" onClick={() => setConfirmOpen(false)}>Keep blocking</Button>
+                    </div>
+                  )}
+                </>
               ) : (
                 <span className="font-semibold">{data.failMode === 'closed' ? 'Block the request' : 'Let it through, flagged'}</span>
               )}

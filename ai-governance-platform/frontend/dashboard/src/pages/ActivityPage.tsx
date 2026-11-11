@@ -12,7 +12,11 @@ export const ACTION_LABEL: Record<string, string> = {
   'gateway_settings.updated': 'Changed gateway settings', 'policy.created': 'Added a policy', 'policy.updated': 'Changed a policy', 'policy.deleted': 'Deleted a policy',
   'api_key.created': 'Created an API key', 'api_key.revoked': 'Revoked an API key', 'api_key.rotated': 'Replaced an API key', 'api_key.deleted': 'Deleted an API key',
   'model.added': 'Added a model', 'model.updated': 'Changed a model', 'model.deleted': 'Removed a model', 'model.tested': 'Tested a model',
-  'alert_rule.created': 'Added an alert', 'alert.tested': 'Sent a test alert', 'shadow_ai_policy.updated': 'Changed the shadow AI policy',
+  'alert_rule.created': 'Added an alert', 'alert_rule.updated': 'Changed an alert', 'alert_rule.deleted': 'Deleted an alert', 'alert.tested': 'Sent a test alert',
+  'user.invited': 'Invited a person', 'user.changed': 'Changed a person’s role or access', 'user.removed': 'Removed a person', 'user.invite_resent': 'Resent an invitation',
+  'legal_hold.changed': 'Changed the legal hold',
+  // Names recorded before these actions had their own.
+  'users.changed': 'Changed people (invite, role or access)', 'tenants.changed': 'Changed company settings', 'license.changed': 'Changed the license', 'license.activated': 'Entered a license key', 'license.removed': 'Removed a license', 'compliance.synced': 'Updated a framework’s rules', 'shadow_ai_policy.updated': 'Changed the shadow AI policy',
   'compliance.enabled': 'Turned on a framework', 'compliance.disabled': 'Turned off a framework', 'compliance.assessed': 'Ran a compliance check',
   'tenant.created': 'Created the company', 'tenant.updated': 'Changed company settings', 'tenant.suspended': 'Suspended the company', 'tenant.activated': 'Reactivated the company',
   'license.issued': 'Issued a license', 'license.revoked': 'Revoked a license', 'reporting_license.updated': 'Changed reporting settings',
@@ -64,6 +68,7 @@ function Row({ a }: { a: ActivityItem }) {
         <span className="flex-[1_1_220px] min-w-0">
           <span className="font-semibold">{ACTION_LABEL[a.action] ?? a.action}</span>
           {a.action === 'sign_in.api_key' && reason && <span className="text-ink-muted">: {KEY_REASON[reason] ?? reason}</span>}
+          {a.category === 'admin' && a.outcome !== 'success' && <span className="text-ink-muted"> (tried; nothing changed)</span>}
           <span className="block text-sm text-ink-muted [overflow-wrap:anywhere]">{who(a.actor)}{a.actor.role ? ` · ${a.actor.role.replace('tenant_', '').replace('_', ' ')}` : ''}</span>
         </span>
         <OutcomePill o={a.outcome} />

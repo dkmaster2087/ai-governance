@@ -37,7 +37,7 @@ export function AnalyticsPage() {
           </p>
           {u && (
             <p className="m-0 mt-1.5 text-ink-muted text-[15px]">
-              {who}. <span className="text-stop-text font-semibold">{formatCount(u.totals.stopped)} stopped</span>, {formatCount(u.totals.cleaned)} cleaned, about {money(u.totals.cost)} in model spend.
+              {who}. <span className="text-stop-text font-semibold">{formatCount(u.totals.stopped)} stopped</span>, {formatCount(u.totals.cleaned)} cleaned, {u.totals.cost > 0 && u.totals.cost < 0.01 ? 'under $0.01' : `about ${money(u.totals.cost)}`} in estimated model spend.
               {u.truncated && ' Lower bounds: some tenants had more traffic than one read covers.'}
             </p>
           )}

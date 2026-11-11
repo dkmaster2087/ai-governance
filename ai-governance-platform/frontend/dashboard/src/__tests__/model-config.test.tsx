@@ -83,6 +83,20 @@ describe('ModelForm', () => {
     expect(vi.mocked(api.updateModelConfig).mock.calls[0][1]).toMatchObject({ maxTokensPerRequest: 800, allowedKeyIds: ['k_support'] });
   });
 
+  it('takes prices per million tokens, as providers quote them, to any precision', async () => {
+    vi.mocked(api.updateModelConfig).mockResolvedValue({});
+    const onDone = vi.fn();
+    wrap(<ModelForm model={{ ...openaiModel, inputCostPer1kTokens: 0.0025, outputCostPer1kTokens: 0.01 }} onDone={onDone} />);
+    expect(screen.getByLabelText(/Input price per million tokens/)).toHaveValue(2.5);
+    fireEvent.change(screen.getByLabelText(/Input price per million tokens/), { target: { value: '0.035' } });
+    fireEvent.change(screen.getByLabelText(/Output price per million tokens/), { target: { value: '0.14' } });
+    fireEvent.click(screen.getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(onDone).toHaveBeenCalled());
+    const saved = vi.mocked(api.updateModelConfig).mock.calls[0][1] as { inputCostPer1kTokens: number; outputCostPer1kTokens: number };
+    expect(saved.inputCostPer1kTokens).toBeCloseTo(0.000035, 9);
+    expect(saved.outputCostPer1kTokens).toBeCloseTo(0.00014, 9);
+  });
+
   it('shows the server’s reason when saving fails', async () => {
     vi.mocked(api.createModelConfig).mockRejectedValue({ response: { data: { message: 'Invalid model' } } });
     wrap(<ModelForm onDone={vi.fn()} />);
@@ -115,6 +129,14 @@ describe('ModelsPage', () => {
     wrap(<ModelsPage />);
     fireEvent.click(await screen.findByRole('button', { name: 'Test' }));
     expect(await screen.findByText('Answered in 412 ms')).toBeInTheDocument();
+  });
+
+  it('says what to do when Bedrock hasn’t enabled the model for the account', async () => {
+    vi.mocked(api.fetchModelConfigs).mockResolvedValue([{ ...openaiModel, provider: 'bedrock', modelId: 'us.anthropic.claude-sonnet-5' }]);
+    vi.mocked(api.testModelConfig).mockResolvedValue({ success: false, error: 'Provider bedrock: anthropic.claude-sonnet-5 is not available for this account. Contact AWS Sales' });
+    wrap(<ModelsPage />);
+    fireEvent.click(await screen.findByRole('button', { name: 'Test' }));
+    expect(await screen.findByText(/isn’t enabled for the AWS account\. Turn it on in the Amazon Bedrock console/)).toBeInTheDocument();
   });
 
   it('asks before removing', async () => {

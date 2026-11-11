@@ -23,15 +23,17 @@ describe('pattern safety', () => {
   });
 
   it('rejects invalid, empty, oversized and catastrophic patterns', () => {
-    expect(patternProblem('([a-z')).toMatch(/Invalid/);
-    expect(patternProblem('')).toMatch(/non-empty/);
+    expect(patternProblem('([a-z')).toMatch(/isn’t a valid pattern/);
+    expect(patternProblem('INV-[0-9{6')).toBe('isn’t a valid pattern: a [ has no closing ]');
+    expect(patternProblem('*abc')).toBe('isn’t a valid pattern: *, + or ? has nothing before it to repeat');
+    expect(patternProblem('')).toMatch(/empty/);
     expect(patternProblem('a'.repeat(501))).toMatch(/longer/);
     expect(patternProblem('(a+)+$')).toMatch(/slow/);
   });
 
-  it('reports problems per rule', () => {
+  it('names the pattern itself, never an internal rule ID', () => {
     const problems = validatePolicyPatterns([{ ruleId: 'r9', type: 'data_classification', config: { patterns: ['ok', '(x+)+'] } }]);
-    expect(problems).toEqual([expect.stringContaining('Rule r9, pattern 2')]);
+    expect(problems).toEqual(['The pattern “(x+)+” could be very slow on some inputs (repetition inside repetition); simplify it.']);
   });
 });
 

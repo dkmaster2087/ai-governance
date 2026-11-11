@@ -6,7 +6,7 @@ import {
   activateLicense, fetchLicenseOverview, formatDate, License, removeLicense, REPORTING_LABELS, ReportingConfig, setReporting, statusMessage,
 } from '../lib/license-api';
 import { errorMessage } from '../lib/rules-api';
-import { Button, Note, Panel, SectionLabel, Switch } from '../components/kit/primitives';
+import { Button, ConfirmAction, Note, Panel, SectionLabel, Switch } from '../components/kit/primitives';
 
 /** What a company sees of its own licenses: an ended license is "Expired", whatever ended it. */
 const companyLabel = (l: License) => (l.status === 'active' ? 'Active' : l.status === 'removed' ? 'Removed' : 'Expired');
@@ -26,7 +26,7 @@ function EnterKey({ onDone }: { onDone: () => void }) {
         <Button type="submit" disabled={!key.trim() || enter.isPending}>{enter.isPending ? 'Checking…' : 'Add license'}</Button>
       </form>
       {enter.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(enter.error)}</p>}
-      {enter.isSuccess && <p role="status" className="m-0 font-semibold">License added: {enter.data.license.plan} plan, valid until {formatDate(enter.data.license.expiresAt)}.</p>}
+      {enter.isSuccess && <p role="status" className="m-0 font-semibold">License added: {enter.data.license.plan.charAt(0).toUpperCase() + enter.data.license.plan.slice(1)} plan, valid until {formatDate(enter.data.license.expiresAt)}.</p>}
     </Panel>
   );
 }
@@ -39,10 +39,10 @@ function LicenseCard({ l, canRemove, onRemoved }: { l: License; canRemove: boole
         <h2 className="m-0 text-[22px] font-bold capitalize">{l.plan} plan</h2>
         <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full', l.status === 'active' ? 'bg-ink-tint text-ink' : 'bg-stop-soft text-stop-text')}>{companyLabel(l)}</span>
         {canRemove && l.status === 'active' && (
-          <Button variant="ghost" className="ml-auto" disabled={remove.isPending}
-            onClick={() => { if (window.confirm('Remove this license from your company? Without another license, AI requests stop after the grace period.')) remove.mutate(); }}>
-            Remove
-          </Button>
+          <span className="ml-auto">
+            <ConfirmAction label="Remove" variant="ghost" disabled={remove.isPending} onConfirm={() => remove.mutate()}
+              question="Remove this license from your company? Without another license, AI requests stop after the grace period." />
+          </span>
         )}
       </div>
       <dl className="m-0 grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>

@@ -9,7 +9,7 @@ const field = 'w-full min-h-[42px] px-3 border border-line-strong rounded-lg bg-
 
 const ROLES: Array<{ role: UserRole; label: string; can: string }> = [
   { role: 'tenant_admin', label: 'Admin', can: 'Everything: rules, keys, models, shadow AI decisions and users.' },
-  { role: 'tenant_auditor', label: 'Auditor', can: 'Read-only: Gateway, Stopped and Evidence.' },
+  { role: 'tenant_auditor', label: 'Auditor', can: 'Read-only: Gateway, Stopped, Evidence and Activity. Sees the approvals queue; decides only where named as an approver.' },
   { role: 'tenant_user', label: 'User', can: 'Uses AI through approved apps. No dashboard.' },
 ];
 const roleLabel = (r: string) => ROLES.find((x) => x.role === r)?.label ?? r;
@@ -68,6 +68,9 @@ function PersonRow({ u, me }: { u: CompanyUser; me?: string }) {
         </div>
       )}
       {error && <p role="alert" className="basis-full m-0 text-stop-text font-semibold">{errorMessage(error)}</p>}
+      {change.isSuccess && !error && change.variables?.role && (
+        <p role="status" className="basis-full m-0 text-sm text-ink-muted">Saved: {u.givenName} is now {roleLabel(change.variables.role)}. It applies the next time they sign in.</p>
+      )}
     </li>
   );
 }

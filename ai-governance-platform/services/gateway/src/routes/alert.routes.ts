@@ -43,6 +43,9 @@ export async function alertRoutes(app: FastifyInstance) {
   app.get('/alerts/rules', { preHandler: requireAccess(TENANT_READ) }, async (request) =>
     (await alerting().rules(request.tenantId)).map(ruleView));
 
+  /** What this install can deliver, so the page can say when email isn't set up. */
+  app.get('/alerts/delivery', { preHandler: requireAccess(TENANT_READ) }, async () => ({ email: !!process.env.EMAIL_FROM?.trim() }));
+
   app.get('/alerts/events', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
     const limit = Math.min(200, Math.max(1, Number((request.query as { limit?: string }).limit) || 50));
     return alerting().events(request.tenantId, limit);

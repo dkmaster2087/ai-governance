@@ -42,7 +42,7 @@ describe('compliance frameworks', () => {
   it('says honestly which controls are in place, and why the others aren’t', async () => {
     const soc2 = await service.enableFramework(T, 'soc2', 'admin');
     expect(`${soc2.passedControls}/${soc2.totalControls}`).toBe('5/6');
-    expect(soc2.controls.find((c) => c.controlId === 'SOC2-CC7.2')).toMatchObject({ state: 'gap', met: false });
+    expect(soc2.controls.find((c) => c.controlId === 'SOC2-CC7.2')).toMatchObject({ state: 'needs_action', met: false, note: expect.stringContaining('Alerts page') });
     expect(soc2.controls.find((c) => c.controlId === 'SOC2-CC9.1')).toMatchObject({ state: 'enforced', met: true });
 
     const hipaa = await service.enableFramework(T, 'hipaa', 'admin');

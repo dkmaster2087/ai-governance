@@ -17,6 +17,7 @@ const listActivity = vi.fn(async (..._a: unknown[]) => ({
   items: [
     { eventId: 'a1', time: '2026-11-06T10:00:00Z', category: 'admin', action: 'rule.created', outcome: 'success', actor: { type: 'user', id: 'u1', email: 'ana@acme.example', role: 'tenant_admin' }, target: { policyId: 'pol_1' }, sourceIp: '203.0.113.5', hash: 'h1' },
     { eventId: 'a2', time: '2026-11-06T09:00:00Z', category: 'sign_in', action: 'sign_in.api_key', outcome: 'denied', actor: { type: 'api_key', id: 'key_9', keyId: 'key_9' }, detail: { reason: 'KEY_REVOKED' }, hash: 'h2' },
+    { eventId: 'a3', time: '2026-11-06T08:00:00Z', category: 'admin', action: 'user.invited', outcome: 'denied', actor: { type: 'user', id: 'u2', email: 'aud@acme.example', role: 'tenant_auditor' }, detail: { status: 403 }, hash: 'h3' },
   ],
 }));
 vi.mock('../lib/log-export-api', () => ({
@@ -76,7 +77,10 @@ describe('Activity page', () => {
     expect(screen.getByText(/Kept for 400 days/)).toBeInTheDocument();
     expect(screen.getByText('API key refused')).toBeInTheDocument();
     expect(screen.getByText(/the key was revoked/)).toBeInTheDocument();
-    expect(screen.getByText('Refused')).toBeInTheDocument();
+    expect(screen.getAllByText('Refused')).toHaveLength(2);
+    // A refused change must not read as if it happened.
+    expect(screen.getByText('Invited a person')).toBeInTheDocument();
+    expect(screen.getByText('(tried; nothing changed)')).toBeInTheDocument();
     fireEvent.click(screen.getByRole('button', { name: /Added a rule/ }));
     expect(screen.getByText('pol_1')).toBeInTheDocument();
     expect(screen.getByText('203.0.113.5')).toBeInTheDocument();

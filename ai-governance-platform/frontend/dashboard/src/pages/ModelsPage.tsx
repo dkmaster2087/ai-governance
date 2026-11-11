@@ -11,7 +11,23 @@ import { listKeys } from '../lib/api-keys-api';
 import { Button, Note, Panel, SectionLabel, Segmented, Switch } from '../components/kit/primitives';
 
 const field = 'w-full min-h-[42px] px-3 border border-line-strong rounded-lg bg-white';
-const price = (n: number) => (n ? `$${n}` : '—');
+// Providers quote prices per million tokens; they're stored per thousand (what Spend multiplies by).
+const perMillion = (per1k: number) => Math.round(per1k * 1000 * 1e6) / 1e6;
+const price = (per1k: number) => (per1k ? `$${perMillion(per1k)}` : '—');
+
+/** The provider's error, in words that say what to do; the original is kept after it for support. */
+function whyNoAnswer(provider: string, error?: string): string {
+  const e = (error ?? '').toLowerCase();
+  if (provider === 'bedrock' && (e.includes('not available for this account') || e.includes("don't have access") || e.includes('accessdenied')))
+    return 'this model isn’t enabled for the AWS account. Turn it on in the Amazon Bedrock console (Model access), then test again.';
+  if (provider === 'bedrock' && (e.includes('end of its life') || e.includes('end of life')))
+    return 'Amazon has retired this model. Choose a current one.';
+  if (e.includes('invalid model') || e.includes('model identifier is invalid') || e.includes('does not exist'))
+    return 'the provider doesn’t recognise this model ID. Check it against the provider’s model list.';
+  if (provider === 'openai' && (e.includes('incorrect api key') || e.includes('401')))
+    return 'OpenAI refused the key. Paste a current API key.';
+  return error ?? 'unknown error';
+}
 
 const blank: ModelInput = { name: '', provider: 'bedrock', modelId: '', status: 'active', apiKey: '', inputCostPer1kTokens: 0, outputCostPer1kTokens: 0, maxTokensPerRequest: 4096, allowedKeyIds: [] };
 
@@ -75,11 +91,11 @@ export function ModelForm({ model, onDone }: { model?: ModelConfig; onDone: () =
           )}
         </div>
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))' }}>
-          <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Input price per 1,000 tokens ($)</span>
-            <input className={field} type="number" min={0} step="0.00001" value={form.inputCostPer1kTokens} onChange={(e) => set('inputCostPer1kTokens', Math.max(0, Number(e.target.value) || 0))} />
+          <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Input price per million tokens ($)</span>
+            <input className={field} type="number" min={0} step="any" value={perMillion(form.inputCostPer1kTokens)} onChange={(e) => set('inputCostPer1kTokens', Math.max(0, Number(e.target.value) || 0) / 1000)} />
           </label>
-          <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Output price per 1,000 tokens ($)</span>
-            <input className={field} type="number" min={0} step="0.00001" value={form.outputCostPer1kTokens} onChange={(e) => set('outputCostPer1kTokens', Math.max(0, Number(e.target.value) || 0))} />
+          <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Output price per million tokens ($)</span>
+            <input className={field} type="number" min={0} step="any" value={perMillion(form.outputCostPer1kTokens)} onChange={(e) => set('outputCostPer1kTokens', Math.max(0, Number(e.target.value) || 0) / 1000)} />
           </label>
         </div>
         <p className="m-0 -mt-2 text-xs text-ink-muted">Prices are what your provider charges; Spend uses them to estimate cost.</p>
@@ -131,7 +147,7 @@ function ModelRow({ m, onEdit }: { m: ModelConfig; onEdit: () => void }) {
   const listed = m.status === 'active';
 
   const testLine = test.isError ? { ok: false, text: `Test failed: ${errorMessage(test.error)}` }
-    : result ? (result.success ? { ok: true, text: `Answered in ${result.latencyMs} ms` } : { ok: false, text: `Didn’t answer: ${result.error ?? 'unknown error'}` })
+    : result ? (result.success ? { ok: true, text: `Answered in ${result.latencyMs} ms` } : { ok: false, text: `Didn’t answer: ${whyNoAnswer(m.provider, result.error)}` })
     : m.lastTestStatus ? { ok: m.lastTestStatus === 'pass', text: m.lastTestStatus === 'pass' ? 'Last test passed' : 'Last test failed' }
     : null;
 
@@ -146,7 +162,7 @@ function ModelRow({ m, onEdit }: { m: ModelConfig; onEdit: () => void }) {
       </div>
       <div className="text-sm min-w-0">
         <div>{PROVIDER_LABEL[m.provider] ?? <span className="text-stop-text font-semibold">{m.provider} (not supported)</span>}{m.apiKeyHint && <span className="font-mono text-ink-muted"> · key {m.apiKeyHint}</span>}</div>
-        <div className="text-ink-muted">{m.inputCostPer1kTokens || m.outputCostPer1kTokens ? `In ${price(m.inputCostPer1kTokens)} · out ${price(m.outputCostPer1kTokens)} per 1k tokens` : 'No prices set'}</div>
+        <div className="text-ink-muted">{m.inputCostPer1kTokens || m.outputCostPer1kTokens ? `In ${price(m.inputCostPer1kTokens)} · out ${price(m.outputCostPer1kTokens)} per million tokens` : 'No prices set'}</div>
         <div className="text-ink-muted">Answers up to {(m.maxTokensPerRequest ?? 4096).toLocaleString()} tokens · {m.allowedKeyIds?.length ? `${m.allowedKeyIds.length} key${m.allowedKeyIds.length === 1 ? '' : 's'} only` : 'every key'}</div>
         {testLine && <div className={clsx('font-semibold', testLine.ok ? 'text-ink' : 'text-stop-text')}>{testLine.text}</div>}
       </div>

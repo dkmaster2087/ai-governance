@@ -17,6 +17,8 @@ export interface EvidenceListItem {
   mcp?: { server: string; tool: string };
   /** Sent, but the AI provider or the API refused or failed. */
   unanswered?: true;
+  /** What was removed before sending, for cleaned requests. */
+  removed?: { secrets?: true; personalData?: true };
 }
 
 

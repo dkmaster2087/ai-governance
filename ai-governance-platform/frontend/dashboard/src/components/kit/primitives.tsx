@@ -2,7 +2,7 @@
  * Core building blocks for the Probaline UI (direction I): light, ink navy, red only for "stopped".
  * Keep pages composed from these so the look stays consistent.
  */
-import { ButtonHTMLAttributes, ReactNode } from 'react';
+import { ButtonHTMLAttributes, ReactNode, useState } from 'react';
 import { Link, LinkProps } from 'react-router-dom';
 import clsx from 'clsx';
 
@@ -20,6 +20,36 @@ const buttonVariants: Record<Variant, string> = {
 
 export function Button({ variant = 'primary', className, ...props }: ButtonHTMLAttributes<HTMLButtonElement> & { variant?: Variant }) {
   return <button className={clsx(buttonBase, buttonVariants[variant], className)} {...props} />;
+}
+
+/**
+ * A button for something that can't be undone or weakens a control: the first click asks, in the page,
+ * and only the second does it. Use it for deletes, revokes and switching a check off.
+ */
+export function ConfirmAction({ label, question, confirmLabel, onConfirm, disabled, variant = 'secondary', triggerClassName, ariaLabel }: {
+  label: string;
+  question: ReactNode;
+  confirmLabel?: string;
+  onConfirm: () => void;
+  disabled?: boolean;
+  variant?: Variant;
+  /** Style the first button like the surrounding plain-text buttons instead of a Button. */
+  triggerClassName?: string;
+  ariaLabel?: string;
+}) {
+  const [asking, setAsking] = useState(false);
+  if (asking) {
+    return (
+      <span role="group" aria-label="Confirm" className="inline-flex flex-wrap items-center gap-2">
+        <span className="text-sm">{question}</span>
+        <Button type="button" variant="secondary" disabled={disabled} onClick={() => { setAsking(false); onConfirm(); }}>{confirmLabel ?? label}</Button>
+        <Button type="button" variant="ghost" onClick={() => setAsking(false)}>Keep</Button>
+      </span>
+    );
+  }
+  return triggerClassName
+    ? <button type="button" aria-label={ariaLabel} disabled={disabled} className={triggerClassName} onClick={() => setAsking(true)}>{label}</button>
+    : <Button type="button" variant={variant} aria-label={ariaLabel} disabled={disabled} onClick={() => setAsking(true)}>{label}</Button>;
 }
 
 /** A navigation action styled as a button. */
@@ -59,7 +89,7 @@ export function Segmented<T extends string>({
   options, value, onChange, label,
 }: { options: SegmentedOption<T>[]; value: T; onChange: (value: T) => void; label: string }) {
   return (
-    <div role="group" aria-label={label} className="inline-flex border border-line-strong rounded-lg overflow-hidden bg-white">
+    <div role="group" aria-label={label} className="inline-flex flex-wrap max-w-full border border-line-strong rounded-lg overflow-hidden bg-white">
       {options.map((o, i) => {
         const active = o.value === value;
         return (

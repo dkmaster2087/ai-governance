@@ -254,3 +254,46 @@ Found, not fixed yet: the web firewall has no SQL-injection rule set (`AWSManage
 data store is SQL, but buyers will look for it. Not yet tried on the deployed stage: dashboard sign-in (needs the
 first platform admin), an AI request with a real key, MCP, alerts by email (no SES sender yet), the restore test
 and the load test.
+
+## UI click-through on the dev stage (2026-11-11)
+
+Every page clicked through as a company admin on the deployed dev stage: rules (add, edit, invalid pattern,
+on/off, delete, secrets modes, fail mode), API keys (create with expiry and limited permission, replace, revoke,
+and that the limits hold), models (test, prices, answer limit, remove), users (invite, role change, turn off/on),
+alerts (create, test, a real alert to a webhook with a valid signature), compliance (SOC 2 on, controls, an
+unlisted model stopped), shadow AI (allow, block, block-page links), MCP (create a server, add an OpenAPI API,
+try a tool, publish, an agent's write call waiting for approval, approve and refuse), evidence (filters, search,
+export without the secret), log export (destination, test, real records), enforcement (feed served to a firewall,
+AWS policies), legal hold (records keep no expiry) and license (invalid key); phone width and an expired session.
+
+Fixed: one-click delete of a rule and revoke/replace of a key, and switching to "let it through" or turning the
+secrets check off without asking (now an in-page confirmation); developer-speak for an invalid pattern; prices
+couldn't hold real Bedrock prices (now per million tokens, any precision); Bedrock's raw refusal on Test (now
+says to enable the model in the Bedrock console); no warning that alert email isn't set up; SOC 2 CC7.2 said
+alerts didn't exist; Evidence lines said "personal data" when secrets were removed; "aws access key" wording; no
+feedback after a role change; setup tabs cut off on phones; a dark-mode switch on sign-in that the dashboard
+never honoured (removed).
+
+Open, for a decision: the AWS lock policy allows only Probaline's own gateway role, which fits a gateway in the
+customer's account but not a hosted customer (their policy should block direct Bedrock use entirely); MCP result
+filtering also masks links and user-agent text, beyond the email/phone/SSN/card it advertises. Minor: alert
+emails have no dashboard link on dev; the Alerts page doesn't refresh itself after a send; an evidence export
+names the exporter by ID, not email; no "your session ended" message.
+
+Platform admin: overview, company details, Usage and Health (every service working, with timings) match the
+company's own numbers. Suspend asks first and refuses the company's API key at once ("This tenant is suspended");
+Reactivate asks first and the key works again at once. Issuing a license shows the key once; it is refused for
+prompts (it only carries the usage-reporting permission). Fixed: "1 tenants", "about under $0.01", Cancel wrapping
+under Reactivate. Entered as the company admin, the license took effect at once (Active, 3 of 50 users, the
+"no active license" banner gone). Fixed: its Remove used the browser's pop-up (now asks in the page, like other
+risky actions); "enterprise plan" in lower case. Other pages still use the browser's pop-up for deletes (alerts,
+MCP servers, connectors, revoking a license); they do ask, but should move to the in-page question.
+
+Auditor (signed in as a real `tenant_auditor`): sees Gateway, Stopped, Evidence (case files download), Approvals
+(queue only; decides only where a server names them) and Activity; typing an admin page's address goes back to
+Gateway. Direct API writes as the auditor (add a rule, create a key, invite a person) were refused with 403 and
+nothing changed; every write route that admits an auditor was reviewed (compliance re-check and feed preview only
+read; approvals check the approver list). Fixed: Activity showed a refused attempt as "Added a rule" (now "tried;
+nothing changed"); people, legal hold and license changes were logged under generic names like `users.changed`
+(now `user.invited`, `user.changed`, `legal_hold.changed`, …); Gateway and Evidence offered auditors links to
+Rules and Shadow AI, which they can't open; the Users page undersold what an auditor sees.

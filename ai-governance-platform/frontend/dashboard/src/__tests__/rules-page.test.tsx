@@ -18,13 +18,15 @@ const data: RulesResponse = {
 const changeRule = vi.fn(async (..._args: unknown[]) => ({}));
 const addRule = vi.fn(async (..._args: unknown[]) => ({}));
 const setSecretsAction = vi.fn(async (..._args: unknown[]) => ({}));
+const deleteRule = vi.fn(async (..._args: unknown[]) => ({}));
+const setFailMode = vi.fn(async (..._args: unknown[]) => ({}));
 vi.mock('../lib/rules-api', async (orig) => ({
   ...(await orig<typeof import('../lib/rules-api')>()),
   fetchRules: vi.fn(async () => data),
   changeRule: (...a: unknown[]) => changeRule(...a),
   addRule: (...a: unknown[]) => addRule(...a),
-  deleteRule: vi.fn(async () => ({})),
-  setFailMode: vi.fn(async () => ({})),
+  deleteRule: (...a: unknown[]) => deleteRule(...a),
+  setFailMode: (...a: unknown[]) => setFailMode(...a),
   setSecretsAction: (...a: unknown[]) => setSecretsAction(...a),
 }));
 vi.mock('../lib/auth', () => ({ useAuth: () => ({ user: { tenantId: 't' }, isAdmin: true }) }));
@@ -38,7 +40,7 @@ const renderPage = () => render(
 );
 
 describe('Rules page', () => {
-  beforeEach(() => { changeRule.mockClear(); addRule.mockClear(); });
+  beforeEach(() => { changeRule.mockClear(); addRule.mockClear(); deleteRule.mockClear(); setFailMode.mockClear(); setSecretsAction.mockClear(); });
 
   it('counts only rules that can stop a request in the headline', async () => {
     renderPage();
@@ -94,5 +96,41 @@ describe('Rules page', () => {
     renderPage();
     const card = (await screen.findByText('Detect PII')).closest('article')!;
     expect(within(card as HTMLElement).queryByRole('button', { name: 'Delete' })).toBeNull();
+  });
+
+  it('asks before deleting a rule, and Keep leaves it', async () => {
+    renderPage();
+    const card = (await screen.findByText('Block confidential keywords')).closest('article')!;
+    fireEvent.click(within(card as HTMLElement).getByRole('button', { name: 'Delete' }));
+    expect(deleteRule).not.toHaveBeenCalled();
+    expect(within(card as HTMLElement).getByText(/Delete “Block confidential keywords”\? What it stops will go through\./)).toBeInTheDocument();
+    fireEvent.click(within(card as HTMLElement).getByRole('button', { name: 'Keep' }));
+    expect(deleteRule).not.toHaveBeenCalled();
+    fireEvent.click(within(card as HTMLElement).getByRole('button', { name: 'Delete' }));
+    fireEvent.click(within(card as HTMLElement).getAllByRole('button', { name: 'Delete' }).at(-1)!);
+    await waitFor(() => expect(deleteRule).toHaveBeenCalled());
+  });
+
+  it('asks before letting requests through when a check can’t run', async () => {
+    renderPage();
+    fireEvent.click(await screen.findByRole('button', { name: 'Let it through, flagged' }));
+    expect(setFailMode).not.toHaveBeenCalled();
+    expect(screen.getByText(/prompts reach AI providers unchecked/)).toBeInTheDocument();
+    fireEvent.click(screen.getByRole('button', { name: 'Let them through' }));
+    await waitFor(() => expect(setFailMode).toHaveBeenCalled());
+    expect(setFailMode.mock.calls[0][0]).toBe('open');
+  });
+
+  it('asks before turning the secrets check off', async () => {
+    renderPage();
+    const check = await screen.findByRole('region', { name: 'Check 2, secrets' });
+    fireEvent.click(within(check).getByRole('button', { name: 'Off' }));
+    expect(setSecretsAction).not.toHaveBeenCalled();
+    fireEvent.click(within(check).getByRole('button', { name: 'Keep it on' }));
+    expect(setSecretsAction).not.toHaveBeenCalled();
+    fireEvent.click(within(check).getByRole('button', { name: 'Off' }));
+    fireEvent.click(within(check).getByRole('button', { name: 'Turn off' }));
+    await waitFor(() => expect(setSecretsAction).toHaveBeenCalled());
+    expect(setSecretsAction.mock.calls[0][0]).toBe('off');
   });
 });

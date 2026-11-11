@@ -38,12 +38,13 @@ interface Decision {
   tail: string;
   red: boolean;
   detail: string;
-  primary: { label: string; to: string };
+  primary?: { label: string; to: string };
   secondary?: { label: string; to: string };
 }
 
 /** Only things the data actually supports; no invented alerts. */
-function decisionsFrom(summary: GatewaySummary): Decision[] {
+/** `isAdmin` decides whether links to admin-only pages are offered; auditors can't open them. */
+function decisionsFrom(summary: GatewaySummary, isAdmin: boolean): Decision[] {
   const out: Decision[] = [];
   const top = summary.topStopReasons[0];
   if (top) {
@@ -55,7 +56,7 @@ function decisionsFrom(summary: GatewaySummary): Decision[] {
       red: true,
       detail: 'Check whether these are expected, or whether the rule needs adjusting.',
       primary: { label: 'See what was stopped', to: '/stopped' },
-      secondary: { label: 'Review rules', to: '/rules' },
+      secondary: isAdmin ? { label: 'Review rules', to: '/rules' } : undefined,
     });
   }
   if (summary.shadowAi.people > 0) {
@@ -66,7 +67,7 @@ function decisionsFrom(summary: GatewaySummary): Decision[] {
       tail: 'the gateway.',
       red: true,
       detail: `${formatCount(summary.shadowAi.visits)} visits to AI tools that don’t pass through Probaline, seen by the browser extension.`,
-      primary: { label: 'Review shadow AI', to: '/shadow-ai' },
+      primary: isAdmin ? { label: 'Review shadow AI', to: '/shadow-ai' } : undefined,
     });
   }
   return out;
@@ -89,7 +90,7 @@ export function GatewayPage() {
     refetchInterval: 30_000,
   });
 
-  const decisions = data ? decisionsFrom(data) : [];
+  const decisions = data ? decisionsFrom(data, isAdmin) : [];
 
   return (
     <div className="flex flex-col gap-8 max-w-[1360px]">
@@ -151,7 +152,7 @@ export function GatewayPage() {
                       </p>
                       <p className="m-0 text-ink-muted">{d.detail}</p>
                       <div className="flex gap-2 flex-wrap">
-                        <ButtonLink to={d.primary.to}>{d.primary.label}</ButtonLink>
+                        {d.primary && <ButtonLink to={d.primary.to}>{d.primary.label}</ButtonLink>}
                         {d.secondary && <ButtonLink to={d.secondary.to} variant="secondary">{d.secondary.label}</ButtonLink>}
                       </div>
                     </Panel>
