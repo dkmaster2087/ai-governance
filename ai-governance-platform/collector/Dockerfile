@@ -13,11 +13,15 @@ ARG RUNTIME=gcr.io/distroless/nodejs24-debian13:nonroot
 FROM node:24-trixie-slim AS bundle
 WORKDIR /repo
 COPY package.json package-lock.json ./
+COPY shared/catalog/package.json shared/catalog/
 COPY collector/package.json collector/
-RUN npm ci --include-workspace-root -w collector
+RUN npm ci --include-workspace-root -w shared/catalog -w collector
+# The AI catalog the collector shares with the gateway; bundled into the collector below.
+COPY shared/catalog shared/catalog
 COPY collector collector
 COPY scripts/build-service.mjs scripts/
-RUN node scripts/build-service.mjs collector --out /out && mkdir -p /data
+RUN npm run build -w shared/catalog \
+  && node scripts/build-service.mjs collector --out /out && mkdir -p /data
 
 # Bytecode runs only on the Node that compiled it, so it's compiled in the runtime image itself.
 FROM ${RUNTIME} AS compile

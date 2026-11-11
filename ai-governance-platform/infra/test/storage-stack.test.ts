@@ -15,8 +15,8 @@ describe('StorageStack', () => {
     template = Template.fromStack(stack);
   });
 
-  it('creates the 19 DynamoDB tables (10, 7 for MCP servers, activity and log export)', () => {
-    template.resourceCountIs('AWS::DynamoDB::Table', 19);
+  it('creates the 20 DynamoDB tables (10, 7 for MCP servers, activity, log export and enforcement)', () => {
+    template.resourceCountIs('AWS::DynamoDB::Table', 20);
   });
 
   it('can restore every table to any point in the last 35 days, except short-lived counters', () => {

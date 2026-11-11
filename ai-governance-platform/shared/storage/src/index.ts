@@ -57,6 +57,8 @@ export const SPECS = {
   logExport: (): CollectionSpec => ({ name: 'log_export', table: env('LOG_EXPORT_TABLE', 'ai-gov-log-export-dev'), partitionKey: 'tenantId', sortKey: 'recordKey', ttlField: 'ttl' }),
   /** Secrets kept in the database, encrypted by the gateway (SECRET_STORE=database; installs without AWS). */
   secrets: (): CollectionSpec => ({ name: 'secrets', table: env('SECRETS_TABLE', 'ai-gov-secrets-dev'), partitionKey: 'scope', sortKey: 'name' }),
+  /** Lock and verify: AI-domain feeds (`feed#<id>`) and lock settings (`aws#settings`). */
+  enforcement: (): CollectionSpec => ({ name: 'enforcement', table: env('ENFORCEMENT_TABLE', 'ai-gov-enforcement-dev'), partitionKey: 'tenantId', sortKey: 'recordKey' }),
 };
 
 export type CollectionName = keyof typeof SPECS;

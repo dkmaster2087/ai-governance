@@ -9,6 +9,8 @@ interface NetworkStackProps extends cdk.StackProps {
 
 export class NetworkStack extends cdk.Stack {
   public readonly vpc: ec2.Vpc;
+  /** The NAT gateways' public addresses: where the gateway's calls to providers and customers' APIs come from. */
+  public readonly natAddresses: string[];
 
   constructor(scope: Construct, id: string, props: NetworkStackProps) {
     super(scope, id, props);
@@ -50,6 +52,9 @@ export class NetworkStack extends cdk.Stack {
         },
       },
     });
+
+    // Each NAT gateway's Elastic IP (Ref of an EIP is its address).
+    this.natAddresses = this.vpc.publicSubnets.flatMap((s) => s.node.children.filter((c): c is ec2.CfnEIP => c instanceof ec2.CfnEIP).map((e) => e.ref));
 
     // VPC Endpoints to avoid NAT costs for AWS services
     this.vpc.addGatewayEndpoint('S3Endpoint', {

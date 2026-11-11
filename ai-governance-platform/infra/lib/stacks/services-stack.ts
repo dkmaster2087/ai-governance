@@ -36,7 +36,9 @@ interface ServicesStackProps extends cdk.StackProps {
     versions: dynamodb.Table; approvals: dynamodb.Table; oauth: dynamodb.Table; connectors: dynamodb.Table;
   };
   /** Admin activity and log export (gateway only). */
-  logTables?: { activity: dynamodb.Table; logExport: dynamodb.Table };
+  logTables?: { activity: dynamodb.Table; logExport: dynamodb.Table; enforcement?: dynamodb.Table };
+  /** The gateway's outbound addresses (the NAT gateways), for the Enforcement page's "allow only the gateway" rules. */
+  egressAddresses?: string[];
   auditLogsTable: dynamodb.Table;
   modelsTable: dynamodb.Table;
   complianceTable: dynamodb.Table;
@@ -235,6 +237,8 @@ export class ServicesStack extends cdk.Stack {
         ...(contactEmail ? { CONTACT_EMAIL_TO: contactEmail } : {}),
         ...(dashboardDomain ? { DASHBOARD_URL: `https://${dashboardDomain}` } : {}),
         ...(props.logTables ? { ACTIVITY_TABLE: props.logTables.activity.tableName, LOG_EXPORT_TABLE: props.logTables.logExport.tableName } : {}),
+        ...(props.logTables?.enforcement ? { ENFORCEMENT_TABLE: props.logTables.enforcement.tableName } : {}),
+        ...(props.egressAddresses?.length ? { GATEWAY_EGRESS_IPS: cdk.Fn.join(',', props.egressAddresses) } : {}),
         AUDIT_LOGS_TABLE: auditLogsTable.tableName,
         POLICY_ENGINE_URL: internalUrl('policy-engine', 3001),
         DATA_PROTECTION_URL: internalUrl('data-protection', 3002),
@@ -290,7 +294,9 @@ export class ServicesStack extends cdk.Stack {
     alertsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     shadowAiTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     for (const t of Object.values(props.mcpTables ?? {})) t.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
-    for (const t of Object.values(props.logTables ?? {})) t.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
+    for (const t of Object.values(props.logTables ?? {})) t?.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
+    // The Enforcement page writes lock policies that allow only this role (e.g. on Bedrock).
+    this.gatewayService.taskDefinition.defaultContainer?.addEnvironment('GATEWAY_ROLE_ARN', this.gatewayService.taskDefinition.taskRole.roleArn);
     auditLogsTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
     if (emailFrom) {
       // Send only from this account's verified identities.

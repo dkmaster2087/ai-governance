@@ -228,7 +228,7 @@ export function ShadowAiPage() {
 
       {data && (
         <p className="m-0 text-xs text-ink-muted">
-          Only browsers with the Probaline extension are counted. A person is their work email when your IT team turns that on, otherwise one browser. Visits are kept for {data.retentionDays} days, so trends need the previous period to fall inside that.
+          Only browsers with the Probaline extension are counted. A person is their work email when your IT team turns that on, otherwise one browser. Visits are kept for {data.retentionDays} days, so trends need the previous period to fall inside that.{data.catalogVersion ? ` Tools are named from the Probaline AI catalog, version ${data.catalogVersion}.` : ''}
         </p>
       )}
     </div>

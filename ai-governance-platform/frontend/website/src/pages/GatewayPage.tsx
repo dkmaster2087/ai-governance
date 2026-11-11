@@ -1,7 +1,7 @@
 import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { ClosingCta, Container, Eyebrow, PageHeader, Panel, Status } from '../components/ui';
-import { GatewayFlow } from '../components/flows';
+import { GatewayFlow, McpFlow } from '../components/flows';
 
 function Feature({ eyebrow, title, children, sample }: { eyebrow: string; title: ReactNode; children: ReactNode; sample: ReactNode }) {
   return (
@@ -91,6 +91,13 @@ export function GatewayPage() {
       >
         <p className="m-0">Each rule that fired gets one card: how often, which apps and people, and a short excerpt of exactly what triggered it.</p>
       </Feature>
+
+      <section aria-labelledby="coming-in" className="py-16 border-t border-line">
+        <div className="flex items-center gap-3 mb-3"><Eyebrow>Coming in</Eyebrow><Status value="Beta" /></div>
+        <h2 id="coming-in" className="m-0 text-[32px] leading-[1.12] font-bold tracking-[-0.02em] max-w-[760px]">Agents reaching into your systems pass the same checks.</h2>
+        <p className="m-0 mt-4 text-ink-muted text-[16px] leading-relaxed max-w-[760px]">Claude, ChatGPT, Cursor or your own agents call your APIs through Probaline, never directly. Each call is checked for who is asking, what it sends and, for changes, a person’s approval. The answer is cleaned on its way back.</p>
+        <Panel className="p-4 sm:p-6 mt-8"><McpFlow /></Panel>
+      </section>
 
       <Feature
         eyebrow="MCP servers"

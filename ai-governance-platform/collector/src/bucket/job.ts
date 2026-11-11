@@ -9,6 +9,7 @@ export interface BucketJobOptions {
   prefixes?: string[];
   store: Store;
   ignore?: string[];
+  gateway?: string[];
   reportDays?: number;
   company?: string;
   /** Stop after this many files in one run; the rest are read next time. */
@@ -43,7 +44,7 @@ export async function runBucketJob(o: BucketJobOptions): Promise<BucketJobResult
         const text = decode(await bucket.read(obj.name));
         const observations = [...parseOnpremText(text, now)];
         if (observations.length === 0 && !text.trim()) { result.skipped++; seen[id] = { etag: obj.etag, at: now.toISOString() }; continue; }
-        const r = await processInput(o.store, id, observations, o.ignore ?? []);
+        const r = await processInput(o.store, id, observations, o.ignore ?? [], o.gateway ?? []);
         result.files++;
         result.lines += r.lines;
         result.matched += r.matched;

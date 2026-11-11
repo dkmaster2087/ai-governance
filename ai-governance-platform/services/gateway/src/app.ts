@@ -1,4 +1,4 @@
-import Fastify, { FastifyRequest } from 'fastify';
+import Fastify from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
@@ -19,7 +19,7 @@ import { inputValidation } from './middleware/input-validation';
 import { setupGracefulShutdown } from './middleware/graceful-shutdown';
 import { requestTracing } from './middleware/request-tracing';
 import { getSecurityConfig } from './config/security';
-import { clientAddress, clientAddressConfig } from './middleware/client-address';
+import { clientAddressConfig, clientAddressPlugin } from './middleware/client-address';
 import { metricsRoutes } from './routes/metrics.routes';
 import { gatewayRoutes } from './routes/gateway.routes';
 import { platformRoutes } from './routes/platform.routes';
@@ -35,13 +35,8 @@ import { OPS, opsMetrics } from './services/cloudwatch';
 import { adminActivity } from './activity/admin-activity';
 import { activityRoutes } from './routes/activity.routes';
 import { logExportRoutes } from './routes/log-export.routes';
-
-declare module 'fastify' {
-  interface FastifyRequest {
-    /** Where the request came from, believing only our own proxies (middleware/client-address.ts). */
-    readonly clientIp: string;
-  }
-}
+import { enforcementRoutes } from './routes/enforcement.routes';
+import { feedRoutes } from './routes/feeds.routes';
 
 export async function buildApp() {
   const securityConfig = getSecurityConfig();
@@ -54,9 +49,9 @@ export async function buildApp() {
     trustProxy: false,
     bodyLimit: securityConfig.maxBodySize,
   });
-  app.decorateRequest('clientIp', { getter(this: FastifyRequest) { return clientAddress(this, addressConfig); } });
 
   // Security plugins
+  await app.register(clientAddressPlugin, addressConfig);
   await app.register(helmet, {
     crossOriginResourcePolicy: { policy: 'cross-origin' },
   });
@@ -94,6 +89,7 @@ export async function buildApp() {
   // Routes
   await app.register(healthRoutes, { prefix: '/health' });
   await app.register(contactRoutes, { prefix: '/public' });
+  await app.register(feedRoutes, { prefix: '/public' });
   await app.register(aiRoutes, { prefix: '/v1' });
   await app.register(modelConfigRoutes, { prefix: '/v1' });
   await app.register(tenantRoutes, { prefix: '/v1' });
@@ -111,6 +107,7 @@ export async function buildApp() {
   await app.register(usersRoutes, { prefix: '/v1' });
   await app.register(activityRoutes, { prefix: '/v1' });
   await app.register(logExportRoutes, { prefix: '/v1' });
+  await app.register(enforcementRoutes, { prefix: '/v1' });
   // MCP servers: admin API under /v1/mcp/…, and the address agents connect to at /mcp/<tenant>/<server>.
   await app.register(mcpRoutes);
   await app.register(mcpOauthRoutes);

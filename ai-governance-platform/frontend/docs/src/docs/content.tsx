@@ -1,6 +1,7 @@
 import { ReactNode } from 'react';
 import { Link } from 'react-router-dom';
 import { Code } from '../components/ui';
+import { GatewayFlow, McpFlow } from '../components/flows';
 
 export interface DocPage {
   slug: string;
@@ -12,6 +13,10 @@ export interface DocPage {
 const H2 = ({ children }: { children: ReactNode }) => <h2 className="m-0 mt-10 mb-3 text-[24px] font-bold tracking-[-0.015em]">{children}</h2>;
 const P = ({ children }: { children: ReactNode }) => <p className="m-0 my-3 text-[16px] leading-relaxed">{children}</p>;
 const C = ({ children }: { children: ReactNode }) => <code className="font-mono text-[13px] bg-ink-tint rounded px-1.5 py-px">{children}</code>;
+/** A diagram on a light panel, full content width. */
+const Figure = ({ children }: { children: ReactNode }) => (
+  <div className="my-6 border border-line rounded-[14px] bg-white p-4 sm:p-5">{children}</div>
+);
 const Note = ({ children }: { children: ReactNode }) => (
   <div className="my-5 border-l-[3px] border-ink bg-canvas rounded-r-lg px-4 py-3 text-[15px] leading-relaxed">{children}</div>
 );
@@ -31,16 +36,40 @@ export const DOCS: DocPage[] = [
   {
     slug: '',
     title: 'Overview',
-    summary: 'What the gateway does to each request, in order.',
+    summary: 'What the gateway checks, in both directions: prompts going out, and AI agents coming in.',
     body: (
       <>
-        <P>Probaline is a gateway between your company and AI providers. Every request passes the same checks, in the same order, before anything leaves:</P>
+        <P>Probaline is a gateway for AI traffic in both directions: <strong>out</strong>, when your apps, IDEs and people send prompts to AI providers, and <strong>in</strong>, when AI agents use your company’s systems through MCP. One set of company rules, one secrets check and one evidence trail cover both.</P>
+        <H2>Going out: prompts to AI models</H2>
+        <Figure><GatewayFlow /></Figure>
+        <P>Every request passes the same checks, in the same order, before anything leaves:</P>
         <ol className="my-3 pl-6 flex flex-col gap-2 text-[16px] leading-relaxed">
           <li><strong>Policy rules.</strong> Your words and phrases, patterns, approved models and personal-data types. A match <strong className="text-stop">stops</strong> the request.</li>
           <li><strong>Secrets.</strong> API keys, tokens, private keys and passwords. By default a match <strong className="text-stop">stops</strong> the request; your company can choose to remove them and send the rest. See <Link to="/docs/secrets" className="font-semibold text-ink">Secrets</Link>.</li>
           <li><strong>Personal data.</strong> Emails, phone numbers, Social Security and card numbers are removed in place, then the request is sent.</li>
         </ol>
         <P>Every decision is recorded as evidence. A browser extension separately shows AI use that goes around the gateway.</P>
+        <H2>Coming in: AI agents using your systems (MCP, beta)</H2>
+        <Figure><McpFlow /></Figure>
+        <P>Agents such as Claude, ChatGPT, Cursor and Copilot, or your own agents, connect to an MCP server you create in Probaline. They never reach your APIs directly. Each tool call is checked, in order:</P>
+        <ol className="my-3 pl-6 flex flex-col gap-2 text-[16px] leading-relaxed">
+          <li><strong>Sign-in.</strong> A person signed in through your identity provider, or an API key with the MCP permission, and allowed on this server. They see only the tools their groups may use. Anyone else is <strong className="text-stop">refused</strong>.</li>
+          <li><strong>Arguments.</strong> Checked against the tool’s schema, then the secrets check and your company rules, the same ones prompts get. A match <strong className="text-stop">stops</strong> the call.</li>
+          <li><strong>Approval.</strong> A tool that changes data waits for a person to approve that exact call. A refusal <strong className="text-stop">stops</strong> it.</li>
+          <li><strong>Your API.</strong> Probaline calls it with its own credential and a signed statement of who asked, directly or through a connector inside your network.</li>
+          <li><strong>Result.</strong> Personal data is removed, text that tries to instruct the agent is flagged, and the answer is cut at the size limit before the agent sees it.</li>
+        </ol>
+        <H2>The same policies, both ways</H2>
+        <Table head={['', 'Prompts going out', 'Tool calls coming in']} rows={[
+          ['Who', 'An API key per app; X-User-Id says which of its users, for attribution', 'A person signed in through your identity provider, or an API key with the mcp permission'],
+          ['What they may use', 'Approved models rule', 'The server’s tools, limited to the caller’s groups'],
+          ['Company rules', 'On the prompt: stop', 'On the arguments: stop'],
+          ['Secrets', 'Stop, or remove and send the rest', 'Stop'],
+          ['Personal data', 'Removed from the prompt and the answer', 'Removed from the result (unless the server is set to return it)'],
+          ['A person decides', '—', 'Tools that change data wait for approval'],
+          ['When a check can’t run', 'Your fail mode: block, or let through and flag', 'The same fail mode'],
+          ['Evidence', 'A case file per request', 'A case file per call'],
+        ]} />
         <H2>Where to start</H2>
         <ul className="my-3 pl-6 flex flex-col gap-1.5 text-[16px]">
           <li><Link to="/docs/quick-start" className="font-semibold text-ink">Connect your first app</Link> in a few minutes.</li>
@@ -312,8 +341,11 @@ const ok = crypto.timingSafeEqual(Buffer.from(v1, 'hex'), Buffer.from(expected, 
         <P>The collector is separate from the gateway and needs nothing else installed. It reads logs where they already are, keeps only lines that match a known AI service as daily counts, and builds an HTML report in the customer’s own storage. Nothing is sent to Probaline.</P>
         <H2>What it keeps</H2>
         <P>Daily counts per AI service, source and caller. Servers keep the name the log gives them; people become codes such as <C>user-3f9a…</C>, made with a key that stays in the customer’s <C>private/</C> folder with the code-to-name lookup.</P>
+        <H2>Share through Probaline</H2>
+        <P>The report opens with the share of AI traffic that goes through Probaline, for apps calling model APIs and for cloud AI services (Bedrock, SageMaker, Azure OpenAI, Vertex AI). Name the gateway and connector with <C>--gateway</C> (<C>GATEWAY</C> in the deployed collectors): <C>role:probaline-gateway-task</C>, an outbound address or range such as <C>ip:203.0.113.0/28</C>, or <C>host:gw-*</C>. Their traffic is compared with everything else in the same log, so the share is never a mix of units. Each path lists the callers still going direct and the fix, and later reports show the earlier shares.</P>
+        <P>Browser use isn’t counted here; the browser extension governs it. Use <C>--ignore</C> only for other known-good callers: ignoring the gateway hides the traffic that proves the share.</P>
         <H2>AWS</H2>
-        <P>Deploy <C>collector/deploy/aws/collector.yaml</C> with the names of the log buckets. It reads Route 53 Resolver DNS query logs, Network Firewall logs and CloudTrail (Amazon Bedrock and SageMaker calls). Turn on EventBridge notifications for each log bucket, put the Probaline gateway’s role in <C>Ignore</C>, then run the backfill command from the stack outputs. The report is at <C>reports/latest.html</C> in the results bucket.</P>
+        <P>Deploy <C>collector/deploy/aws/collector.yaml</C> with the names of the log buckets. It reads Route 53 Resolver DNS query logs, Network Firewall logs and CloudTrail (Amazon Bedrock and SageMaker calls). Turn on EventBridge notifications for each log bucket, put the Probaline gateway’s role in <C>Gateway</C>, then run the backfill command from the stack outputs. The report is at <C>reports/latest.html</C> in the results bucket.</P>
         <P>Other products’ logs that are streamed into one of those buckets (Netskope transaction logs, for example) are read too.</P>
         <H2>On-premises</H2>
         <P>Run the <C>probaline/collector</C> image on any Linux host with Docker (an example Compose file is in <C>collector/deploy/onprem</C>). Point firewalls and proxies at it over syslog (UDP or TCP) and mount DNS server and proxy log folders under <C>/logs</C>; results stay in its <C>/data</C> volume.</P>
@@ -366,12 +398,68 @@ node collector/dist/cli.js report --out ./results --company "Acme"
     ),
   },
   {
+    slug: 'locking-ai-traffic',
+    title: 'Locking AI traffic',
+    summary: 'Make Probaline the only way AI leaves: a domain feed for firewalls and an AWS policy, previewed against your own logs.',
+    body: (
+      <>
+        <P>Routing apps through Probaline is the first half. The second is closing the other paths, so the collector report’s share through Probaline can reach 100%. Probaline writes the rules; you apply them in tools you already run. Both are in beta. Open <strong>Enforcement</strong> in the dashboard.</P>
+        <H2>One row per path</H2>
+        <P>The page lists each way AI can go around Probaline: apps calling model APIs over the internet, apps in AWS calling Bedrock or SageMaker, and people in browsers going out; agents calling your APIs and MCP servers on laptops coming in (those two are coming). For each, you set <strong>Open</strong>, <strong>Previewing</strong> or <strong>Locked</strong>; beside it the page shows what your logs say: the share through Probaline, the trend, and who still goes direct. When a path is marked locked but traffic still goes direct in findings after that day, or no findings have come in since, the row says so.</P>
+        <H2>Findings files</H2>
+        <P>After each collector run, upload <C>reports/findings-&lt;day&gt;.json</C>. Probaline keeps the share per path, the services in use and who still goes direct (no log lines; people stay as codes) for 400 days, up to 100 files. The latest is used to preview each lock: who it would stop before you apply it.</P>
+        <H2>Firewalls, web gateways and DNS: the AI-domain feed</H2>
+        <P>A feed is a list of AI domains from the Probaline catalog, by kind (model APIs, chat apps, coding assistants, cloud AI endpoints, AI in work apps), minus the tools you allowed on the Shadow AI page. Your firewall fetches it by URL and blocks it for everyone except the gateway’s outbound addresses.</P>
+        <Table head={['Format', 'For', 'Rule']} rows={[
+          ['Domain list', 'Palo Alto Networks External Dynamic List, FortiGate external threat feed, Check Point', 'Block for all sources; allow the gateway’s addresses above it'],
+          ['Zscaler', 'A custom URL category (JSON for the ZIA API)', 'URL filtering rule: block, except the gateway’s location'],
+          ['Netskope', 'A URL list (JSON for the API)', 'Real-time Protection: block, with an exception for the gateway'],
+          ['DNS RPZ', 'BIND, Infoblox, PowerDNS', 'Load as a response policy zone; exempt the gateway'],
+          ['Hosts file', 'Single machines and labs', 'Exact names only, for testing'],
+        ]} />
+        <P>The address contains a long random token and is shown once. Anyone with it can read the list (public domain names only). Each feed shows when it was last fetched and from which address. <strong>New address</strong> stops the old one at once; <strong>Revoke</strong> deletes the feed.</P>
+        <H2>AWS: only the gateway calls Bedrock and SageMaker</H2>
+        <P>Enter the gateway’s IAM role and an emergency role. Probaline writes a service control policy that refuses <C>bedrock:InvokeModel*</C>, batch inference and <C>sagemaker:InvokeEndpoint*</C> to every other role, a matching VPC endpoint policy, and a CloudFormation template for your management account. AWS has no warn-only mode for these, so the page lists who would be refused, from your findings, first.</P>
+        <P>Attach to one OU first. SCPs don’t apply to the management account or service-linked roles, and Bedrock agents and knowledge bases call models with their own roles: add those to the exceptions if you use them.</P>
+        <H2>MCP servers on laptops</H2>
+        <P>People add MCP servers to Claude Desktop, Claude Code, Cursor, VS Code and Windsurf with their own credentials, so those calls skip every company rule. The Enforcement page offers a read-only scan for device management (<C>mcp-scan.sh</C> for macOS, tested; <C>mcp-scan.ps1</C> for Windows, not yet tested). It prints the app, the server’s name, the package or the URL’s host, and whether it has credentials of its own, never their values. Give the output to the collector; the report lists the servers and which reach your own systems, and the Enforcement page shows how many laptops still have them.</P>
+        <H2>Not built yet</H2>
+        <P>Measuring direct calls to your APIs from their access logs; findings sent by the collector without an upload.</P>
+      </>
+    ),
+  },
+  {
+    slug: 'locking-your-apis',
+    title: 'Locking your APIs',
+    summary: 'Accept only calls that came through Probaline, and know who asked: a check you add to each API.',
+    body: (
+      <>
+        <P>An agent with the address of one of your APIs could call it directly and skip Probaline’s checks. Every call Probaline makes carries <C>X-Probaline-Identity</C>: a token the gateway signs, valid for five minutes, naming who asked (a person signed in with their company account, or a workload’s key), the MCP server, the tool, and Probaline’s request ID. Check it in the API and refuse calls without one. Beta.</P>
+        <H2>Three steps</H2>
+        <P>1. On the Enforcement page, under <strong>Your APIs</strong>, pick the API and a language. The code comes filled in with your gateway (the issuer) and the API’s base URL (the audience). 2. Deploy it with report-only on: calls without a valid token are logged, not refused. 3. When the log shows only Probaline’s calls, turn report-only off and mark “Agents calling your APIs directly” Locked.</P>
+        <Table head={['Language', 'What', 'Tested']} rows={[
+          ['Node', 'Express middleware and a Fastify hook; no dependencies', 'Yes, against tokens the gateway signs, and end to end'],
+          ['AWS API Gateway', 'A Lambda authorizer for HTTP and REST APIs', 'Yes'],
+          ['Python', 'FastAPI dependency and Flask decorator (PyJWT)', 'Yes'],
+          ['Go', 'net/http middleware (golang-jwt, keyfunc)', 'Not yet'],
+          ['Java', 'Spring servlet filter (spring-security-oauth2-jose)', 'Not yet'],
+        ]} />
+        <H2>What the check verifies</H2>
+        <P>An ES256 signature from a key published at <C>&lt;gateway&gt;/.well-known/jwks.json</C> (never <C>none</C> or a shared secret), the token type <C>probaline-identity+jwt</C>, the issuer, the audience (so a token for one API can’t be used on another), and the expiry, with 30 seconds of clock leeway. For writes that must never repeat, also keep the token’s <C>jti</C> for five minutes and refuse a second use.</P>
+        <H2>Without code changes</H2>
+        <P>Allow only the gateway’s outbound addresses (or, for APIs reached through the connector, the connector’s host) in the API’s security group, WAF or proxy. That proves where a call came from, not who asked; use it alongside the check where you can.</P>
+      </>
+    ),
+  },
+  {
     slug: 'mcp',
     title: 'MCP servers',
     summary: 'Give AI agents your APIs as tools: people sign in, writes wait for approval, every call is checked and recorded.',
     body: (
       <>
         <P>An MCP server in Probaline is configuration, not code: create one in a minute, put one or more of your APIs behind it, and agents connect to its address. Agents only ever reach Probaline; your APIs are called by Probaline with its own credential, plus a signed statement of who asked. This is a beta.</P>
+        <Figure><McpFlow /></Figure>
+        <P>The checks are the ones prompts get, plus sign-in and approvals; <Link to="/docs" className="font-semibold text-ink">the overview</Link> compares the two directions.</P>
         <H2>Create one</H2>
         <ol className="my-3 pl-6 flex flex-col gap-2 text-[16px] leading-relaxed">
           <li>Open <strong>MCP servers</strong> → <strong>Create MCP server</strong>. Give it a name and a line on what it’s for (agents see it).</li>
@@ -461,6 +549,20 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           [<C>POST /v1/log-export/destinations/:id/test</C>, 'Send a sample record now'],
           [<C>GET /v1/log-export/dead-letters</C>, 'Batches that weren’t delivered; POST …/:id/retry or DELETE …/:id'],
         ]} />
+        <H2>Enforcement (dashboard sign-in, beta)</H2>
+        <Table head={['Endpoint', 'Purpose']} rows={[
+          [<C>GET /v1/enforcement</C>, 'Feeds, formats and rules, the gateway’s outbound addresses, saved AWS settings'],
+          [<C>POST /v1/enforcement/feeds</C>, 'New feed: name, categories. Returns its addresses once'],
+          [<C>PATCH · DELETE /v1/enforcement/feeds/:id</C>, 'Rename or change categories; revoke'],
+          [<C>POST /v1/enforcement/feeds/:id/rotate</C>, 'New address; the old one stops'],
+          [<C>POST /v1/enforcement/feeds/preview</C>, 'Domains and what they’d stop, for categories; uses the latest findings file'],
+          [<C>PUT /v1/enforcement/paths/:id</C>, 'Set a path open, previewing or locked'],
+          [<C>GET /v1/enforcement/apis</C>, 'APIs behind your MCP servers, with the issuer, keys address and audience their check needs'],
+          [<C>POST /v1/enforcement/findings</C>, 'Upload a collector findings file (kept trimmed, 400 days); DELETE …/:id removes one'],
+          [<C>PUT /v1/enforcement/aws</C>, 'Save the gateway role, emergency role and targets'],
+          [<C>POST /v1/enforcement/aws/generate</C>, 'The SCP, VPC endpoint policy and CloudFormation template, and who they’d refuse'],
+          [<C>GET /public/feeds/:tenant/:token/:format</C>, 'The feed, for firewalls: no sign-in, the token is the credential; domains, zscaler, netskope, rpz, hosts'],
+        ]} />
         <H2>Headers</H2>
         <Table head={['Header', 'Meaning']} rows={[
           [<C>Authorization: Bearer …</C>, 'Your Probaline API key (in proxy mode, the provider key)'],
@@ -529,6 +631,7 @@ npx cdk deploy --all --context stage=prod \\
           [<C>LOG_EXPORT_ALLOW_PRIVATE_DESTINATIONS</C>, <><C>true</C> lets log export reach a SIEM inside your network</>],
           [<C>LOG_EXPORT_WORKER</C>, <><C>off</C> stops a gateway from sending log export batches</>],
           [<C>TRUSTED_PROXY_HOPS</C>, <>How many proxies you run in front of the gateway (default <C>0</C>). Behind one load balancer or nginx, set <C>1</C>: only the address it adds to <C>X-Forwarded-For</C> is believed, so callers can't dodge per-address limits by writing their own</>],
+          [<C>GATEWAY_EGRESS_IPS</C>, 'Your gateway’s outbound addresses, comma separated, for the “block except from the gateway” rules'],
           [<C>SECRET_STORE</C>, <><C>aws</C> (default, Secrets Manager) or <C>database</C>: provider keys and credentials encrypted in the database</>],
           [<C>SECRETS_ENCRYPTION_KEY</C>, <>With <C>SECRET_STORE=database</C>: 32 random bytes, base64 (<C>openssl rand -base64 32</C>). Keep it apart from your database backups</>],
         ]} />

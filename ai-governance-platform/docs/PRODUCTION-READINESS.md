@@ -193,3 +193,13 @@ A vulnerability policy and checks on every push, so a known flaw can't ship unno
 
 Moderate findings left for Dependabot: the dashboard's router (React Router 6 → 7), the collector's Google Cloud
 Storage client (major update), and a part bundled inside the AWS CDK (deploy-time only).
+
+## Lock and verify merged (2026-11-10)
+
+The logging branch's weeks 1–4 (shared AI catalog, Enforcement page, AI-domain feeds, the API lock kit, laptop MCP
+scan; beta) are merged. Fixed on the way in: the browser tools list now lives once in `@ai-governance/types`, built
+from `@ai-governance/catalog`, for the gateway and analytics; the service, connector and collector images build
+the catalog; the feeds route records the caller's real address (B7); API key scopes are capped. The Enforcement
+page's AWS pieces were missing from the stacks and are added: the `enforcement` table (with point-in-time
+recovery), and the gateway's `ENFORCEMENT_TABLE`, `GATEWAY_EGRESS_IPS` (the NAT gateways' addresses, filled in
+automatically) and `GATEWAY_ROLE_ARN`. Still to check on the first deploy.

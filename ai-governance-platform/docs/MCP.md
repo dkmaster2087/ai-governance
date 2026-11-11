@@ -243,7 +243,9 @@ Phase 1 alone is a useful product for companies' own agents. Phase 2 is the one 
   Credentials stay while any version uses them and go with the server.
 - **Signed identity for backends.** Every call carries `X-Probaline-Identity`, a 5-minute ES256 token naming
   who asked (person and groups, or key), the server, the tool and the request, for that API only. APIs can
-  check it with the key at `<gateway>/.well-known/jwks.json`.
+  check it with the key at `<gateway>/.well-known/jwks.json`; the verifier kit (`packages/verify-identity`:
+  Node, Express, Fastify, an API Gateway Lambda authorizer and Python, tested; Go and Java, not yet) does it,
+  with a report-only mode first. The Enforcement page fills it in for each API.
 - **Connector.** A small container in the company network (`connector/`, no dependencies beyond Node) that
   connects out over HTTPS, collects calls for it, makes them only to its allowed hosts, never to cloud
   metadata addresses and never following redirects, and sends the answers back. Calls wait in the shared

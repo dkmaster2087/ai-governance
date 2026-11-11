@@ -140,6 +140,7 @@ S3-compatible store) or a directory, chosen by `OBJECT_STORE`. Design and limits
 | Metrics (expire) | `metrics` | by tenant and period prefix |
 | Admin activity and sign-ins (400-day expiry), + archive file | `activity` | by tenant, sorted by `<time>#<id>` |
 | Log destinations (secrets in Secrets Manager) and undelivered batches (30-day expiry) | `log-export` / `log_export` | by tenant; `dest#…` and `dead#…` |
+| AI-domain feeds (token hashes only), lock and path settings, uploaded findings (400 days, at most 100, trimmed) | `enforcement` | by tenant; `feed#…`, `aws#settings`, `paths#settings`, `findings#<to>#<id>` |
 
 ## Logs
 
@@ -182,6 +183,27 @@ in-account deployment, use AWS directly:
   send the trail the same way.
 - **Off AWS:** run the services under any log driver; their stdout is one JSON object per line, ready for an
   OpenTelemetry Collector (`filelog` receiver) or Fluent Bit.
+
+## Enforcement (lock and verify)
+
+The Enforcement page writes the rules that close the paths around Probaline; the customer applies them.
+Plan and status: [ENFORCEMENT.md](ENFORCEMENT.md).
+
+- **AI-domain feed:** `GET /public/feeds/{tenant}/{token}/{format}` with no sign-in (firewalls fetch lists
+  anonymously). The token is `<feedId>.<secret>`; only a SHA-256 of the secret is stored, so a lost address is
+  replaced, not shown again. Every failure is the same 404, fetches are limited per feed (`FEED_RATE_LIMIT`),
+  and each fetch records the caller's address and user agent on the feed. Contents come from the shared AI
+  catalog (`shared/catalog`) by category, minus tools allowed on the Shadow AI page.
+- **AWS lock:** a pure generator (`services/gateway/src/enforcement/aws-lock.ts`) writes an SCP denying
+  `bedrock:InvokeModel*`, `bedrock:CreateModelInvocationJob` and `sagemaker:InvokeEndpoint*` unless
+  `aws:PrincipalArn` is the gateway role or the emergency role, a matching VPC endpoint policy, and a
+  CloudFormation template (`AWS::Organizations::Policy`) for the management account. Structural checks run on
+  every policy; Access Analyzer validation is not wired yet.
+- **Paths and findings:** an admin uploads the collector's findings file; the gateway keeps a trimmed copy
+  (share per path, services in use, still-direct callers; no log lines, people as codes) for 400 days, at most
+  100 per tenant, pruned on upload. Each path's row puts the admin's state beside the latest measured share and
+  warns when a path marked locked still has direct traffic in findings dated after the lock, or has none since.
+  Previews use the latest stored findings.
 
 ## Websites
 

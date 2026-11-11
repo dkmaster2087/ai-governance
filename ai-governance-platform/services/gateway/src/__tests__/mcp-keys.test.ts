@@ -19,10 +19,11 @@ describe('MCP signing keys', () => {
   it('rotate on their own: publish the next key, switch after the overlap, then drop the old one', async () => {
     const vault = new MemoryVault();
     const keys = new GatewayKeys(vault, NAME, 0);
+    const first = await keys.sign({ sub: 'a' }, 'test');
+    // Days count from after the first key exists: rotation is due a set time after the key was made.
     const start = Date.now();
     const at = (days: number) => new Date(start + days * DAY);
 
-    const first = await keys.sign({ sub: 'a' }, 'test');
     const k1 = kidOf(first);
     expect(await kids(keys)).toEqual([k1]);
     expect(await keys.rotate(at(10))).toBeNull(); // nothing due yet

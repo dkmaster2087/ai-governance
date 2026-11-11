@@ -14,6 +14,21 @@ describe('AI tool catalog', () => {
     expect(toolById('domain:bad domain!')).toBeNull();
     expect(toolById('not-a-tool')).toBeNull();
   });
+
+  it('comes from the shared catalog, chat apps and model APIs only', () => {
+    expect(toolForDomain('api.deepseek.com').id).toBe('deepseek-api');
+    expect(toolForDomain('deepseek.com').id).toBe('deepseek');
+    expect(toolForDomain('grok.com').name).toBe('Grok');
+    // Coding assistants and work apps aren't watched in the browser.
+    expect(toolForDomain('cursor.com').id).toBe('domain:cursor.com');
+    expect(toolById('cursor')).toBeNull();
+  });
+
+  it('keeps decisions saved under earlier ids', () => {
+    expect(toolById('mistral')?.id).toBe('mistral-chat');
+    const a = applyPolicyChange(DEFAULT_SHADOW_POLICY, { decisions: { huggingface: 'blocked' } });
+    expect('policy' in a && a.policy.decisions).toEqual({ huggingchat: 'blocked' });
+  });
 });
 
 describe('shadow AI policy', () => {

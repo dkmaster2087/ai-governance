@@ -18,7 +18,13 @@ Parameters:
     Type: String
     Default: ''
     Description: >-
-      Callers to leave out of the report, comma separated, e.g. role:probaline-gateway-task for the Probaline gateway itself.
+      Callers to leave out of the report entirely, comma separated (known-good callers that aren't AI use).
+  Gateway:
+    Type: String
+    Default: ''
+    Description: >-
+      The Probaline gateway and connector, comma separated, e.g. role:probaline-gateway-task,ip:203.0.113.4. Their
+      traffic is counted as through Probaline, for the share in the report.
   Company:
     Type: String
     Default: ''
@@ -135,6 +141,7 @@ Resources:
           RESULTS_BUCKET: !Ref ResultsBucket
           LOG_BUCKETS: !Join [',', !Ref LogBuckets]
           IGNORE: !Ref Ignore
+          GATEWAY: !Ref Gateway
           COMPANY: !Ref Company
           REPORT_DAYS: !Ref ReportDays
 

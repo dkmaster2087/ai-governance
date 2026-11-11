@@ -10,7 +10,7 @@ const logger = createLogger('gateway:api-key-routes');
 
 const createKeySchema = z.object({
   name: z.string().min(1).max(100),
-  scopes: z.array(z.enum(API_KEY_SCOPES as [ApiKeyScope, ...ApiKeyScope[]])).min(1).optional().default(['chat', 'models']),
+  scopes: z.array(z.enum(API_KEY_SCOPES as [ApiKeyScope, ...ApiKeyScope[]])).min(1).max(10).optional().default(['chat', 'models']),
   rateLimit: z.number().min(1).max(10000).optional().default(100),
   expiresInDays: z.number().min(1).max(3650).optional(),
 });

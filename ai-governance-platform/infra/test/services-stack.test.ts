@@ -23,9 +23,18 @@ describe('ServicesStack', () => {
       apiKeysTable: storage.apiKeysTable, alertsTable: storage.alertsTable, shadowAiTable: storage.shadowAiTable,
       auditLogsTable: storage.auditLogsTable, modelsTable: storage.modelsTable, complianceTable: storage.complianceTable,
       tenantsTable: storage.tenantsTable, usersTable: storage.usersTable,
-      logTables: { activity: storage.activityTable, logExport: storage.logExportTable },
+      logTables: { activity: storage.activityTable, logExport: storage.logExportTable, enforcement: storage.enforcementTable },
+      egressAddresses: network.natAddresses,
     });
     template = Template.fromStack(stack);
+  });
+
+  it('gives the gateway what the Enforcement page needs: its table, outbound addresses and role', () => {
+    const defs = Object.values(template.findResources('AWS::ECS::TaskDefinition')) as any[];
+    const gw = defs.map((d) => d.Properties.ContainerDefinitions[0]).find((c: any) => c.Name === 'GatewayContainer');
+    const names = gw.Environment.map((e: any) => e.Name);
+    expect(names).toEqual(expect.arrayContaining(['ENFORCEMENT_TABLE', 'GATEWAY_EGRESS_IPS', 'GATEWAY_ROLE_ARN']));
+    expect(JSON.stringify(gw.Environment.find((e: any) => e.Name === 'GATEWAY_EGRESS_IPS').Value)).toContain('EIP');
   });
 
   it('runs four services, each on the image built from this commit', () => {

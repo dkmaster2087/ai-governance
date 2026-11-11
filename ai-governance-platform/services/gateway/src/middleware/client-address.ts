@@ -1,5 +1,6 @@
 import { timingSafeEqual } from 'crypto';
-import { FastifyRequest } from 'fastify';
+import { FastifyInstance, FastifyRequest } from 'fastify';
+import fp from 'fastify-plugin';
 
 /**
  * The address a request really came from, for per-address limits and the activity trail.
@@ -47,4 +48,17 @@ export function clientAddress(request: Pick<FastifyRequest, 'headers' | 'socket'
   // so nothing in the header can be believed.
   const entry = chain[chain.length - trusted];
   return entry ?? socket;
+}
+
+/** Gives every request `request.clientIp`. The app registers it; tests that build their own server can too. */
+export const clientAddressPlugin = fp(async (app: FastifyInstance, opts: Partial<ClientAddressConfig>) => {
+  const config: ClientAddressConfig = opts.hops !== undefined ? { hops: opts.hops, edgeSecret: opts.edgeSecret } : clientAddressConfig();
+  app.decorateRequest('clientIp', { getter(this: FastifyRequest) { return clientAddress(this, config); } });
+}, { name: 'client-address' });
+
+declare module 'fastify' {
+  interface FastifyRequest {
+    /** Where the request came from, believing only our own proxies. */
+    readonly clientIp: string;
+  }
 }

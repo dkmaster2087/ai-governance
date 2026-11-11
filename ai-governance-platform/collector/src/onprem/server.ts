@@ -24,6 +24,8 @@ export interface OnpremOptions {
   reportAt?: string; // HH:MM UTC
   reportDays?: number;
   ignore?: string[];
+  /** The Probaline gateway and connector (see AggregatorOptions.gateway). */
+  gateway?: string[];
   company?: string;
   log?: (msg: string) => void;
 }
@@ -53,7 +55,7 @@ export class OnpremCollector {
   private log(msg: string) { (this.o.log ?? ((m) => console.log(`[probaline-collector] ${m}`)))(msg); }
 
   private async freshAggregator() {
-    this.agg = new Aggregator({ pseudonyms: await loadPseudonymizer(this.store), ignore: this.o.ignore });
+    this.agg = new Aggregator({ pseudonyms: await loadPseudonymizer(this.store), ignore: this.o.ignore, gateway: this.o.gateway });
   }
 
   /** One log line, from syslog or a file. Files pass their own reader, which remembers a header row. */
@@ -251,6 +253,7 @@ export async function serve() {
     reportAt: env('REPORT_AT') ?? '05:30',
     reportDays: Number(env('REPORT_DAYS') ?? 30),
     ignore: (env('IGNORE') ?? '').split(',').filter(Boolean),
+    gateway: (env('GATEWAY') ?? '').split(',').filter(Boolean),
     company: env('COMPANY') || undefined,
   });
   await collector.start();

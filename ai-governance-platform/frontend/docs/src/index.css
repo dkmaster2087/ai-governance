@@ -9,3 +9,8 @@
   body { @apply bg-white text-ink font-sans antialiased; }
   ::selection { background: #EEF1F6; }
 }
+
+/* Moving dots in the architecture diagrams; the diagrams read the same without them. */
+@media (prefers-reduced-motion: reduce) {
+  .flow-dot { display: none; }
+}

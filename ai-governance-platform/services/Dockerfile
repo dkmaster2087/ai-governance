@@ -11,17 +11,19 @@ FROM node:24-trixie-slim AS bundle
 ARG SERVICE
 WORKDIR /repo
 COPY package.json package-lock.json ./
+COPY shared/catalog/package.json shared/catalog/
 COPY shared/types/package.json shared/types/
 COPY shared/utils/package.json shared/utils/
 COPY shared/storage/package.json shared/storage/
 COPY services/${SERVICE}/package.json services/${SERVICE}/
-RUN npm ci --include-workspace-root -w shared/types -w shared/utils -w shared/storage -w services/${SERVICE}
+RUN npm ci --include-workspace-root -w shared/catalog -w shared/types -w shared/utils -w shared/storage -w services/${SERVICE}
+COPY shared/catalog shared/catalog
 COPY shared/types shared/types
 COPY shared/utils shared/utils
 COPY shared/storage shared/storage
 COPY services/${SERVICE} services/${SERVICE}
 COPY scripts/build-service.mjs scripts/
-RUN npm run build -w shared/types -w shared/utils -w shared/storage \
+RUN npm run build -w shared/catalog -w shared/types -w shared/utils -w shared/storage \
   && node scripts/build-service.mjs ${SERVICE} --out /out
 
 FROM ${RUNTIME} AS compile

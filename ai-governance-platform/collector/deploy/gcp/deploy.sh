@@ -5,7 +5,7 @@
 # Nothing leaves your project.
 #
 #   PROJECT=acme-prod REGION=us-central1 IMAGE=us-central1-docker.pkg.dev/acme-prod/tools/probaline-collector:0.1.0 \
-#   LOG_BUCKET=acme-ai-logs [CREATE_SINKS=1] [IGNORE=…] [COMPANY=Acme] collector/deploy/gcp/deploy.sh
+#   LOG_BUCKET=acme-ai-logs [CREATE_SINKS=1] [IGNORE=…] [GATEWAY=ip:203.0.113.4] [COMPANY=Acme] collector/deploy/gcp/deploy.sh
 #
 # CREATE_SINKS=1 also creates the log sinks (Cloud DNS queries, Secure Web Proxy, and Vertex AI / Gemini API
 # data access audit logs) into LOG_BUCKET. Data access audit logs must be turned on for aiplatform.googleapis.com
@@ -45,7 +45,8 @@ if [ "${CREATE_SINKS:-0}" = "1" ]; then
 fi
 
 echo "==> Cloud Run job $JOB"
-ENV="CLOUD=gcp,LOG_BUCKETS=$LOG_BUCKET,RESULTS_BUCKET=$RESULTS_BUCKET,IGNORE=${IGNORE:-},COMPANY=${COMPANY:-}"
+# "^@^" makes @ the separator, so comma-separated lists (IGNORE, GATEWAY) stay whole (gcloud topic escaping).
+ENV="^@^CLOUD=gcp@LOG_BUCKETS=$LOG_BUCKET@RESULTS_BUCKET=$RESULTS_BUCKET@IGNORE=${IGNORE:-}@GATEWAY=${GATEWAY:-}@COMPANY=${COMPANY:-}"
 if gc run jobs describe "$JOB" --region "$REGION" >/dev/null 2>&1; then
   gc run jobs update "$JOB" --region "$REGION" --image "$IMAGE" --service-account "$SA" --set-env-vars "$ENV" \
     --args cloud-job --task-timeout 3600 --max-retries 1 --memory 1Gi

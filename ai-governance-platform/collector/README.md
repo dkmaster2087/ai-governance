@@ -21,6 +21,27 @@ is dropped as it is read. No raw log line, page address or content is stored.
   `jdoe@acme.example` count as one person. The `private/` folder also holds the code-to-name lookup; it never
   leaves the customer's storage.
 
+## Share through Probaline
+
+The report opens with the share of AI traffic that goes through Probaline, per path: apps calling model APIs,
+and cloud AI services (Bedrock, SageMaker, Azure OpenAI, Vertex AI). Name the Probaline gateway and connector
+with `--gateway` (or `GATEWAY` in the deployed collectors), as `type:value`, comma separated:
+
+- `role:probaline-gateway-task` for the gateway's role in CloudTrail
+- `ip:203.0.113.4`, or a range such as `ip:203.0.113.0/28`, for its outbound addresses in DNS and firewall logs
+- `host:gw-*` for hosts by name (a trailing `*` matches the start)
+
+Their traffic is counted as through Probaline and compared with everything else **in the same log**, so the
+share is in one unit (DNS lookups, firewall connections or CloudTrail calls), never a mix. Each path lists the
+callers still going direct, with the fix. Each report's findings file keeps the shares, so later reports show
+the earlier ones (the last six). Browser use isn't a path here: the browser extension governs it.
+
+`--ignore` (`IGNORE`) still leaves other known-good callers out entirely. Use `--gateway` for Probaline itself:
+ignoring it hides the traffic that proves the share.
+
+The list of AI services is the shared Probaline catalog (`shared/catalog`), the same one the gateway's Shadow
+AI page uses; the report says which version it used.
+
 ## Results layout
 
 ```
@@ -42,8 +63,8 @@ log buckets you name and write only to its own bucket. It sends nothing out of t
 1. Build the code package: `npm run bundle:lambda -w collector` → `collector/probaline-collector-aws.zip`, and
    upload it to a bucket in the account.
 2. Turn on **Send notifications to Amazon EventBridge** for each log bucket.
-3. Deploy the template with the log bucket names, the code location, and in `Ignore` the Probaline gateway's own
-   role (for example `role:probaline-gateway-task`) so Probaline doesn't report on itself.
+3. Deploy the template with the log bucket names, the code location, and in `Gateway` the Probaline gateway's
+   own role (for example `role:probaline-gateway-task`), so its traffic counts as through Probaline.
 4. Read the logs already there: run the `Backfill` command from the stack outputs. It is safe to run again.
 5. The report is at `reports/latest.html` in the results bucket and is rebuilt daily.
 
@@ -86,7 +107,7 @@ from the platform folder.
 | Windows DNS | file | debug log (packet logging, US date order) |
 
 Settings (environment): `SYSLOG_UDP_PORT`, `SYSLOG_TCP_PORT` (`off` to disable), `WATCH_DIR`, `FLUSH_SECONDS`
-(default 300), `REPORT_AT` (default 05:30), `REPORT_DAYS`, `IGNORE`, `COMPANY`.
+(default 300), `REPORT_AT` (default 05:30), `REPORT_DAYS`, `GATEWAY`, `IGNORE`, `COMPANY`.
 
 Syslog has no sender authentication; run the collector on a network the firewalls reach and nothing else does.
 
@@ -95,11 +116,28 @@ Syslog has no sender authentication; run the collector on a network the firewall
 The same collector runs on files, for logs exported from anywhere or for a quick look:
 
 ```bash
-node collector/dist/cli.js collect --out ./assessment ./exported-logs/
+node collector/dist/cli.js collect --out ./assessment --gateway role:probaline-gateway-task ./exported-logs/
 node collector/dist/cli.js report --out ./assessment --days 30 --company "Acme"
 ```
 
 `--reveal-names` builds a second copy with real names into `private/`.
+
+## MCP servers on laptops (beta)
+
+`endpoint/mcp-scan.sh` (macOS) and `endpoint/mcp-scan.ps1` (Windows) list the MCP servers people set up in
+Claude Desktop, Claude Code, Cursor, VS Code and Windsurf. Run them through device management (Jamf, Kandji,
+Intune; as root or SYSTEM they scan every account), collect the output files, and give them to `collect` with
+the other logs: they are recognized by content.
+
+They are read-only and print only the app, the server's name, local program or remote URL, the program's name
+and package (`npx @modelcontextprotocol/server-github`, a Docker image), or the URL's host, and whether the
+server is given credentials of its own. Never environment values, header values, other arguments, or anything
+after a URL's host. People and laptop names become codes like every other source.
+
+The report gets a section "MCP servers on laptops" and a recommendation to offer them through Probaline;
+`report --company-domains acme.com,acme.internal` marks servers that reach the company's own systems (private
+addresses always count). The shell script is tested on macOS against fixture settings with secrets planted in
+every field; the PowerShell script isn't yet tested on Windows.
 
 ## Zscaler and Netskope (beta)
 
@@ -144,7 +182,7 @@ file) replaces its results.
   job and an hourly Cloud Scheduler trigger; `CREATE_SINKS=1` also creates the three log sinks.
 
 Settings: `CLOUD` (`azure` or `gcp`); Azure `LOG_ACCOUNT_URL`, `LOG_CONTAINERS`, `RESULTS_ACCOUNT_URL`,
-`RESULTS_CONTAINER`; Google Cloud `LOG_BUCKETS`, `RESULTS_BUCKET`; common `LOG_PREFIXES`, `IGNORE`,
+`RESULTS_CONTAINER`; Google Cloud `LOG_BUCKETS`, `RESULTS_BUCKET`; common `LOG_PREFIXES`, `GATEWAY`, `IGNORE`,
 `REPORT_DAYS`, `COMPANY`, `MAX_FILES`.
 
 **Status:** the parsers follow the documented formats and the job is tested against local stand-ins (Azurite
@@ -206,5 +244,6 @@ and Netskope logs in their feed formats; or Azure and Google Cloud logs laid out
 
 `npm test -w collector`: the catalog, AWS, on-premises, Zscaler, Netskope, Azure and Google Cloud parsers, the
 in-cloud job, privacy (pseudonyms, no raw lines, ignored
-callers), findings, recommendations, report escaping, repeat-safe processing, and the on-premises server over
+callers), the share through Probaline (gateway by role, IP range and host; trend across reports), the laptop MCP scan
+(no secret reaches the output, the store or the report), findings, recommendations, report escaping, repeat-safe processing, and the on-premises server over
 real UDP and TCP sockets and growing, rotated and compressed files.

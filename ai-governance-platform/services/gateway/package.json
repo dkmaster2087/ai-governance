@@ -11,6 +11,7 @@
     "clean": "rm -rf dist"
   },
   "dependencies": {
+    "@ai-governance/catalog": "*",
     "@ai-governance/storage": "*",
     "@ai-governance/types": "*",
     "@ai-governance/utils": "*",
