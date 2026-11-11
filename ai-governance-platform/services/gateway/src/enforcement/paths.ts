@@ -19,7 +19,7 @@ export interface PathDef {
   lock: string;
   anchor?: 'feed' | 'aws' | 'apis' | 'laptops';
   /** Which findings path measures it; absent when the collector doesn't measure it (yet). */
-  findingsPath?: 'model_api' | 'cloud_ai';
+  findingsPath?: 'model_api' | 'cloud_ai' | 'incoming_api';
   /** Said instead of a share when the collector doesn't measure it. */
   measuredElsewhere?: string;
   /** Not built yet: the row says so, and its state can't be set. */
@@ -32,8 +32,7 @@ export const PATHS: PathDef[] = [
   { id: 'out_model_api', direction: 'out', title: 'Apps calling model APIs over the internet', lock: 'AI-domain feed in your firewall, web gateway or DNS', anchor: 'feed', findingsPath: 'model_api' },
   { id: 'out_cloud_ai', direction: 'out', title: 'Apps in AWS calling Bedrock or SageMaker', lock: 'Service control policy in your AWS organization', anchor: 'aws', findingsPath: 'cloud_ai' },
   { id: 'out_browser', direction: 'out', title: 'People using AI tools in a browser', lock: 'Browser extension blocks unapproved tools', measuredElsewhere: 'Measured by the browser extension on the Shadow AI page.' },
-  { id: 'in_agents', direction: 'in', title: 'Agents calling your APIs directly', lock: 'Your APIs accept only calls signed by Probaline', anchor: 'apis',
-    measuredElsewhere: 'Measured from your APIs’ access logs: coming next. Until then, the verifier’s report-only log shows calls that didn’t come through Probaline.' },
+  { id: 'in_agents', direction: 'in', title: 'Agents calling your APIs directly', lock: 'Your APIs accept only calls signed by Probaline', anchor: 'apis', findingsPath: 'incoming_api' },
   { id: 'in_laptop_mcp', direction: 'in', title: 'MCP servers on laptops using people’s own credentials', lock: 'Found by a device-management scan; offered as Probaline MCP servers, local copies removed', anchor: 'laptops', laptops: true },
 ];
 

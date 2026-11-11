@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { promises as fs } from 'fs';
 import path from 'path';
-import { buildReport, decode, isEndpointMcp, isoDay, processInput, processMcpScan } from './core/run';
+import { buildReport, decode, isEndpointMcp, isInventory, isoDay, processApiLog, processInput, processInventory, processMcpScan } from './core/run';
 import { FileStore } from './core/store';
 import { AwsSource, detectSource, parse } from './aws/parsers';
 import { parseOnpremText } from './onprem/parsers';
@@ -16,6 +16,8 @@ const USAGE = `Probaline collector: finds AI usage in your logs. Everything stay
       and a trailing * matches a prefix). Their traffic counts as through Probaline, for the share in the report.
       --ignore leaves other known-good callers out entirely.
       Laptop MCP scans (endpoint/mcp-scan.sh or .ps1 output) are recognized and read too.
+      Probaline's API list (Enforcement → Your APIs → API list for the collector) is kept, and access logs of
+      those APIs (AWS ALB, API Gateway JSON, nginx, Envoy) are read against it: calls through Probaline vs direct.
   probaline-collector report  --out <dir> [--days 30 | --from YYYY-MM-DD --to YYYY-MM-DD] [--company "Acme"] [--company-domains acme.com,acme.internal] [--reveal-names]
   probaline-collector cloud-job
       One run of the in-cloud collector (Azure Container Apps job or Cloud Run job), configured by
@@ -63,10 +65,19 @@ async function main() {
     const wanted = typeof flags.source === 'string' && flags.source !== 'auto' ? flags.source : null;
     const ignore = typeof flags.ignore === 'string' ? flags.ignore.split(',') : [];
     const gateway = typeof flags.gateway === 'string' ? flags.gateway.split(',') : [];
-    let matched = 0; let count = 0; let through = 0; let mcpServers = 0; let mcpDevices = 0;
-    for (const f of await files(rest)) {
-      count++;
+    let matched = 0; let count = 0; let through = 0; let mcpServers = 0; let mcpDevices = 0; let apiCalls = 0; let apiThrough = 0;
+    // The API list first, wherever it sits among the files, so access logs can be matched against it.
+    const all = await files(rest);
+    const texts = new Map<string, string>();
+    for (const f of all) {
       const text = decode(await fs.readFile(f));
+      if (isInventory(text)) console.log(`API list: ${await processInventory(store, text)} APIs behind Probaline MCP servers.`);
+      else texts.set(f, text);
+    }
+    for (const [f, text] of texts) {
+      count++;
+      const api = await processApiLog(store, path.resolve(f), text, gateway);
+      if (api) { apiCalls += api.matched; apiThrough += api.throughProbaline; continue; }
       if (isEndpointMcp(text)) {
         const m = await processMcpScan(store, path.resolve(f), text);
         mcpServers += m.servers; mcpDevices += m.devices;
@@ -79,7 +90,7 @@ async function main() {
       through += r.throughProbaline;
     }
     // Files can be one record per line or one big JSON document, so lines aren't a useful count.
-    console.log(`Read ${count} ${count === 1 ? 'file' : 'files'}; ${matched} records matched an AI service${gateway.length ? `, ${through} of them through Probaline` : ''}.${mcpDevices ? ` Laptop MCP scans: ${mcpServers} servers on ${mcpDevices} ${mcpDevices === 1 ? 'device' : 'devices'}.` : ''}`);
+    console.log(`Read ${count} ${count === 1 ? 'file' : 'files'}; ${matched} records matched an AI service${gateway.length ? `, ${through} of them through Probaline` : ''}.${mcpDevices ? ` Laptop MCP scans: ${mcpServers} servers on ${mcpDevices} ${mcpDevices === 1 ? 'device' : 'devices'}.` : ''}${apiCalls ? ` API access logs: ${apiCalls} calls to APIs behind Probaline, ${apiThrough} through it.` : ''}`);
     return;
   }
 

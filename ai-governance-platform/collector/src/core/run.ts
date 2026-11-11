@@ -5,6 +5,7 @@ import { renderReport } from './report';
 import { Aggregator, mergeSightings, Observation } from './sightings';
 import { loadNames, loadPseudonymizer, loadSightings, saveNames, saveSightings, Store } from './store';
 import { buildLaptopMcp, isEndpointMcp, loadMcpRows, parseEndpointMcp, saveMcpRows } from '../endpoint/mcp';
+import { classify, detectApiLog, isInventory, loadApiCalls, loadInventory, parseInventory, saveApiCalls, saveInventory } from '../apis/access-logs';
 
 export interface ProcessResult { lines: number; matched: number; files: number; throughProbaline: number }
 
@@ -36,7 +37,29 @@ export async function processInput(
 
 export const isoDay = (d: Date) => d.toISOString().slice(0, 10);
 
-export { isEndpointMcp };
+export { isEndpointMcp, isInventory, detectApiLog };
+
+/** Keep Probaline's API list in the store: later access logs are matched against it. */
+export async function processInventory(store: Store, text: string): Promise<number> {
+  const inv = parseInventory(text);
+  await saveInventory(store, inv);
+  return inv.apis.length;
+}
+
+/**
+ * One API access log (ALB, API Gateway, nginx, Envoy) into the store, if Probaline's API list is there.
+ * Returns null when the file isn't an access log, or there's no list to match it against.
+ */
+export async function processApiLog(store: Store, inputName: string, text: string, gateway: string[] = []): Promise<{ lines: number; matched: number; throughProbaline: number } | null> {
+  const parser = detectApiLog(text);
+  if (!parser) return null;
+  const inv = await loadInventory(store);
+  if (!inv) return null;
+  const requests = text.split('\n').map((l) => parser(l.trim())).filter((r): r is NonNullable<typeof r> => !!r);
+  const { rows, seen, matched } = classify(requests, inv, { gateway });
+  await saveApiCalls(store, inputName, rows);
+  return { lines: seen, matched, throughProbaline: rows.filter((r) => r.via).reduce((a, r) => a + r.count, 0) };
+}
 
 /** One laptop MCP scan file (endpoint/mcp-scan.sh or .ps1 output) into the store. */
 export async function processMcpScan(store: Store, inputName: string, text: string): Promise<{ servers: number; devices: number }> {
@@ -74,7 +97,7 @@ export async function buildReport(
   opts: { from: string; to: string; revealNames?: boolean; company?: string; now?: Date; companyDomains?: string[] },
 ): Promise<{ findings: Findings; key: string; html: string }> {
   const rows = mergeSightings(await loadSightings(store, opts.from, opts.to));
-  const findings = buildFindings(rows, opts.from, opts.to, opts.now, buildLaptopMcp(await loadMcpRows(store, opts.from, opts.to), opts.companyDomains));
+  const findings = buildFindings(rows, opts.from, opts.to, opts.now, buildLaptopMcp(await loadMcpRows(store, opts.from, opts.to), opts.companyDomains), await loadApiCalls(store, opts.from, opts.to));
   const history = await loadShareHistory(store, opts.to);
   if (history.length) findings.history = history;
   const names = opts.revealNames ? await loadNames(store) : undefined;

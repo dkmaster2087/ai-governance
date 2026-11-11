@@ -51,15 +51,17 @@ function pathCard(p: PathFinding, history: ShareHistoryEntry[], who: (w: string)
     </div>
     <div class="path-body">
       <h3>${esc(p.title)}</h3>
-      <p class="muted">${esc(n(p.through))} of ${esc(plural(total, 'lookup or call', 'lookups and calls'))} in ${esc(p.measuredBy)}.${earlier.length ? ` Earlier reports: ${esc(earlier.join(' · '))}.` : ''}</p>
+      <p class="muted">${esc(n(p.through))} of ${esc(p.id === 'incoming_api' ? plural(total, 'call') : plural(total, 'lookup or call', 'lookups and calls'))} in ${esc(p.measuredBy)}.${earlier.length ? ` Earlier reports: ${esc(earlier.join(' · '))}.` : ''}</p>
       ${otherSources.length ? `<p class="muted">Other sources: ${otherSources.map((x) => `${esc(x.label)} ${esc(pct(x.share))}`).join('; ')}. Each source counts in its own units, so they aren’t added together.</p>` : ''}
       ${p.gatewaySeen ? '' : '<p class="note">No traffic from the Probaline gateway was seen on this path. If the gateway runs here, name it with <code>--gateway</code> (for example <code>role:probaline-gateway-task</code> or its outbound IP address) and run the collector again.</p>'}
       ${p.stillDirectCount === 0 ? '<p><strong>Nothing goes around Probaline on this path.</strong></p>' : `<p><strong>Still going direct: ${esc(plural(p.stillDirectCount, 'caller'))}</strong></p>
-      ${[false, true].map((people) => p.stillDirect.slice(0, 10).find((c) => isPerson(c.who) === people))
-        .filter((c): c is NonNullable<typeof c> => !!c)
-        .map((c) => `<p><strong>${isPerson(c.who) ? 'For people' : 'For apps and workloads'}:</strong> ${esc(c.fix)}</p>`).join('')}
-      <div class="scroll"><table><thead><tr><th>Caller</th><th>Services</th><th>Lookups and calls</th></tr></thead><tbody>
-      ${p.stillDirect.slice(0, 10).map((c) => `<tr><td><code>${esc(who(c.who))}</code></td><td>${esc(c.services.join(', '))}</td><td class="num">${n(c.count)}</td></tr>`).join('')}
+      ${p.id === 'incoming_api'
+        ? [...new Set(p.stillDirect.slice(0, 10).map((c) => c.fix))].map((fix) => `<p><strong>Fix:</strong> ${esc(fix)}</p>`).join('')
+        : [false, true].map((people) => p.stillDirect.slice(0, 10).find((c) => isPerson(c.who) === people))
+          .filter((c): c is NonNullable<typeof c> => !!c)
+          .map((c) => `<p><strong>${isPerson(c.who) ? 'For people' : 'For apps and workloads'}:</strong> ${esc(c.fix)}</p>`).join('')}
+      <div class="scroll"><table><thead><tr><th>Caller</th><th>${p.id === 'incoming_api' ? 'APIs' : 'Services'}</th>${p.id === 'incoming_api' ? '<th>Made by</th>' : ''}<th>${p.id === 'incoming_api' ? 'Calls' : 'Lookups and calls'}</th></tr></thead><tbody>
+      ${p.stillDirect.slice(0, 10).map((c) => `<tr><td><code>${esc(who(c.who))}</code></td><td>${esc(c.services.join(', '))}</td>${p.id === 'incoming_api' ? `<td>${esc((c.clients ?? []).join(', '))}</td>` : ''}<td class="num">${n(c.count)}</td></tr>`).join('')}
       </tbody></table></div>${p.stillDirectCount > 10 ? `<p class="muted">And ${n(p.stillDirectCount - 10)} more in the findings file.</p>` : ''}`}
     </div>
   </article>`;
@@ -162,6 +164,15 @@ ${f.laptopMcp ? `<h2>MCP servers on laptops</h2>
     esc(m.clients.map((c) => MCP_CLIENTS[c] ?? c).join(', ')),
     `<span class="num">${n(m.devices)}</span>`,
     `<span class="num">${n(m.withCredentials)}</span>`,
+  ]))}</div>` : ''}
+
+${f.incomingApis?.length ? `<h2>Your APIs behind Probaline</h2>
+<div class="panel">${table(['API', 'Through Probaline', 'Direct calls', 'Direct callers', 'Made by'], f.incomingApis.map((a) => [
+    `<strong>${esc(a.name)}</strong><br><span class="muted">${esc(a.server)}</span>`,
+    `<span class="num">${esc(pct(a.share))}</span>`,
+    `<span class="num">${n(a.direct)}</span>`,
+    `<span class="num">${n(a.directCallers)}</span>`,
+    esc(a.clients.join(', ')),
   ]))}</div>` : ''}
 
 <h2>What was read</h2>

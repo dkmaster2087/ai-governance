@@ -265,3 +265,58 @@ describe('incoming lock: an API protected by the verifier', () => {
     await assert.rejects(() => other.verify(who.token), (e) => e.code === 'wrong_audience');
   });
 });
+
+describe('incoming verify: access logs show calls that skipped Probaline', () => {
+  const SPEC = JSON.stringify({ openapi: '3.0.3', info: { title: 'Ledger', version: '1' }, paths: { '/entries': { get: { operationId: 'listEntries' } } } });
+  let serverId; let findingsId;
+  after(async () => {
+    if (serverId) await call('DELETE', `/v1/mcp/servers/${serverId}`, { headers: as(A) });
+    if (findingsId) await call('DELETE', `/v1/enforcement/findings/${findingsId}`, { headers: as(A) });
+    await call('PUT', '/v1/enforcement/paths/in_agents', { headers: as(A), body: { state: 'open' } });
+  });
+
+  test('the API list goes to the collector; its findings show the share on the agents row', async () => {
+    const { mkdtemp, writeFile, readFile } = await import('node:fs/promises');
+    const { execFile } = await import('node:child_process');
+    const { promisify } = await import('node:util');
+    const os = await import('node:os');
+    const path = await import('node:path');
+
+    const made = await call('POST', '/v1/mcp/servers', { headers: as(A), body: { name: `E2E ledger ${Date.now()}` } });
+    serverId = made.body.serverId;
+    assert.equal((await call('POST', `/v1/mcp/servers/${serverId}/apis`, { headers: as(A), body: { name: 'Ledger', baseUrl: 'https://ledger.acme.example/v1', openapi: SPEC, auth: { type: 'none' } } })).status, 201);
+
+    // 1. The API list, as the dashboard downloads it.
+    const exported = await fetch(`${GATEWAY}/v1/enforcement/apis/export`, { headers: as(A) });
+    assert.match(exported.headers.get('content-disposition'), /attachment/);
+    const list = await exported.json();
+    const ledger = list.apis.find((a) => a.host === 'ledger.acme.example');
+    assert.equal(ledger.basePath, '/v1');
+    const gatewayIp = list.gateway.egressIps[0];
+    assert.ok(gatewayIp, 'the gateway’s outbound address is in the list');
+
+    // 2. Access logs: nine calls from the gateway, three direct.
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'probaline-e2e-api-'));
+    const day = new Date().toISOString().slice(0, 10);
+    const alb = (ip, ua) => `https ${day}T09:00:00.000000Z app/alb/1 ${ip}:5000 10.0.0.5:80 0.001 0.002 0.000 200 200 10 20 "GET https://ledger.acme.example:443/v1/entries HTTP/1.1" "${ua}" - - - "Root=1" "ledger.acme.example" "-" 0 ${day}T09:00:00.000000Z "forward" "-" "-" "10.0.0.5:80" "200" "-" "-"`;
+    await writeFile(path.join(dir, 'apis.json'), JSON.stringify(list));
+    await writeFile(path.join(dir, 'alb.log'), [...Array(9).fill(alb(gatewayIp, 'Probaline-MCP/1.0')), ...Array(3).fill(alb('198.51.100.40', 'python-requests/2.32'))].join('\n'));
+    const cli = path.join(process.cwd(), 'collector/dist/cli.js');
+    const out = path.join(dir, 'out');
+    const run = promisify(execFile);
+    const collected = await run('node', [cli, 'collect', '--out', out, path.join(dir, 'apis.json'), path.join(dir, 'alb.log')]);
+    assert.match(collected.stdout, /12 calls to APIs behind Probaline, 9 through it/);
+    await run('node', [cli, 'report', '--out', out, '--days', '7']);
+    const findings = JSON.parse(await readFile(path.join(out, 'reports', `findings-${day}.json`), 'utf8'));
+
+    // 3. Uploaded, the agents row shows the share; marked locked, it warns.
+    const up = await call('POST', '/v1/enforcement/findings', { headers: as(A), body: { fileName: `findings-${day}.json`, findings } });
+    assert.equal(up.status, 201, JSON.stringify(up.body));
+    findingsId = up.body.findingsId;
+    await call('PUT', '/v1/enforcement/paths/in_agents', { headers: as(A), body: { state: 'locked' } });
+    const row = (await call('GET', '/v1/enforcement', { headers: as(A) })).body.paths.find((p) => p.id === 'in_agents');
+    assert.equal(row.measured.share, 0.75);
+    assert.equal(row.measured.stillDirect[0].who, 'ip:198.51.100.40');
+    assert.match(row.warning, /1 caller still goes direct/);
+  });
+});

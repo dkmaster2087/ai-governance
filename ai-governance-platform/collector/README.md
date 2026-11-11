@@ -118,6 +118,29 @@ node collector/dist/cli.js report --out ./assessment --days 30 --company "Acme"
 
 `--reveal-names` builds a second copy with real names into `private/`.
 
+## Your APIs behind Probaline (beta)
+
+Shows how many calls to the company's own APIs (the ones behind Probaline MCP servers) came through Probaline,
+and who called them directly. Download the API list from the dashboard (Enforcement → Your APIs → *Download API
+list for the collector*: hosts and base paths, and the gateway's outbound addresses) and give it to `collect`
+with the APIs' access logs:
+
+```bash
+node collector/dist/cli.js collect --out ./assessment --gateway ip:10.0.5.4 probaline-apis.json ./api-logs/
+```
+
+| Log | Format read | Caller |
+|---|---|---|
+| AWS Application Load Balancer | The standard access log (S3, plain or .gz) | Client address |
+| Amazon API Gateway | JSON access logs with `sourceIp`, `domainName`, `httpMethod`, `path` (or `routeKey`), `requestTimeEpoch`, `userAgent` | `sourceIp` |
+| nginx | `combined`, or with `$host` first (`vhost_combined`) | Remote address |
+| Envoy | The default access log format | First `X-Forwarded-For` address |
+
+Calls from the gateway's addresses count as through Probaline; add connector hosts with `--gateway`. Everything
+else is direct, listed by caller and what made it (Claude, ChatGPT, Cursor, a Python or Node script, curl). A
+call that says it is Probaline (`Probaline-MCP` user agent) from another address is flagged. The report adds the
+path to "Share through Probaline", a table per API, and a recommendation to lock the APIs.
+
 ## MCP servers on laptops (beta)
 
 `endpoint/mcp-scan.sh` (macOS) and `endpoint/mcp-scan.ps1` (Windows) list the MCP servers people set up in
@@ -223,6 +246,7 @@ node collector/scripts/sample-onprem-logs.mjs send localhost 5514
 node collector/scripts/sample-sse-logs.mjs files ./sample-sse 14
 node collector/scripts/sample-cloud-logs.mjs ./sample-cloud 7
 node collector/scripts/sample-workapp-logs.mjs ./sample-workapps 14
+node collector/scripts/sample-api-logs.mjs ./probaline-apis.json ./sample-api-logs 21
 ```
 
 Made-up AWS logs in the layout AWS uses; on-premises log files; on-premises syslog sent over UDP; Zscaler

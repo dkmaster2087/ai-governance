@@ -398,7 +398,7 @@ node collector/dist/cli.js report --out ./results --company "Acme"
         <H2>MCP servers on laptops</H2>
         <P>People add MCP servers to Claude Desktop, Claude Code, Cursor, VS Code and Windsurf with their own credentials, so those calls skip every company rule. The Enforcement page offers a read-only scan for device management (<C>mcp-scan.sh</C> for macOS, tested; <C>mcp-scan.ps1</C> for Windows, not yet tested). It prints the app, the server’s name, the package or the URL’s host, and whether it has credentials of its own, never their values. Give the output to the collector; the report lists the servers and which reach your own systems, and the Enforcement page shows how many laptops still have them.</P>
         <H2>Not built yet</H2>
-        <P>Measuring direct calls to your APIs from their access logs; findings sent by the collector without an upload.</P>
+        <P>Findings sent by the collector without an upload; reading laptop scans and API access logs in the in-cloud collectors.</P>
       </>
     ),
   },
@@ -420,6 +420,8 @@ node collector/dist/cli.js report --out ./results --company "Acme"
         ]} />
         <H2>What the check verifies</H2>
         <P>An ES256 signature from a key published at <C>&lt;gateway&gt;/.well-known/jwks.json</C> (never <C>none</C> or a shared secret), the token type <C>probaline-identity+jwt</C>, the issuer, the audience (so a token for one API can’t be used on another), and the expiry, with 30 seconds of clock leeway. For writes that must never repeat, also keep the token’s <C>jti</C> for five minutes and refuse a second use.</P>
+        <H2>Check it with your access logs</H2>
+        <P>Under <strong>Your APIs</strong>, download the API list for the collector (hosts, base paths and the gateway’s outbound addresses; no credentials) and give it to the collector with the APIs’ access logs: AWS load balancer, API Gateway (JSON), nginx or Envoy. Calls from the gateway’s addresses (and connector hosts you name with <C>--gateway</C>) came through Probaline; the rest went direct, listed by caller and what made them. Upload the findings and the “Agents calling your APIs directly” row shows the share, the trend, and a warning if it’s marked locked while direct calls remain.</P>
         <H2>Without code changes</H2>
         <P>Allow only the gateway’s outbound addresses (or, for APIs reached through the connector, the connector’s host) in the API’s security group, WAF or proxy. That proves where a call came from, not who asked; use it alongside the check where you can.</P>
       </>
@@ -509,6 +511,7 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           [<C>POST /v1/enforcement/feeds/preview</C>, 'Domains and what they’d stop, for categories; uses the latest findings file'],
           [<C>PUT /v1/enforcement/paths/:id</C>, 'Set a path open, previewing or locked'],
           [<C>GET /v1/enforcement/apis</C>, 'APIs behind your MCP servers, with the issuer, keys address and audience their check needs'],
+          [<C>GET /v1/enforcement/apis/export</C>, 'The same as a file for the collector: hosts, base paths and the gateway’s outbound addresses'],
           [<C>POST /v1/enforcement/findings</C>, 'Upload a collector findings file (kept trimmed, 400 days); DELETE …/:id removes one'],
           [<C>PUT /v1/enforcement/aws</C>, 'Save the gateway role, emergency role and targets'],
           [<C>POST /v1/enforcement/aws/generate</C>, 'The SCP, VPC endpoint policy and CloudFormation template, and who they’d refuse'],

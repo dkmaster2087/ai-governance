@@ -1,6 +1,7 @@
 import { CATALOG_VERSION, Category, serviceById } from './catalog';
 import { Kind, Sighting } from './sightings';
 import type { LaptopMcp } from '../endpoint/mcp';
+import { API_SOURCE_LABELS, ApiCallRow } from '../apis/access-logs';
 
 export const SOURCE_LABELS: Record<string, string> = {
   aws_dns: 'AWS Route 53 Resolver DNS query logs',
@@ -61,6 +62,10 @@ const SOURCE_LIMITS: Record<string, string> = {
   entra_signin: 'Shows sign-ins to AI apps that use Entra ID; personal accounts on the same services aren’t seen.',
   entra_consent: 'Shows when someone let an AI app reach company data in Microsoft 365.',
   idp_signin: 'Shows sign-ins to AI apps the identity provider handles; app names are matched to the catalog.',
+  alb_access: 'Shows calls through this load balancer. The caller is the address it saw: behind another proxy, that proxy.',
+  apigw_access: 'Shows calls through this API Gateway stage, with the fields its access log format includes.',
+  nginx_access: 'Shows calls through this nginx. Without the host in the log format, only APIs with a base path no other API shares are matched.',
+  envoy_access: 'Shows calls through this Envoy; the caller is the first X-Forwarded-For address.',
 };
 
 export const isPerson = (who: string) => who.startsWith('user-');
@@ -96,12 +101,26 @@ export interface Recommendation {
 }
 
 /** A way AI traffic leaves the company that Probaline can carry. Browsers are the extension's job, not a path here. */
-export type PathId = 'model_api' | 'cloud_ai';
+export type PathId = 'model_api' | 'cloud_ai' | 'incoming_api';
 
 export const PATH_TITLES: Record<PathId, string> = {
   model_api: 'Apps calling model APIs',
   cloud_ai: 'Cloud AI services (Bedrock, SageMaker, Azure OpenAI, Vertex AI)',
+  incoming_api: 'Calls to your APIs behind Probaline MCP servers',
 };
+
+/** One API behind a Probaline MCP server, from its access logs. */
+export interface IncomingApi {
+  apiId: string;
+  name: string;
+  server: string;
+  through: number;
+  direct: number;
+  share: number;
+  directCallers: number;
+  /** What made the direct calls, by user agent. */
+  clients: string[];
+}
 
 /** One log source's view of a path. Through and direct are in that source's own units, so the share is honest. */
 export interface PathSource {
@@ -120,6 +139,8 @@ export interface StillDirect {
   sources: string[];
   /** What to change so this caller goes through Probaline. */
   fix: string;
+  /** For calls to the company's APIs: what made them, by user agent. */
+  clients?: string[];
 }
 
 export interface PathFinding {
@@ -167,6 +188,8 @@ export interface Findings {
   history?: ShareHistoryEntry[];
   /** MCP servers configured on laptops, from endpoint scans; absent when no scan was read. */
   laptopMcp?: LaptopMcp;
+  /** Per API behind Probaline MCP servers, from access logs; absent when none were read. */
+  incomingApis?: IncomingApi[];
   recommendations: Recommendation[];
 }
 
@@ -201,6 +224,57 @@ function fixFor(path: PathId, who: string): string {
   return isPerson(who)
     ? 'Use the gateway instead of calling models with personal cloud credentials.'
     : 'Point the workload at the gateway, then limit direct model access to the gateway’s role.';
+}
+
+/** Calls to the company's APIs: through Probaline (gateway or connector address) or direct, per source. */
+export function buildIncomingPath(calls: ApiCallRow[]): { path: PathFinding; apis: IncomingApi[] } | undefined {
+  if (calls.length === 0) return undefined;
+  const label = (s: string) => API_SOURCE_LABELS[s as keyof typeof API_SOURCE_LABELS] ?? s;
+  const bySource = new Map<string, { through: number; direct: number }>();
+  for (const r of calls) {
+    const c = bySource.get(r.source) ?? { through: 0, direct: 0 };
+    if (r.via === 'probaline') c.through += r.count; else c.direct += r.count;
+    bySource.set(r.source, c);
+  }
+  const sources: PathSource[] = [...bySource.entries()]
+    .map(([source, c]) => ({ source, label: label(source), ...c, share: c.through / (c.through + c.direct) }))
+    .sort((a, b) => b.through + b.direct - (a.through + a.direct));
+  const gatewaySeen = sources.some((x) => x.through > 0);
+  const primary = sources.find((x) => !gatewaySeen || x.through > 0)!;
+
+  const direct = new Map<string, { apis: Set<string>; clients: Set<string>; count: number; sources: Set<string> }>();
+  for (const r of calls.filter((x) => x.via !== 'probaline')) {
+    const c = direct.get(r.who) ?? { apis: new Set<string>(), clients: new Set<string>(), count: 0, sources: new Set<string>() };
+    c.apis.add(r.api); c.clients.add(r.client); c.sources.add(label(r.source)); c.count += r.count;
+    direct.set(r.who, c);
+  }
+  const stillDirect: StillDirect[] = [...direct.entries()].map(([who, c]) => ({
+    who, services: [...c.apis].sort(), count: c.count, sources: [...c.sources].sort(),
+    clients: [...c.clients].sort(),
+    fix: c.clients.has('Claims to be Probaline')
+      ? 'Says it is Probaline but didn’t come from Probaline’s address: find out what it is, then lock the API.'
+      : 'Lock the API to Probaline (Enforcement → Your APIs), or allow only the gateway’s addresses.',
+  })).sort((a, b) => b.count - a.count);
+
+  const byApi = new Map<string, ApiCallRow[]>();
+  for (const r of calls) byApi.set(r.apiId, [...(byApi.get(r.apiId) ?? []), r]);
+  const apis: IncomingApi[] = [...byApi.values()].map((rs) => {
+    const through = sum(rs.filter((r) => r.via === 'probaline').map((r) => r.count));
+    const d = rs.filter((r) => r.via !== 'probaline');
+    const directCount = sum(d.map((r) => r.count));
+    return {
+      apiId: rs[0].apiId, name: rs[0].api, server: rs[0].server, through, direct: directCount, share: through / (through + directCount),
+      directCallers: new Set(d.map((r) => r.who)).size, clients: [...new Set(d.map((r) => r.client))].sort(),
+    };
+  }).sort((a, b) => b.direct - a.direct || a.name.localeCompare(b.name));
+
+  return {
+    path: {
+      id: 'incoming_api', title: PATH_TITLES.incoming_api, share: primary.share, through: primary.through, direct: primary.direct,
+      measuredBy: primary.label, gatewaySeen, sources, stillDirect: stillDirect.slice(0, STILL_DIRECT_LISTED), stillDirectCount: stillDirect.length,
+    },
+    apis,
+  };
 }
 
 /** Through vs direct, per path and source, and who is still going direct. */
@@ -250,7 +324,7 @@ export function buildPaths(rows: Sighting[]): PathFinding[] {
 }
 
 /** Everything the report says, from the sightings in a period. */
-export function buildFindings(allRows: Sighting[], from: string, to: string, now = new Date(), laptopMcp?: LaptopMcp): Findings {
+export function buildFindings(allRows: Sighting[], from: string, to: string, now = new Date(), laptopMcp?: LaptopMcp, apiCalls: ApiCallRow[] = []): Findings {
   // Traffic through Probaline is reported once, in `paths`; everything else describes use outside it.
   const rows = allRows.filter((r) => r.via !== 'probaline');
   const mid = new Date((new Date(from).getTime() + new Date(to).getTime()) / 2).toISOString().slice(0, 10);
@@ -315,11 +389,24 @@ export function buildFindings(allRows: Sighting[], from: string, to: string, now
     ...(laptopMcp ? { laptopMcp } : {}),
     recommendations: [],
   };
+  const incoming = buildIncomingPath(apiCalls);
+  if (incoming) {
+    findings.paths.push(incoming.path);
+    findings.incomingApis = incoming.apis;
+    const bySrc = new Map<string, ApiCallRow[]>();
+    for (const r of apiCalls) bySrc.set(r.source, [...(bySrc.get(r.source) ?? []), r]);
+    for (const [source, rs] of bySrc) {
+      const days = [...new Set(rs.map((r) => r.day))].sort();
+      findings.sources.push({ source, label: API_SOURCE_LABELS[source as keyof typeof API_SOURCE_LABELS] ?? source, firstDay: days[0], lastDay: days[days.length - 1], days: days.length, count: sum(rs.map((r) => r.count)), limits: SOURCE_LIMITS[source] });
+    }
+    findings.sources.sort((a, b) => a.label.localeCompare(b.label));
+  }
   findings.recommendations = recommend(findings);
   return findings;
 }
 
 const pct = (x: number) => `${Math.round(x * 100)}%`;
+const n = (x: number) => x.toLocaleString('en-US');
 const plural = (n: number, one: string, many = `${one}s`) => `${n} ${n === 1 ? one : many}`;
 
 /** One concrete action per kind of finding, most important first. */
@@ -367,6 +454,18 @@ export function recommend(f: Findings): Recommendation[] {
       why: 'People are spread across several consumer AI tools, each with its own data handling and no shared policy.',
       action: 'Pick one with business terms (or an internal assistant behind Probaline), approve it, and steer people to it with the browser extension’s block page.',
       items: chats.map((s) => s.name),
+    });
+  }
+
+  const incoming = f.paths.find((p) => p.id === 'incoming_api');
+  if (incoming && incoming.stillDirectCount > 0) {
+    const apis = (f.incomingApis ?? []).filter((a) => a.direct > 0);
+    out.push({
+      priority: 'high',
+      title: `Lock ${plural(apis.length, 'API')} behind Probaline: ${plural(incoming.stillDirectCount, 'caller')} still ${incoming.stillDirectCount === 1 ? 'goes' : 'go'} around it`,
+      why: 'These calls reach the API without Probaline’s checks: no sign-in, no approval for writes, no record of who asked.',
+      action: 'Add the Probaline check to each API (Enforcement → Your APIs) in report-only mode, confirm only Probaline’s calls arrive, then turn refusal on. Or allow only the gateway’s addresses.',
+      items: apis.slice(0, TOP_CALLERS).map((a) => `${a.server} · ${a.name}: ${n(a.direct)} direct ${a.direct === 1 ? 'call' : 'calls'} from ${plural(a.directCallers, 'caller')} (${a.clients.join(', ')})`),
     });
   }
 

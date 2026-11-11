@@ -4,7 +4,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
   AwsLock, AwsSettings, Blocked, createFeed, deleteFindings, Enforcement, Feed, FeedCategory, feedContent, FeedFormat, generateAws,
-  getEnforcement, getLockKitApis, NewFeedUrls, PathState, PathStatus, previewFeed, revokeFeed, rotateFeed, saveAws, setPathState, slimFindings, uploadFindings,
+  exportApiList, getEnforcement, getLockKitApis, NewFeedUrls, PathState, PathStatus, previewFeed, revokeFeed, rotateFeed, saveAws, setPathState, slimFindings, uploadFindings,
 } from '../lib/enforcement-api';
 import { errorMessage } from '../lib/rules-api';
 import { Button, Note, Panel, Segmented, SectionLabel, Switch, formatCount } from '../components/kit/primitives';
@@ -331,6 +331,11 @@ function LockApisPanel({ egressIps }: { egressIps: string[] }) {
               <CopyButton text={kit.usage} label="Copy" />
               {kit.files.map((f) => <Button key={f.name} variant="secondary" onClick={() => download(f.name, f.body, 'text/plain')}>Download {f.name}</Button>)}
             </div>
+          </div>
+          <div className="text-sm flex flex-col gap-2">
+            <p className="m-0 font-semibold">Check it with your access logs</p>
+            <p className="m-0 text-ink-muted">Give the collector this list with the APIs’ access logs (AWS load balancer, API Gateway, nginx or Envoy). The report and the row above then show the share of calls that came through Probaline and who called directly.</p>
+            <div><Button variant="secondary" onClick={async () => download(`probaline-apis-${new Date().toISOString().slice(0, 10)}.json`, await exportApiList())}>Download API list for the collector</Button></div>
           </div>
           <div className="text-sm flex flex-col gap-1">
             <p className="m-0 font-semibold">Or, without code changes: allow only Probaline’s addresses</p>
