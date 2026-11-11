@@ -141,6 +141,8 @@ node scripts/create-platform-admin.mjs <user-pool-id> you@example.com "First" "L
 | `SECRETS_ENCRYPTION_KEY`, `SECRETS_ENCRYPTION_KEY_OLD` | gateway | With `SECRET_STORE=database`: 32 random bytes, base64 (`openssl rand -base64 32`). To change it, set the new key and keep the old as `_OLD` until secrets are saved again. Keep it apart from database backups |
 | `MCP_KEY_ROTATE_DAYS`, `MCP_KEY_OVERLAP_DAYS` | gateway | How often the MCP signing key rotates (default 90 days) and how long old and next keys stay published (default 7) |
 | `GLOBAL_RATE_LIMIT` | gateway | Requests a minute from one address (the web firewall applies its own limit in AWS) |
+| `TRUSTED_PROXY_HOPS` | gateway | How many proxies you run in front of the gateway (default 0). Only the `X-Forwarded-For` entries they add are believed; set 1 behind one load balancer or nginx. AWS sets 1 |
+| `EDGE_SECRET` | gateway | On AWS, the secret CloudFront sends in `x-probaline-edge`; requests carrying it have CloudFront's entry believed too. Set by the deployment |
 | `VITE_API_URL`, `VITE_DASHBOARD_URL` | website, docs | Gateway and dashboard addresses. `scripts/check-build-env.mjs` refuses a deployed build without them, or with localhost |
 | `PROBALINE_LICENSE_KEY`, `TENANT_ID`, `PROBALINE_REPORTING_URL`, `REPORTING_ENABLED` | reporting agent | On-prem installs only: the license, the company, the platform's reporting address (e.g. `https://app.example/api/v1/reporting`) and whether to send reports |
 | `REPORT_USAGE`, `REPORT_COST`, `REPORT_COMPLIANCE`, `REPORTING_INTERVAL_SECONDS` | reporting agent | What to send (each default `true`; audit records are never sent) and how often (default 300) |

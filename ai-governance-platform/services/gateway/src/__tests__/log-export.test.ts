@@ -129,7 +129,7 @@ describe('sign-in records', () => {
   it('records a dashboard sign-in once, and a refused key at most once a minute', async () => {
     let now = 1_000_000;
     const rec = new SignInRecorder(undefined, () => now);
-    const req: any = { correlationId: 'r', ip: '203.0.113.9', headers: { 'user-agent': 'Chrome' } };
+    const req: any = { correlationId: 'r', clientIp: '203.0.113.9', headers: { 'user-agent': 'Chrome' } };
     rec.dashboardSession(req, T, { sub: 'u1', email: 'ana@acme.example', 'custom:role': 'tenant_admin', auth_time: 1_762_400_000 });
     rec.dashboardSession(req, T, { sub: 'u1', email: 'ana@acme.example', auth_time: 1_762_400_000 });
     // Another gateway instance (fresh recorder) seeing the same sign-in writes nothing new.

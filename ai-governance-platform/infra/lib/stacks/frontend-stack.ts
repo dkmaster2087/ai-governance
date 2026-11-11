@@ -4,12 +4,15 @@ import * as cloudfront from 'aws-cdk-lib/aws-cloudfront';
 import * as origins from 'aws-cdk-lib/aws-cloudfront-origins';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 import * as s3 from 'aws-cdk-lib/aws-s3';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
 interface FrontendStackProps extends cdk.StackProps {
   prefix: string;
   stage: string;
   loadBalancer: elbv2.IApplicationLoadBalancer;
+  /** Sent to the gateway on /api calls so it can trust CloudFront's record of the person's address. */
+  edgeSecret?: secretsmanager.ISecret;
 }
 
 export const SITES = ['website', 'dashboard', 'docs'] as const;
@@ -55,9 +58,11 @@ export class FrontendStack extends cdk.Stack {
   return r;
 }`),
     });
+    // Without gatewayUrl (dev only) the edge secret crosses the internet unencrypted; production requires HTTPS.
+    const customHeaders = props.edgeSecret ? { 'x-probaline-edge': props.edgeSecret.secretValue.unsafeUnwrap() } : undefined;
     const gatewayOrigin = gatewayUrl
-      ? new origins.HttpOrigin(new URL(gatewayUrl).hostname, { protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY })
-      : new origins.HttpOrigin(props.loadBalancer.loadBalancerDnsName, { protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY });
+      ? new origins.HttpOrigin(new URL(gatewayUrl).hostname, { protocolPolicy: cloudfront.OriginProtocolPolicy.HTTPS_ONLY, customHeaders })
+      : new origins.HttpOrigin(props.loadBalancer.loadBalancerDnsName, { protocolPolicy: cloudfront.OriginProtocolPolicy.HTTP_ONLY, customHeaders });
     const apiBehavior: cloudfront.BehaviorOptions = {
       origin: gatewayOrigin,
       viewerProtocolPolicy: cloudfront.ViewerProtocolPolicy.HTTPS_ONLY,

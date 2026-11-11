@@ -84,7 +84,7 @@ const observabilityStack = new ObservabilityStack(app, `${prefix}-observability-
 });
 
 // 6. Website, dashboard and docs (CloudFront); /api/* goes to the gateway
-const frontendStack = new FrontendStack(app, `${prefix}-frontend-${stage}`, { env, prefix, stage, loadBalancer: servicesStack.loadBalancer });
+const frontendStack = new FrontendStack(app, `${prefix}-frontend-${stage}`, { env, prefix, stage, loadBalancer: servicesStack.loadBalancer, edgeSecret: servicesStack.edgeSecret });
 
 // Explicit dependency ordering
 storageStack.addDependency(networkStack);

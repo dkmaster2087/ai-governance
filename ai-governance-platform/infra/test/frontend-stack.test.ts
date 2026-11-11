@@ -4,16 +4,30 @@ import { NetworkStack } from '../lib/stacks/network-stack';
 import { FrontendStack } from '../lib/stacks/frontend-stack';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
 
-const build = (context: Record<string, string> = {}, stage = 'test') => {
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
+
+const build = (context: Record<string, string> = {}, stage = 'test', withEdgeSecret = false) => {
   const app = new cdk.App({ context });
   const env = { account: '123456789012', region: 'us-east-1' };
   const net = new NetworkStack(app, 'Net', { env, prefix: 'ai-gov', stage });
   const lbStack = new cdk.Stack(app, 'Lb', { env });
   const lb = new elbv2.ApplicationLoadBalancer(lbStack, 'Alb', { vpc: net.vpc, internetFacing: true });
-  return Template.fromStack(new FrontendStack(app, 'Front', { env, prefix: 'ai-gov', stage, loadBalancer: lb }));
+  const edgeSecret = withEdgeSecret ? new secretsmanager.Secret(lbStack, 'Edge') : undefined;
+  return Template.fromStack(new FrontendStack(app, 'Front', { env, prefix: 'ai-gov', stage, loadBalancer: lb, edgeSecret }));
 };
 
 describe('FrontendStack', () => {
+  it('sends the edge secret to the gateway on /api calls', () => {
+    const t = build({ gatewayUrl: 'https://gateway.acme.example' }, 'test', true);
+    const dists = Object.values(t.findResources('AWS::CloudFront::Distribution')) as any[];
+    const gatewayOrigins = dists.flatMap((d) => d.Properties.DistributionConfig.Origins).filter((o: any) => o.DomainName === 'gateway.acme.example');
+    expect(gatewayOrigins).toHaveLength(2);
+    for (const o of gatewayOrigins) {
+      const h = o.OriginCustomHeaders.find((x: any) => x.HeaderName === 'x-probaline-edge');
+      expect(JSON.stringify(h.HeaderValue)).toContain('resolve:secretsmanager');
+    }
+  });
+
   it('hosts the website, dashboard and docs privately behind CloudFront', () => {
     const t = build();
     t.resourceCountIs('AWS::CloudFront::Distribution', 3);

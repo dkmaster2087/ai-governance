@@ -528,6 +528,7 @@ npx cdk deploy --all --context stage=prod \\
           [<C>OBJECT_STORE</C>, <><C>s3</C> (default) or <C>file</C></>],
           [<C>LOG_EXPORT_ALLOW_PRIVATE_DESTINATIONS</C>, <><C>true</C> lets log export reach a SIEM inside your network</>],
           [<C>LOG_EXPORT_WORKER</C>, <><C>off</C> stops a gateway from sending log export batches</>],
+          [<C>TRUSTED_PROXY_HOPS</C>, <>How many proxies you run in front of the gateway (default <C>0</C>). Behind one load balancer or nginx, set <C>1</C>: only the address it adds to <C>X-Forwarded-For</C> is believed, so callers can't dodge per-address limits by writing their own</>],
           [<C>SECRET_STORE</C>, <><C>aws</C> (default, Secrets Manager) or <C>database</C>: provider keys and credentials encrypted in the database</>],
           [<C>SECRETS_ENCRYPTION_KEY</C>, <>With <C>SECRET_STORE=database</C>: 32 random bytes, base64 (<C>openssl rand -base64 32</C>). Keep it apart from your database backups</>],
         ]} />

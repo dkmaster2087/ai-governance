@@ -85,7 +85,7 @@ network get a third-party audit, the bill of materials, and source escrow.
    company's AI traffic flows.
 2. **Close the security settings** (B2–B5, C1, C3): **built** (2026-11-06); not yet run against a real AWS account.
 3. **Finish what looks built** (C2, C4–C8): **done** (2026-11-07); email and webhooks not yet tried against real SES and chat tools.
-4. **Run it with confidence** (D1–D5, B6, C9): **done** (2026-11-07); the CI end-to-end job and the restore test haven't run on GitHub or AWS yet. Next: B7, then the first real AWS deploy.
+4. **Run it with confidence** (D1–D5, B6, C9): **done** (2026-11-07); the CI end-to-end job and the restore test haven't run on GitHub or AWS yet. B7 **done** (2026-11-07). Next: the first real AWS deploy.
 5. **Trust between services and protected packages** (E1–E4): **done** (2026-11-07); a first AWS deploy still to run.
 6. **Hybrid control plane and a Rust detection core** (E5, E6): later, after the first customers.
 
@@ -164,3 +164,16 @@ infra 37, collector 98, connector 3, dashboard 86, website 10, docs 3; CDK synth
 end-to-end 46 of 46 on DynamoDB and on PostgreSQL (secrets in the database). The connector and collector images
 were built and run locally.
 
+## B7: what was done (2026-11-07)
+
+The gateway no longer believes the left-most `X-Forwarded-For` entry. It counts only the entries its own
+proxies add, from the right: `TRUSTED_PROXY_HOPS` (0 by default, so local and self-hosted installs use the
+connection's address; 1 on AWS for the load balancer). CloudFront sends a generated secret
+(`ai-gov/<stage>/edge-secret`) in `x-probaline-edge`; when it matches, CloudFront's entry is believed too, so
+dashboard and website users are limited and recorded by their own address rather than by CloudFront location.
+The web firewall leaves requests carrying that secret out of its per-address rule for the same reason.
+
+Tests: gateway 307 (including a check that changing `X-Forwarded-For` on each request doesn't get round the
+limit), infra 39; CDK synth passes for dev and prod. Still to check on the first deploy: that CloudFormation
+fills the secret into CloudFront's header and the firewall rule (both use a Secrets Manager reference), and
+that a dashboard user's address in the activity trail is their own.

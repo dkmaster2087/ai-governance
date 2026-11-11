@@ -188,7 +188,7 @@ export function createAuthPlugin(deps: AuthDeps) {
       }
       // An unknown key belongs to no tenant, so it can only be a log line (anyone can send one).
       if (!apiKey) {
-        logger.info('Unknown API key refused', { requestId: request.correlationId, sourceIp: request.ip });
+        logger.info('Unknown API key refused', { requestId: request.correlationId, sourceIp: request.clientIp });
         return deny(reply, 401, 'INVALID_KEY', 'Invalid API key');
       }
       if (apiKey.status === 'revoked') {

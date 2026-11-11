@@ -1,6 +1,7 @@
 import * as cdk from 'aws-cdk-lib';
 import * as wafv2 from 'aws-cdk-lib/aws-wafv2';
 import * as elbv2 from 'aws-cdk-lib/aws-elasticloadbalancingv2';
+import * as secretsmanager from 'aws-cdk-lib/aws-secretsmanager';
 import { Construct } from 'constructs';
 
 /**
@@ -19,6 +20,12 @@ export interface GatewayFirewallProps {
   loadBalancer: elbv2.IApplicationLoadBalancer;
   /** Requests per address in any 5 minutes before it's refused (default 3000). */
   ratePerFiveMinutes?: number;
+  /**
+   * The secret CloudFront adds. Requests carrying it are left out of the per-address limit: to the firewall they
+   * all come from a few CloudFront addresses, so one busy location would block everyone using it. The gateway
+   * still limits them per person's address.
+   */
+  edgeSecret?: secretsmanager.ISecret;
 }
 
 export class GatewayFirewall extends Construct {
@@ -48,7 +55,25 @@ export class GatewayFirewall extends Construct {
         {
           name: 'RatePerAddress', priority: 0,
           action: { block: { customResponse: { responseCode: 429 } } },
-          statement: { rateBasedStatement: { limit: props.ratePerFiveMinutes ?? 3000, aggregateKeyType: 'IP' } },
+          statement: {
+            rateBasedStatement: {
+              limit: props.ratePerFiveMinutes ?? 3000, aggregateKeyType: 'IP',
+              ...(props.edgeSecret ? {
+                scopeDownStatement: {
+                  notStatement: {
+                    statement: {
+                      byteMatchStatement: {
+                        fieldToMatch: { singleHeader: { Name: 'x-probaline-edge' } },
+                        positionalConstraint: 'EXACTLY',
+                        searchString: props.edgeSecret.secretValue.unsafeUnwrap(),
+                        textTransformations: [{ priority: 0, type: 'NONE' }],
+                      },
+                    },
+                  },
+                },
+              } : {}),
+            },
+          },
           visibilityConfig: visibility('RatePerAddress'),
         },
         managed('AWSManagedRulesAmazonIpReputationList', 1),

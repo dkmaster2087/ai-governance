@@ -48,6 +48,8 @@ export class ServicesStack extends cdk.Stack {
   public readonly gatewayService: ecs.FargateService;
   public readonly cluster: ecs.Cluster;
   public readonly loadBalancer: elbv2.ApplicationLoadBalancer;
+  /** CloudFront sends this to the gateway so it knows a request came through our own edge (see client-address.ts). */
+  public readonly edgeSecret: secretsmanager.Secret;
   private readonly repositories: Record<ServiceName, ecr.IRepository>;
   private readonly imageTag: string;
 
@@ -89,10 +91,21 @@ export class ServicesStack extends cdk.Stack {
       vpcSubnets: { subnetType: ec2.SubnetType.PUBLIC },
     });
 
+    // The dashboard and website reach the gateway through CloudFront, which adds this secret to each request.
+    // The gateway then believes CloudFront's X-Forwarded-For entry (the person's address); without it, only the
+    // load balancer's (TRUSTED_PROXY_HOPS=1). To change it: set a new value in Secrets Manager and deploy both
+    // the services and frontend stacks; until the gateway restarts, browsers are limited per CloudFront location.
+    this.edgeSecret = new secretsmanager.Secret(this, 'EdgeSecret', {
+      secretName: `${prefix}/${stage}/edge-secret`,
+      description: 'Sent by CloudFront to the gateway to show a request came through Probaline\'s own edge.',
+      generateSecretString: { passwordLength: 48, excludePunctuation: true },
+      removalPolicy: stage === 'prod' ? cdk.RemovalPolicy.RETAIN : cdk.RemovalPolicy.DESTROY,
+    });
+
     // Web firewall on the public load balancer (-c waf=false turns it off, e.g. for a throwaway stage).
     if (this.node.tryGetContext('waf') !== 'false') {
       const rate = Number(this.node.tryGetContext('wafRatePerFiveMinutes')) || undefined;
-      new GatewayFirewall(this, 'Firewall', { prefix, stage, loadBalancer: this.loadBalancer, ratePerFiveMinutes: rate });
+      new GatewayFirewall(this, 'Firewall', { prefix, stage, loadBalancer: this.loadBalancer, ratePerFiveMinutes: rate, edgeSecret: this.edgeSecret });
     }
 
     // Shared environment variables
@@ -192,7 +205,7 @@ export class ServicesStack extends cdk.Stack {
     this.gatewayService = this.createService({
       id: 'Gateway',
       name: 'gateway',
-      secrets: { ...signingKeySecret, ...tlsSecrets('gateway') },
+      secrets: { ...signingKeySecret, ...tlsSecrets('gateway'), EDGE_SECRET: ecs.Secret.fromSecretsManager(this.edgeSecret) },
       prefix,
       stage,
       cluster: this.cluster,
@@ -235,6 +248,8 @@ export class ServicesStack extends cdk.Stack {
         METRICS_NAMESPACE: `${prefix}/${stage}`,
         ...(props.storageKey ? { PROVIDER_KEYS_KMS_KEY_ID: props.storageKey.keyArn } : {}),
         GOVERNANCE_FAIL_MODE: 'closed',
+        // One proxy in front: the load balancer. Its X-Forwarded-For entry is the caller's real address.
+        TRUSTED_PROXY_HOPS: '1',
       },
     });
 

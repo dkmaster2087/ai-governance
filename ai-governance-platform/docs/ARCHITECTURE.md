@@ -262,7 +262,15 @@ agent's own API needs a signed internal token from an admin.
   traffic isn't stopped by them; the per-address limit and the web firewall still apply.
 - **Web firewall** (AWS WAF) on the public load balancer: a per-address rate limit, AWS's reputation list, and
   AWS's common and known-bad-input rules for headers, paths and queries. Their body rules only count: prompts
-  are large and full of code, and the gateway inspects bodies itself.
+  are large and full of code, and the gateway inspects bodies itself. Requests from our own CloudFront (the
+  dashboard's and website's `/api` calls) are left out of the per-address limit, which would see only a few
+  CloudFront addresses; the gateway limits them per person instead.
+- **Caller addresses**: the gateway believes only the `X-Forwarded-For` entries its own proxies add, counted
+  from the right (`TRUSTED_PROXY_HOPS`, 1 on AWS for the load balancer). CloudFront adds a secret header
+  (`x-probaline-edge`, from Secrets Manager); when it matches `EDGE_SECRET`, CloudFront's entry is believed too,
+  so the address is the person's browser. Whatever a caller writes into the header themselves is ignored, so
+  the per-address limits, the contact form's included, can't be dodged, and the activity trail records the
+  real address.
 - **Secrets** (provider keys, API credentials) are encrypted with the platform's own KMS key.
 - **Retention**: each searchable record carries an expiry from its company's retention period. A daily sweep
   (one gateway instance claims each day) deletes the archive's day folders past that period; S3 removes the
@@ -336,9 +344,6 @@ gateway instance a day takes the step (a lock in `metrics`); every instance re-r
 - The full AWS deploy (repositories, images, stacks, three sites behind CloudFront) passes CDK synth and unit
   tests but hasn't yet been run against a real AWS account.
 - Production deploys need `-c certificateArn=…` and `-c gatewayUrl=…` for HTTPS.
-- The gateway reads the caller's address from the left-most `X-Forwarded-For` entry, which a caller can set, so
-  its own per-address limit (`GLOBAL_RATE_LIMIT`) and the contact form's can be dodged. The web firewall's
-  per-address limit can't; trust only the hops added by CloudFront and the load balancer.
 - Secrets detection covers prompts only. A model that writes a credential into its answer isn't checked by it
   (the existing response scanner catches a few key formats).
 - Streamed answers are masked by the gateway's built-in patterns as they stream; the deeper data-protection
@@ -350,8 +355,6 @@ gateway instance a day takes the step (a lock in `metrics`); every instance re-r
   waits and connector calls poll the database, which adds load and a little latency.
 - Provider keys and API credentials saved before the platform key was set (`PROVIDER_KEYS_KMS_KEY_ID`) stay
   under Secrets Manager's default key until they're saved again.
-- The web firewall's per-address limit sees CloudFront's addresses for dashboard traffic, so it's set high
-  (3000 per 5 minutes); per-key limits are what bound each app.
 - Logs: service log lines don't carry the request ID automatically, and there is no access log line per
   request. Some MCP log lines carry people's emails.
 - Log export (beta): formats follow each vendor's published intake but haven't been tried against the real

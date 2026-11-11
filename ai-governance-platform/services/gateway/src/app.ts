@@ -1,4 +1,4 @@
-import Fastify from 'fastify';
+import Fastify, { FastifyRequest } from 'fastify';
 import cors from '@fastify/cors';
 import helmet from '@fastify/helmet';
 import rateLimit from '@fastify/rate-limit';
@@ -19,6 +19,7 @@ import { inputValidation } from './middleware/input-validation';
 import { setupGracefulShutdown } from './middleware/graceful-shutdown';
 import { requestTracing } from './middleware/request-tracing';
 import { getSecurityConfig } from './config/security';
+import { clientAddress, clientAddressConfig } from './middleware/client-address';
 import { metricsRoutes } from './routes/metrics.routes';
 import { gatewayRoutes } from './routes/gateway.routes';
 import { platformRoutes } from './routes/platform.routes';
@@ -35,14 +36,25 @@ import { adminActivity } from './activity/admin-activity';
 import { activityRoutes } from './routes/activity.routes';
 import { logExportRoutes } from './routes/log-export.routes';
 
+declare module 'fastify' {
+  interface FastifyRequest {
+    /** Where the request came from, believing only our own proxies (middleware/client-address.ts). */
+    readonly clientIp: string;
+  }
+}
+
 export async function buildApp() {
   const securityConfig = getSecurityConfig();
 
+  const addressConfig = clientAddressConfig();
+
   const app = Fastify({
     logger: false,
-    trustProxy: true,
+    // X-Forwarded-For is read by clientAddress, which believes only the proxies we run (TRUSTED_PROXY_HOPS).
+    trustProxy: false,
     bodyLimit: securityConfig.maxBodySize,
   });
+  app.decorateRequest('clientIp', { getter(this: FastifyRequest) { return clientAddress(this, addressConfig); } });
 
   // Security plugins
   await app.register(helmet, {
@@ -58,6 +70,7 @@ export async function buildApp() {
   await app.register(rateLimit, {
     max: securityConfig.globalRateLimit,
     timeWindow: '1 minute',
+    keyGenerator: (request) => request.clientIp,
   });
 
   // Error handler: set before any routes so every plugin inherits it.

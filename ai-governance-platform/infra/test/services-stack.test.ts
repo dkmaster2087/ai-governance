@@ -91,6 +91,23 @@ describe('ServicesStack', () => {
     expect(JSON.stringify(acl)).toContain('AWSManagedRulesAmazonIpReputationList');
   });
 
+  it('believes only the load balancer\'s address, plus CloudFront\'s when it carries the edge secret', () => {
+    template.hasResourceProperties('AWS::ECS::TaskDefinition', {
+      ContainerDefinitions: Match.arrayWith([Match.objectLike({
+        Name: 'GatewayContainer',
+        Environment: Match.arrayWith([{ Name: 'TRUSTED_PROXY_HOPS', Value: '1' }]),
+        Secrets: Match.arrayWith([Match.objectLike({ Name: 'EDGE_SECRET' })]),
+      })]),
+    });
+    template.hasResourceProperties('AWS::SecretsManager::Secret', { Name: 'ai-gov/test/edge-secret', GenerateSecretString: Match.objectLike({ PasswordLength: 48 }) });
+    // Requests from CloudFront are left out of the firewall's per-address limit; the gateway limits them per person.
+    const acl = Object.values(template.findResources('AWS::WAFv2::WebACL'))[0] as any;
+    const rate = acl.Properties.Rules.find((r: any) => r.Name === 'RatePerAddress').Statement.RateBasedStatement;
+    const match = rate.ScopeDownStatement.NotStatement.Statement.ByteMatchStatement;
+    expect(match.FieldToMatch.SingleHeader.Name).toBe('x-probaline-edge');
+    expect(JSON.stringify(match.SearchString)).toContain('resolve:secretsmanager');
+  });
+
   it('connects services directly over mutual TLS, by private DNS name, with no internal load balancer', () => {
     template.resourceCountIs('AWS::ElasticLoadBalancingV2::LoadBalancer', 1);
     template.resourceCountIs('AWS::ServiceDiscovery::PrivateDnsNamespace', 1);

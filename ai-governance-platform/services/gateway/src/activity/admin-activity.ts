@@ -117,7 +117,7 @@ export function requestMeta(request: FastifyRequest) {
   const ua = request.headers['user-agent'];
   return {
     requestId: request.correlationId,
-    sourceIp: request.ip,
+    sourceIp: request.clientIp,
     userAgent: Array.isArray(ua) ? ua[0] : ua,
   };
 }
