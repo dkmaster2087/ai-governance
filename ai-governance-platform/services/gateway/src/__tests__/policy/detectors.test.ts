@@ -1,4 +1,4 @@
-import { findPhi, findPii } from '../services/detectors';
+import { findPhi, findPii } from '../../policy/services/detectors';
 
 const hit = (text: string, types: string[] = []) => findPii(text, types)?.label ?? null;
 

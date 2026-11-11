@@ -173,7 +173,9 @@ async function startDegradedGateway() {
     COMPLIANCE_TABLE: 'ai-gov-compliance-dev', AUDIT_LOGS_TABLE: 'ai-gov-audit-logs-dev',
     AUTH_DEV_MODE: 'true', OPENAI_BASE_URL: `${MOCK}/v1`, GLOBAL_RATE_LIMIT: '2000',
     PORT: String(DEGRADED_PORT),
-    POLICY_ENGINE_URL: 'http://127.0.0.1:9', DATA_PROTECTION_URL: 'http://127.0.0.1:9',
+    // Rules run inside the gateway: a rules table that doesn't exist makes them unreadable (DynamoDB only; PostgreSQL
+    // creates tables on demand, so there the fail-mode logic is covered by the unit tests).
+    POLICIES_TABLE: 'ai-gov-policies-missing',
     // Analytics is down for this gateway too: reports fail, prompts don't.
     ANALYTICS_URL: 'http://127.0.0.1:9',
     // The gateway's signing key, as scripts/dev-local.sh made it.
@@ -861,14 +863,18 @@ describe('licenses', () => {
   });
 });
 
-describe('when the checks are down', () => {
+describe('when the rules can\'t be read', () => {
+  // A missing DynamoDB table is how the rules are made unreadable; PostgreSQL creates tables on demand.
+  const pg = (t) => storage === 'postgres' && (t.skip('needs a missing DynamoDB table; unit tests cover PostgreSQL'), true);
   before(async () => {
+    if (storage === 'postgres') return;
     await setFailMode(A, 'closed');
     await setFailMode(B, 'open');
     degraded = await startDegradedGateway();
   });
 
-  test('a fail-closed tenant is refused and nothing reaches the model', async () => {
+  test('a fail-closed tenant is refused and nothing reaches the model', async (t) => {
+    if (pg(t)) return;
     const m = marker();
     const res = await chat(keyA, `hello ${m}`, { base: DEGRADED });
     assert.equal(res.status, 503, JSON.stringify(res.body));
@@ -876,17 +882,18 @@ describe('when the checks are down', () => {
     assert.deepEqual(await atModel(m), []);
   });
 
-  test('a fail-open tenant is answered, and the record says the checks were skipped', async () => {
+  test('a fail-open tenant is answered, and the record says the checks were skipped', async (t) => {
+    if (pg(t)) return;
     const res = await chat(keyB, `hello ${marker()}`, { base: DEGRADED });
     assert.equal(res.status, 200, JSON.stringify(res.body));
     const record = await caseFile(B, idOf(res));
     assert.equal(record.status, 200);
     const skipped = record.body.steps.filter((s) => s.kind === 'skipped').map((s) => s.label);
     assert.ok(skipped.includes('Policy rules skipped'), `steps: ${skipped}`);
-    assert.ok(skipped.includes('Personal data not checked'), `steps: ${skipped}`);
   });
 
-  test('with analytics down, reports say so, prompts are still answered, and rules still load', async () => {
+  test('with analytics down, reports say so and prompts are still answered', async (t) => {
+    if (pg(t)) return;
     const summary = await call('GET', '/v1/gateway/summary', { headers: adminOf(B), base: DEGRADED });
     assert.equal(summary.status, 503);
     assert.equal(summary.body.code, 'ANALYTICS_UNAVAILABLE');
@@ -960,16 +967,10 @@ describe('model limits and alerts', () => {
   });
 });
 
-describe('internal services and evidence retention', () => {
-  test('the policy engine and data protection refuse anything the gateway didn\'t sign', async () => {
-    for (const [port, url] of [[3001, `/v1/policies/${A}`], [3002, '/v1/protect/request']]) {
-      // Over TLS, without a service certificate.
-      assert.equal(await internal(port, url.includes('protect') ? 'POST' : 'GET', url, { body: url.includes('protect') ? { tenantId: A, messages: [] } : undefined }), 401, `${port}${url}`);
-      // A service certificate, but not the gateway's.
-      assert.equal(await internal(port, 'GET', url, { as: 'analytics' }), 401, `${port}${url} as analytics`);
-    }
-    // Plain HTTP isn't served at all.
-    await assert.rejects(fetch(`http://localhost:3001/health`).then((r) => r.text()));
+describe('one gateway, and evidence retention', () => {
+  test('rules and personal-data checks have no network port of their own any more', async () => {
+    // They run inside the gateway; the old ports 3001 and 3002 serve nothing.
+    for (const port of [3001, 3002]) await assert.rejects(fetch(`http://localhost:${port}/health`).then((r) => r.text()));
   });
 
   test('a company admin places a legal hold with a reason, and releases it', async () => {

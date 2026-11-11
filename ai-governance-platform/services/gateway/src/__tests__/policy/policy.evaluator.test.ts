@@ -1,8 +1,8 @@
-import { PolicyEvaluator } from '../services/policy.evaluator';
-import { PolicyRepository } from '../repositories/policy.repository';
+import { PolicyEvaluator } from '../../policy/services/policy.evaluator';
+import { PolicyRepository } from '../../policy/repositories/policy.repository';
 import { NormalizedAIRequest, Policy } from '@ai-governance/types';
 
-jest.mock('../repositories/policy.repository');
+jest.mock('../../policy/repositories/policy.repository');
 const MockRepo = PolicyRepository as jest.MockedClass<typeof PolicyRepository>;
 
 const makeRequest = (content: string, modelId = 'anthropic.claude-3-haiku-20240307-v1:0'): NormalizedAIRequest => ({

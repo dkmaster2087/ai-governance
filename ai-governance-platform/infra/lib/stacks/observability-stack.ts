@@ -33,7 +33,7 @@ export class ObservabilityStack extends cdk.Stack {
       dashboardName: `${prefix}-overview-${stage}`,
     });
 
-    const services = ['gateway', 'policy-engine', 'data-protection', 'analytics'];
+    const services = ['gateway', 'analytics'];
 
     dashboard.addWidgets(
       new cloudwatch.TextWidget({

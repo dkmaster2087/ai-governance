@@ -1,8 +1,6 @@
 import { FastifyInstance } from 'fastify';
-import axios from 'axios';
 import { records, SPECS } from '@ai-governance/storage';
 import { analyticsClient } from '../clients/analytics.client';
-import { internalHttpsAgent } from '../clients/internal';
 
 const startTime = Date.now();
 
@@ -40,11 +38,8 @@ export async function healthRoutes(app: FastifyInstance) {
   /** Readiness probe — can the service handle requests? Checks dependencies. */
   app.get('/ready', async () => {
     const checks = await Promise.all([
+      // Rules, secrets, personal data and prompt-attack checks run in this process; the store is what they need.
       checkDependency(storeName(), pingStore),
-      checkDependency('policy-engine', async () => {
-        const url = process.env.POLICY_ENGINE_URL || 'http://localhost:3001';
-        await axios.get(`${url}/health`, { timeout: 3000, httpsAgent: internalHttpsAgent() });
-      }),
     ]);
 
     const allHealthy = checks.every((c) => c.status === 'healthy');
@@ -61,20 +56,12 @@ export async function healthRoutes(app: FastifyInstance) {
   app.get('/deep', async () => {
     const checks = await Promise.all([
       checkDependency(storeName(), pingStore),
-      checkDependency('policy-engine', async () => {
-        const url = process.env.POLICY_ENGINE_URL || 'http://localhost:3001';
-        await axios.get(`${url}/health`, { timeout: 3000, httpsAgent: internalHttpsAgent() });
-      }),
-      checkDependency('data-protection', async () => {
-        const url = process.env.DATA_PROTECTION_URL || 'http://localhost:3002';
-        await axios.get(`${url}/health`, { timeout: 3000, httpsAgent: internalHttpsAgent() });
-      }),
       // Off the request path: if it's down, reports are unavailable but prompts are unaffected.
       checkDependency('analytics', () => analyticsClient().ping()),
     ]);
 
     const allHealthy = checks.every((c) => c.status === 'healthy');
-    const criticalHealthy = checks.filter((c) => c.name !== 'data-protection' && c.name !== 'analytics').every((c) => c.status === 'healthy');
+    const criticalHealthy = checks.filter((c) => c.name !== 'analytics').every((c) => c.status === 'healthy');
 
     return {
       status: allHealthy ? 'healthy' : criticalHealthy ? 'degraded' : 'unhealthy',

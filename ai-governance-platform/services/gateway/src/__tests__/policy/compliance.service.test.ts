@@ -1,8 +1,8 @@
 import { collection, MemoryStore, setRecords } from '@ai-governance/storage';
 import { NormalizedAIRequest } from '@ai-governance/types';
-import { ALL_PACKS, ComplianceService, FRAMEWORK_RULES, RULES_VERSION } from '../compliance/compliance.service';
-import { PolicyRepository } from '../repositories/policy.repository';
-import { PolicyEvaluator } from '../services/policy.evaluator';
+import { ALL_PACKS, ComplianceService, FRAMEWORK_RULES, RULES_VERSION } from '../../policy/compliance/compliance.service';
+import { PolicyRepository } from '../../policy/repositories/policy.repository';
+import { PolicyEvaluator } from '../../policy/services/policy.evaluator';
 
 const T = 'tenant_1';
 const ask = (content: string, extra: Partial<NormalizedAIRequest> = {}): NormalizedAIRequest => ({

@@ -8,12 +8,16 @@ const logger = createLogger('policy-engine:repository');
 export class PolicyRepository {
   private policies = () => collection<Policy & Record<string, unknown>>('policies');
 
+  /**
+   * A company's policies. If they can't be read this throws: an empty list would look like "no rules" and let
+   * every prompt through, even for a company that fails closed. The caller applies the company's fail mode.
+   */
   async getPoliciesForTenant(tenantId: string): Promise<Policy[]> {
     try {
       return await allPages((after) => this.policies().query({ partition: tenantId, after }));
     } catch (err) {
       logger.error('Failed to fetch policies', { tenantId, error: (err as Error).message });
-      return [];
+      throw err;
     }
   }
 

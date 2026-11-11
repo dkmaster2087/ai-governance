@@ -1,167 +1,108 @@
-# Hybrid deployment plan: we manage, you run
+# Customer-run Probaline (hybrid / on-premises)
 
-Status: plan, not built. Written 2026-10-29.
+Status: step 1 built (one image), the rest planned. Rewritten 2026-11-12; replaces the 2026-10-29 and earlier
+2026-11-11 versions. Required before the first customer.
 
 ## The decision
 
-Probaline keeps two deployment modes on the website today: **Hosted by us** and **In your AWS account**. This plan
-adds a third, and it is the one most security buyers will want:
+Two ways to run Probaline:
 
-- **We run the control plane:** dashboard, rule authoring, compliance packs, licenses, tenant management.
-- **The customer runs the data plane:** gateway, policy engine and data protection, in their own AWS account.
-- **Prompts and responses never leave their account.** We receive decisions and counts only.
+- **Cloud:** we host it.
+- **Customer-run:** the customer runs the Probaline image on their own infrastructure (on-premises, any cloud,
+  Kubernetes).
+  - It's the whole product: the gateway, every check, the dashboard and reports.
+  - It's one lightweight image: the customer installs it, and when a security fix is needed they pull the new
+    version we ship.
 
-An earlier idea was to split it differently: gateway with the customer, policy engine with us. That is
-rejected, for three reasons:
+What some vendors call "hybrid" is, here, simply a customer-run install. **Nothing about a customer's install
+reaches us:** no traffic, no counts, no heartbeat. Our platform keeps only our own records of customers and
+licenses.
 
-1. The gateway sends the full original prompt to the policy engine (`PolicyEngineClient.evaluate` posts the
-   whole `NormalizedAIRequest`). Hosting the engine means hosting every prompt, which defeats the point of
-   running in their account.
-2. The policy engine has no authentication and trusts the `tenantId` it is sent. It was built to be
-   reachable only inside a private network.
-3. Every request would take an extra internet round trip, and an outage on our side would block (or, for
-   fail-open tenants, stop checking) every customer's traffic at once.
+## Who sees what
 
-## What lives where
+- **The customer's admins** use the dashboard on their own install: rules, evidence, API keys, models and
+  provider keys, MCP servers, approvals, alerts, log export.
+- **Probaline's platform admin** sees our own records: customers, plans and the licenses we issued, with their
+  end dates. Nothing from the customer's install, so prompts, case files, keys and usage never reach us.
+- **Later:** with those records, the platform can email customers before a license ends. It needs nothing from
+  their install, because we issued the license and know its end date.
 
-| | Our account (control plane) | Customer account (data plane) |
-|---|---|---|
-| Dashboard and sign-in (Cognito) | Yes | No |
-| Tenants, licenses, plans | Yes | No |
-| Rules, compliance packs, settings (fail mode, retention) | Authored here | Cached copy, read-only |
-| Model configs and provider keys | No | Yes. Keys stay in their Secrets Manager |
-| App API keys | No | Yes |
-| Gateway, policy engine, data protection | No | Yes |
-| Prompts, responses, masked excerpts, case files | Never | Yes, in their database (DynamoDB or PostgreSQL) and file store |
-| Decisions and counts (per hour, per app, per rule, per model) | Yes | Source |
+## One license, one gateway
 
-Model configs and app API keys stay customer-side because they are secrets or grant access to their AI
-spend; the dashboard pages for them link out to the customer's own admin page (see Phase 4).
+- **A gateway** is one address (for example `ai-gateway.customer.com`), one dashboard and one database.
+- **It scales horizontally.** Run as many copies of the image as needed behind the customer's load balancer, all
+  using the same database.
+- **One license covers one gateway.** A second gateway, for example `ai-gateway.eu.customer.com` with its own
+  database, needs its own license. Multiple dashboards per license aren't supported.
+- **How it's enforced, without reaching us:** the license names the gateway's address. The gateway serves only
+  requests made to that address, so a second deployment at another address needs a second license. The license
+  is signed, so its address and end date can't be edited.
 
-## How it works
+## License expiry
 
-### 1. Rules flow down (signed bundle)
+The license is a file we sign, carrying the customer, plan, gateway address and end date. The gateway checks the
+signature and the date itself; it never contacts us. This is the same timeline Cloud uses today
+(`license-state.ts`: active → expiring → grace → lapsed).
 
-- When an admin saves a rule, model allowlist, framework toggle or tenant setting, the control plane builds a
-  **bundle**: one JSON document with every rule, enabled pack and governance setting for that tenant, plus a
-  version number and the time it was built.
-- The bundle is signed with an AWS KMS asymmetric key (ECDSA P-256). The public key ships in the customer's
-  install, so a bundle tampered with in transit or on disk is refused.
-- The customer's policy engine polls `GET /v1/bundle` every 60 seconds with its license key and
-  `If-None-Match: <version>`. A 304 costs nothing.
-- The engine keeps the last good bundle in memory and on disk (S3 in their account). If our side is
-  unreachable it keeps enforcing the last bundle indefinitely and raises a "rules are N hours old" warning
-  after 24 hours. Our outage never changes their enforcement.
-- An expired or revoked license makes `/v1/bundle` return 403. The engine keeps the last bundle and keeps
-  enforcing it; stopping enforcement because a license lapsed would make the customer less safe, which is
-  the wrong lever. Licensing is enforced commercially and in the dashboard instead.
-
-### 2. Decisions flow up (summaries, no content)
-
-- The gateway already writes an audit record per request. A small job on the customer side (the existing
-  reporting agent, reworked) rolls those up into hourly summaries: requests, stopped, cleaned, by app, by
-  model, by rule, by provider, with token counts and estimated cost.
-- Each summary row carries no prompt text, no response text, no masked excerpts and no end-user IDs. App
-  names and rule names are fine; they are the customer's own labels and the dashboard needs them.
-- Summaries are posted to `POST /v1/reporting/ingest` with the license key and stored in a new
-  `tenant-summaries` table. The dashboard's Overview, Usage and Platform pages read from there.
-- Delivery is at-least-once with a summary ID, so a retried post never double counts.
-
-Shadow-AI collectors (see [ASSESSMENT.md](ASSESSMENT.md)) fit the same way: in hybrid mode they send their
-counts to the customer's data plane, which reports them up with everything else.
-
-### 3. Evidence stays with them
-
-The dashboard shows case files (masked excerpt, rule, decision) for stopped requests. In hybrid mode those
-stay in the customer's account. Two options, in order of preference:
-
-1. **Customer-side evidence viewer (recommended for v1).** The data plane includes a small read-only page
-   behind their own SSO or VPN. The hosted dashboard's case-file links open it. Nothing about the content ever
-   crosses to us, which is the easiest story for a CISO to sign off.
-2. **Cross-account read role (later, opt-in).** The customer grants us an IAM role that can read their
-   evidence table, and the hosted dashboard fetches excerpts on demand without storing them. More seamless,
-   but the security review is harder because we can read their data.
-
-## Build phases
-
-Each phase ends in something that works and can be shipped on its own.
-
-### Phase 1: the policy engine reads rules through one seam
-
-- Add a `RuleSource` interface to the policy engine with two implementations:
-  - `DynamoRuleSource`, today's behaviour (`PolicyRepository.getPoliciesForTenant`).
-  - `BundleRuleSource`, which serves rules from the cached bundle.
-- Pick by `RULE_SOURCE=dynamo|bundle`. Hosted and in-your-account modes are unchanged.
-- Tenant settings the gateway reads today from the tenants table (`tenant-settings.service.ts`: fail mode,
-  shadow-AI decisions) also come through the bundle in hybrid mode. The model allowlist is already a rule.
-- Done when the existing evaluator tests pass against both sources.
-
-### Phase 2: bundles are built, signed and served
-
-- Control plane: `services/gateway/src/services/bundle.ts` builds the bundle from the policies, tenants and
-  frameworks tables; bump the version on every write to those tables.
-- KMS signing key in `infra/` (one per environment), public key exported into the data-plane install.
-- `GET /v1/bundle` authenticated with the license key. Reuse `checkLicense` from `reporting.routes.ts` with a
-  new `bundle:read` scope on licenses.
-- Data plane: `BundleRuleSource` polls, verifies the signature, swaps atomically, writes the last good copy.
-- Tests: tampered bundle refused, unreachable server keeps the old bundle, 304 path, revoked license.
-
-### Phase 3: summaries are reported and stored
-
-Fix what the reporting agent does today before reusing it:
-
-- It reads the gateway with `Authorization: Bearer test-key`, which only works in dev mode. Give it its own
-  scoped API key, or read the audit table directly.
-- It sends `costByUser` (end-user IDs). Drop that.
-- Its default `saasEndpoint` ends in `/ingest` and then appends `/validate-license` and `/ingest` again.
-- `/reporting/ingest` logs the report and discards it; `/reporting/status` returns a stub.
-
-Then:
-
-- Replace the usage/cost/compliance collectors with the hourly rollup described above, read from the local
-  audit table.
-- Store rows in `tenant-summaries` (tenantId + hour + dimension key), with the summary ID for de-duplication.
-- `/reporting/status` returns real last-report time, agent version and bundle version in use.
-- Platform page "Needs attention" gains: no report in 2 hours; data plane running an old bundle; agent
-  version behind.
-
-### Phase 4: the dashboard runs on summaries
-
-- Add `deploymentMode: 'hybrid'` to tenants (`tenant.routes.ts` enum, `RUNS_LABEL`).
-- For hybrid tenants, Overview, Usage and the platform pages read `tenant-summaries` instead of
-  `queryAuditLogs`. `platform-usage.ts` gets a second input path with the same output shape, so the pages
-  don't change.
-- Case-file links go to the customer's evidence viewer URL (stored on the tenant).
-- Models and API keys pages show "Managed in your account" with a link to the data plane's admin page.
-
-### Phase 5: packaging
-
-- One CloudFormation/CDK stack for the data plane: gateway, policy engine, data protection, reporting agent,
-  evidence viewer, their tables and S3 bucket. Inputs: license key, control-plane URL, public signing key.
-- Same container images as the in-your-account mode; the mode is set by environment variables only.
-- This is the stack an AWS Marketplace container listing would point at.
-- Update the website Deployment page: add "Managed by us, running in your account".
-
-## Rough size
-
-| Phase | Size |
+| When | What happens |
 |---|---|
-| 1. Rule source seam | 2–3 days |
-| 2. Signed bundles | 1 week |
-| 3. Reporting rework | 1 week |
-| 4. Dashboard on summaries | 1 week |
-| 5. Packaging | 1 week, plus testing in a clean AWS account |
+| 30 days before the end | Notices: a banner on every dashboard page, email to the company's admins (through their own email settings), and a warning header on API responses |
+| End date | A 30-day grace period starts. Everything keeps working; the countdown is shown everywhere. |
+| After the grace period | **AI requests are refused** with a clear "license expired" error, never passed through unchecked. Admins can still sign in, enter a renewal and read evidence. |
+| Renewal | The customer enters the new signed license on the License page. Traffic resumes at once, with no restart. |
 
-About five weeks of solo work. Phases 1 and 3 are worth doing even if hybrid slips: phase 1 makes rule
-lookups cacheable, and phase 3 fixes a reporting path that is wrong today.
+- **No early revocation.** Since the install never contacts us, a license can't be revoked before its end date;
+  the end date is the control. Keep license terms at a year or less.
+- **No remote off switch.** Nothing on our side can stop a gateway. The only stop is the end date the customer
+  agreed to, with about 60 days of notice and grace. State this in the license terms.
+
+## Security and compliance commitments
+
+These are the answers to a CISO's review, and the constraints every customer-run feature must keep.
+
+- **The customer's install is the authority.** Rules, settings, keys, case files and the dashboard live with the
+  customer. Nothing on our side can read their prompts or change their enforcement, so a breach of Probaline
+  can't weaken a customer's protection.
+- **Nothing is sent to us.** No traffic, counts, user IDs or heartbeats. We aren't a processor of their data.
+- **Their sign-in.** The dashboard uses the customer's SSO (OIDC: Okta, Entra), with local accounts for small
+  installs. We have no access; support works from diagnostics the customer chooses to share.
+- **No connections to us at all,** inbound or outbound. Outbound traffic goes only to the AI providers and the
+  destinations the customer sets up (their SIEM, their email, their MCP APIs).
+- **Signed releases.**
+  - Images are signed with cosign and published with an SBOM (`.github/workflows/deploy.yml` already does both)
+    and with the vulnerability policy (SECURITY.md).
+  - We support the last three versions.
+  - The gateway never updates itself; the customer chooses when.
+- **Lightweight.** Copies of one image plus the customer's PostgreSQL (DynamoDB when they run in AWS). Rate-limit
+  and other counters live in the database, so Redis isn't needed.
+
+## The image (step 1, built)
+
+One image, `services/Dockerfile`, started by `PROBALINE_ROLE`:
+
+| Role | Runs | Used by |
+|---|---|---|
+| `all` (default) | The gateway (rules and compliance, secrets, personal data, prompt attacks, all in its process) and reports, which listen only on 127.0.0.1 | Customer installs: one kind of container |
+| `gateway` | The gateway alone | Our Cloud, on the prompt path |
+| `reports` | Reports alone | Our Cloud, apart from prompts |
+
+- The separate policy-engine and data-protection services are gone; their code runs inside the gateway.
+- In the `all` role, the gateway's key for signing calls to reports is made at start-up if the install doesn't set
+  one, so a customer configures nothing for it.
+- **AWS-only features fall back when off AWS:**
+  - Comprehend is optional.
+  - Prompt attacks use the phrase list only, unless the customer gives it a Bedrock guardrail.
+
+## Build steps
+
+| Step | What | Size | Status |
+|---|---|---|---|
+| 1 | One image, run by role; Cloud runs two roles of it | about 1 week | Built 2026-11-12 |
+| 2 | Signed license file: local checks of signature, end date and gateway address, with notices and grace; the platform issues licenses as files and tracks customers; remove the reporting agent | about 1 week | |
+| 3 | The image serves the dashboard; the customer's SSO (OIDC) and local accounts | about 1 week | |
+| 4 | Packaging: Helm chart, docker-compose, AWS template, install guide, test in a clean environment | about 1 week | |
 
 ## Open questions
 
-- **Rule changes take up to a minute to arrive.** Fine for most rules. If a customer needs instant
-  "block this model now", add a push (SNS or a long-poll) later.
-- **Custom rules with regexes.** The bundle carries them as-is. The evaluator already applies pattern safety
-  at check time, so a bad pattern can't hang the data plane; keep that check when evaluating from a bundle.
-- **Shadow-AI decisions** (allow/block per tool) are settings and travel in the bundle. Shadow-AI sightings
-  are counts and travel up in summaries.
-- **Data-plane upgrades.** The customer owns their stack, so we need a supported-versions window (say, the
-  last three releases) and a bundle format version the engine checks.
+- **Moving a license** to a new gateway address: we issue a replacement file. Decide how often that's allowed.
+- **Renewal reminders** from our platform: email before the end date, using our own license records.

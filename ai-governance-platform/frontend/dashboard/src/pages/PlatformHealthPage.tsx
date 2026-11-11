@@ -7,8 +7,6 @@ const NAMES: Record<string, { label: string; role: string }> = {
   dynamodb: { label: 'Database (DynamoDB)', role: 'Tenants, keys, rules and evidence' },
   postgres: { label: 'Database (PostgreSQL)', role: 'Tenants, keys, rules and evidence' },
   analytics: { label: 'Analytics', role: 'Builds reports, spend, evidence search and the platform view' },
-  'policy-engine': { label: 'Policy engine', role: 'Checks every prompt against rules' },
-  'data-protection': { label: 'Data protection', role: 'Removes personal data' },
 };
 
 const uptime = (s: number) => (s < 3600 ? `${Math.round(s / 60)} min` : s < 172_800 ? `${Math.round(s / 3600)} h` : `${Math.round(s / 86_400)} days`);
@@ -49,7 +47,10 @@ export function PlatformHealthPage() {
           <SectionLabel className="mb-1">Request path</SectionLabel>
           <ul className="m-0 p-0 list-none">
             <li className="grid grid-cols-[minmax(0,1fr)_auto] gap-4 py-3 border-b border-line-subtle">
-              <div><div className="font-semibold">Gateway</div><div className="text-sm text-ink-muted">Version {h.version}, up {uptime(h.uptime)}</div></div>
+              <div>
+                <div className="font-semibold">Gateway</div>
+                <div className="text-sm text-ink-muted">Checks every prompt: rules, secrets, personal data and prompt attacks. Version {h.version}, up {uptime(h.uptime)}</div>
+              </div>
               <span className="font-semibold">Working</span>
             </li>
             {h.dependencies.filter((d) => !isReporting(d.name)).map((d) => <Dependency key={d.name} d={d} />)}

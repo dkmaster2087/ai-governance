@@ -12,10 +12,10 @@ for every decision.
 
 ```
 services/
-  gateway/          Public API: auth, chat completions, proxy mode, rules, evidence, shadow AI (Fastify, :3000)
-  policy-engine/    Evaluates rules and compliance packs (internal, :3001)
-  data-protection/  Removes personal data from prompts and responses (internal, :3002)
-  analytics/        Every report built from history: summaries, spend, evidence, platform view (internal, :3003)
+  gateway/          Public API and every check: auth, rules and compliance, secrets, personal data, prompt
+                    attacks, proxy mode, evidence, shadow AI, MCP (Fastify, :3000)
+  analytics/        Every report built from history: summaries, spend, evidence, platform view (:3003)
+  Dockerfile        The one product image: gateway + reports, started by PROBALINE_ROLE (all, gateway, reports)
   reporting-agent/  Optional on-prem agent that reports usage with a license key (:3005)
 frontend/
   dashboard/        The app (React + Vite + Tailwind, :5174)
@@ -116,11 +116,11 @@ node scripts/create-platform-admin.mjs <user-pool-id> you@example.com "First" "L
 | `VITE_GATEWAY_PUBLIC_URL` | dashboard | Gateway address shown to admins (defaults to the dashboard's `/api`) |
 | `GOVERNANCE_FAIL_MODE` | gateway | Default when a check can't run: `closed` (block) or `open` |
 | `PROVIDER_KEYS_SECRET_PREFIX` | gateway | Secrets Manager prefix for customers' provider keys |
-| `STORAGE_BACKEND` | gateway, policy engine, analytics | `dynamodb` (default), `postgres` or `memory` |
+| `STORAGE_BACKEND` | gateway, analytics | `dynamodb` (default), `postgres` or `memory` |
 | `DATABASE_URL`, `PG_TABLE_PREFIX` | same | PostgreSQL connection (`?sslmode=require` for TLS) and optional table prefix |
 | `MCP_SERVERS_TABLE`, `MCP_APIS_TABLE`, `MCP_TOOLS_TABLE`, `MCP_VERSIONS_TABLE`, `MCP_APPROVALS_TABLE`, `MCP_OAUTH_TABLE`, `MCP_CONNECTORS_TABLE` | gateway | DynamoDB tables for MCP servers (set by CDK) |
 | `INTERNAL_SIGNING_KEY` | gateway, reporting agent | The private key internal requests are signed with, as JSON `{"iss","privateKey"}` (`scripts/internal-keys.mjs`; Secrets Manager in AWS) |
-| `INTERNAL_TRUSTED_KEYS` | policy engine, data protection, analytics, reporting agent | Public keys accepted, as a JSON list; two during a rotation. The services refuse to start without it |
+| `INTERNAL_TRUSTED_KEYS` | analytics, reporting agent | Public keys accepted, as a JSON list; two during a rotation. The services refuse to start without it |
 | `INTERNAL_TLS_CA`, `INTERNAL_TLS_CERT`, `INTERNAL_TLS_KEY` | all services | Mutual TLS between services: the install's CA and this service's certificate and key, as PEM (`scripts/internal-pki.mjs`). Required in production |
 | `PROVIDER_KEYS_KMS_KEY_ID` | gateway | KMS key that new provider keys and API credentials are encrypted with (set by CDK to the platform's key) |
 | `METRICS_NAMESPACE` | gateway | Publish alarm metrics to CloudWatch under this namespace (set by CDK; off when unset) |

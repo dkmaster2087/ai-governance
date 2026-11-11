@@ -1,4 +1,4 @@
-import { PIIDetectionService } from '../services/pii-detection.service';
+import { PIIDetectionService } from '../../data-protection/pii-detection.service';
 import { NormalizedAIRequest, NormalizedAIResponse } from '@ai-governance/types';
 
 // Mock Comprehend so tests don't need AWS credentials

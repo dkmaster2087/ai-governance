@@ -1,11 +1,11 @@
 import Fastify from 'fastify';
-import { PolicyEvaluator } from '../services/policy.evaluator';
-import { PolicyRepository } from '../repositories/policy.repository';
-import { patternProblem, validatePolicyPatterns } from '../services/pattern-safety';
+import { PolicyEvaluator } from '../../policy/services/policy.evaluator';
+import { PolicyRepository } from '../../policy/repositories/policy.repository';
+import { patternProblem, validatePolicyPatterns } from '../../policy/services/pattern-safety';
 import { NormalizedAIRequest, Policy, PolicyRule } from '@ai-governance/types';
 
-jest.mock('../repositories/policy.repository');
-jest.mock('../compliance/compliance.service');
+jest.mock('../../policy/repositories/policy.repository');
+jest.mock('../../policy/compliance/compliance.service');
 const MockRepo = PolicyRepository as jest.MockedClass<typeof PolicyRepository>;
 
 const request = (content: string): NormalizedAIRequest => ({
@@ -63,7 +63,7 @@ describe('PolicyEvaluator with tenant patterns', () => {
 
 describe('policy routes', () => {
   it('rejects policies with unsafe patterns', async () => {
-    const { policyRoutes } = await import('../routes/policy.routes');
+    const { policyRoutes } = await import('../../policy/routes/policy.routes');
     const app = Fastify();
     await app.register(policyRoutes, { prefix: '/v1/policies' });
     const res = await app.inject({
@@ -79,7 +79,7 @@ describe('policy routes', () => {
 
 describe('compliance routes', () => {
   it('returns 404 for frameworks that are not in v1', async () => {
-    const { complianceRoutes } = await import('../routes/compliance.routes');
+    const { complianceRoutes } = await import('../../policy/routes/compliance.routes');
     const app = Fastify();
     await app.register(complianceRoutes, { prefix: '/v1/compliance' });
     const removed = await app.inject({ method: 'GET', url: '/v1/compliance/packs/gdpr' });

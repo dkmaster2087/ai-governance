@@ -201,11 +201,9 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { name: gateway, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg SERVICE=gateway --build-arg PORT=3000' }
-          - { name: policy-engine, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg SERVICE=policy-engine --build-arg PORT=3001' }
-          - { name: data-protection, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg SERVICE=data-protection --build-arg PORT=3002' }
-          - { name: analytics, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg SERVICE=analytics --build-arg PORT=3003' }
-          - { name: reporting-agent, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg SERVICE=reporting-agent --build-arg PORT=3005' }
+          # The product: one image (gateway with every check, plus reports), run by role. See services/Dockerfile.
+          - { name: probaline, dockerfile: services/Dockerfile, context: ., kind: service, args: '' }
+          - { name: reporting-agent, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg TARGET=reporting-agent' }
           - { name: collector, dockerfile: collector/Dockerfile, context: ., kind: agent }
           - { name: connector, dockerfile: connector/Dockerfile, context: ., kind: agent }
     steps:
@@ -220,8 +218,8 @@ jobs:
           id=$(docker create probaline-${{ matrix.name }}:ci)
           docker export "$id" > image.tar
           files=$(tar -tf image.tar)
-          echo "$files" | grep -q '^app/app.jsc$'
-          ! echo "$files" | grep -E '^app/.*\.(ts|map)$|^app/app\.js$|^app/node_modules/|^bin/(sh|bash)$|^usr/bin/npm'
+          echo "$files" | grep -qE '^app/[a-z]+\.jsc$'
+          ! echo "$files" | grep -E '^app/.*\.(ts|map)$|^app/(app|gateway|reports)\.js$|^app/node_modules/|^bin/(sh|bash)$|^usr/bin/npm'
           docker rm "$id" > /dev/null
       # Known high or critical vulnerabilities with a fix available, in the base image or the packages inside.
       - name: Scan image for vulnerabilities

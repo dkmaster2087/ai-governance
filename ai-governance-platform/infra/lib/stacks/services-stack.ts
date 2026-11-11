@@ -126,53 +126,15 @@ export class ServicesStack extends cdk.Stack {
     const trustedKeysSecret = { INTERNAL_TRUSTED_KEYS: ecs.Secret.fromSecretsManager(internalKeys.trustedKeys) };
     const signingKeySecret = { INTERNAL_SIGNING_KEY: ecs.Secret.fromSecretsManager(internalKeys.signingKey) };
 
-    // --- Policy Engine Service ---
-    const policyEngineService = this.createService({
-      id: 'PolicyEngine',
-      name: 'policy-engine',
-      internal: true,
-      prefix,
-      stage,
-      cluster: this.cluster,
-      vpc,
-      port: 3001,
-      cpu: 512,
-      memory: 1024,
-      // Rules check approved models and company settings, and count requests for rate limits.
-      environment: { ...commonEnv, TENANTS_TABLE: tenantsTable.tableName, MODELS_TABLE: modelsTable.tableName, COMPLIANCE_TABLE: complianceTable.tableName },
-      secrets: { ...trustedKeysSecret, ...tlsSecrets('policy-engine') },
-    });
-    policiesTable.grantReadWriteData(policyEngineService.taskDefinition.taskRole);
-    for (const t of [tenantsTable, modelsTable]) t.grantReadData(policyEngineService.taskDefinition.taskRole);
-    for (const t of [metricsTable, complianceTable]) t.grantReadWriteData(policyEngineService.taskDefinition.taskRole);
-
-    // --- Data Protection Service ---
-    const dataProtectionService = this.createService({
-      id: 'DataProtection',
-      name: 'data-protection',
-      internal: true,
-      prefix,
-      stage,
-      cluster: this.cluster,
-      vpc,
-      port: 3002,
-      cpu: 512,
-      memory: 1024,
-      environment: commonEnv,
-      secrets: { ...trustedKeysSecret, ...tlsSecrets('data-protection') },
-    });
-    dataProtectionService.taskDefinition.taskRole.addToPrincipalPolicy(
-      new iam.PolicyStatement({
-        actions: ['comprehend:DetectPiiEntities'],
-        resources: ['*'],
-      })
-    );
-
+    // One image (repository "probaline") runs everything. PROBALINE_ROLE splits it here: the gateway, with every
+    // check inside it, on the prompt path, and reports on their own, so a heavy report never slows a prompt.
+    // Customer installs run the same image in the "all" role instead.
 
     // --- Analytics Service: every report built from history. Reads only; never on the request path. ---
     const analyticsService = this.createService({
       id: 'Analytics',
       name: 'analytics',
+      role: 'reports',
       internal: true,
       prefix,
       stage,
@@ -219,6 +181,7 @@ export class ServicesStack extends cdk.Stack {
     this.gatewayService = this.createService({
       id: 'Gateway',
       name: 'gateway',
+      role: 'gateway',
       secrets: { ...signingKeySecret, ...tlsSecrets('gateway'), EDGE_SECRET: ecs.Secret.fromSecretsManager(this.edgeSecret) },
       prefix,
       stage,
@@ -254,8 +217,6 @@ export class ServicesStack extends cdk.Stack {
         ...(props.logTables?.enforcement ? { ENFORCEMENT_TABLE: props.logTables.enforcement.tableName } : {}),
         ...(props.egressAddresses?.length ? { GATEWAY_EGRESS_IPS: cdk.Fn.join(',', props.egressAddresses) } : {}),
         AUDIT_LOGS_TABLE: auditLogsTable.tableName,
-        POLICY_ENGINE_URL: internalUrl('policy-engine', 3001),
-        DATA_PROTECTION_URL: internalUrl('data-protection', 3002),
         ANALYTICS_URL: internalUrl('analytics', 3003),
         ALLOWED_ORIGINS: '', // None needed: browsers reach the gateway through CloudFront on the site's own address
         // Without a public address (dev stages), the load balancer's own: identity tokens and MCP sign-in name it.
@@ -273,14 +234,15 @@ export class ServicesStack extends cdk.Stack {
     });
 
     // Services start only once their keys exist.
-    for (const svc of [policyEngineService, dataProtectionService, analyticsService, this.gatewayService]) svc.node.addDependency(internalKeys.ready);
+    for (const svc of [analyticsService, this.gatewayService]) svc.node.addDependency(internalKeys.ready);
 
-    // Internal services accept connections only from the gateway, nothing else in the network.
-    policyEngineService.connections.allowFrom(this.gatewayService, ec2.Port.tcp(3001), 'policy engine from the gateway only');
-    dataProtectionService.connections.allowFrom(this.gatewayService, ec2.Port.tcp(3002), 'data protection from the gateway only');
+    // Reports accept connections only from the gateway, nothing else in the network.
     analyticsService.connections.allowFrom(this.gatewayService, ec2.Port.tcp(3003), 'analytics from the gateway only');
 
-    // Grant gateway permissions
+    // Grant gateway permissions. The rules, compliance and personal-data checks run inside it.
+    policiesTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
+    complianceTable.grantReadWriteData(this.gatewayService.taskDefinition.taskRole);
+    this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({ actions: ['comprehend:DetectPiiEntities'], resources: ['*'] }));
     this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(
       new iam.PolicyStatement({
         actions: [
@@ -368,8 +330,6 @@ export class ServicesStack extends cdk.Stack {
     const prod = stage === 'prod';
     for (const [id, svc, max] of [
       ['Gateway', this.gatewayService, prod ? 20 : 3],
-      ['PolicyEngine', policyEngineService, prod ? 10 : 3],
-      ['DataProtection', dataProtectionService, prod ? 10 : 3],
       ['Analytics', analyticsService, prod ? 4 : 2],
     ] as const) {
       const scaling = svc.autoScaleTaskCount({ minCapacity: prod ? 2 : 1, maxCapacity: max });
@@ -395,10 +355,13 @@ export class ServicesStack extends cdk.Stack {
     secrets?: Record<string, ecs.Secret>;
     /** Internal services: reachable by private DNS name, over TLS. */
     internal?: boolean;
+    /** What this service runs of the one Probaline image (PROBALINE_ROLE). */
+    role: 'gateway' | 'reports';
   }): ecs.FargateService {
-    const { id, name, prefix, stage, cluster, vpc, port, cpu, memory, environment, secrets, internal } = config;
+    const { id, name, prefix, stage, cluster, vpc, port, cpu, memory, secrets, internal, role } = config;
+    const environment = { ...config.environment, PROBALINE_ROLE: role, PORT: String(port) };
 
-    const repo = this.repositories[name as ServiceName];
+    const repo = this.repositories.probaline;
     const logGroup = new logs.LogGroup(this, `${id}Logs`, {
       logGroupName: `/ecs/${prefix}-${name}-${stage}`,
       retention: logs.RetentionDays.ONE_MONTH,

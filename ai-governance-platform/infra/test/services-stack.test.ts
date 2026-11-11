@@ -55,7 +55,7 @@ describe('ServicesStack', () => {
     // is read as name "policy" plus a suffix, and the fetch is refused.
     const defs = Object.values(template.findResources('AWS::ECS::TaskDefinition')) as any[];
     const refs = JSON.stringify(defs.map((d) => d.Properties.ContainerDefinitions[0].Secrets));
-    for (const name of ['policy-engine', 'data-protection', 'analytics', 'gateway']) expect(refs).toContain(`internal-tls/${name}/tls`);
+    for (const name of ['analytics', 'gateway']) expect(refs).toContain(`internal-tls/${name}/tls`);
     expect(refs).not.toMatch(/internal-tls\/[a-z-]*-[A-Za-z0-9]{6}:/);
   });
 
@@ -76,11 +76,26 @@ describe('ServicesStack', () => {
     expect(JSON.stringify(url.Value)).not.toContain('localhost');
   });
 
-  it('runs four services, each on the image built from this commit', () => {
-    template.resourceCountIs('AWS::ECS::Service', 4);
+  it('runs two roles of the one Probaline image built from this commit: the gateway and reports', () => {
+    template.resourceCountIs('AWS::ECS::Service', 2);
     template.resourceCountIs('AWS::ECR::Repository', 0); // they live in the registry stack, created first
     const defs = Object.values(template.findResources('AWS::ECS::TaskDefinition')) as any[];
-    for (const d of defs) expect(JSON.stringify(d.Properties.ContainerDefinitions[0].Image)).toContain(':abc123');
+    const roles: Record<string, string> = {};
+    for (const d of defs) {
+      const c = d.Properties.ContainerDefinitions[0];
+      expect(JSON.stringify(c.Image)).toContain('probalineRepo');
+      expect(JSON.stringify(c.Image)).toContain(':abc123');
+      roles[c.Name] = c.Environment.find((e: any) => e.Name === 'PROBALINE_ROLE').Value;
+    }
+    expect(roles).toEqual({ GatewayContainer: 'gateway', AnalyticsContainer: 'reports' });
+  });
+
+  it('lets the gateway run the rules, compliance and personal-data checks it now holds', () => {
+    const policies = [...Object.values(template.findResources('AWS::IAM::Policy')), ...Object.values(template.findResources('AWS::IAM::ManagedPolicy'))] as any[];
+    const gateway = JSON.stringify(policies.filter((p) => JSON.stringify(p.Properties.Roles).includes('GatewayTaskDefTaskRole')));
+    expect(gateway).toContain('comprehend:DetectPiiEntities');
+    expect(gateway).toContain('PoliciesTable');
+    expect(gateway).toContain('ComplianceTable');
   });
 
   it('gives only the gateway the private signing key, and the internal services only the public keys', () => {
@@ -88,7 +103,7 @@ describe('ServicesStack', () => {
     const holding = (name: string) => defs.filter((d) => d.Properties.ContainerDefinitions.some((c: any) => (c.Secrets ?? []).some((x: any) => x.Name === name)))
       .map((d) => d.Properties.ContainerDefinitions[0].Name).sort();
     expect(holding('INTERNAL_SIGNING_KEY')).toEqual(['GatewayContainer']);
-    expect(holding('INTERNAL_TRUSTED_KEYS')).toEqual(['AnalyticsContainer', 'DataProtectionContainer', 'PolicyEngineContainer']);
+    expect(holding('INTERNAL_TRUSTED_KEYS')).toEqual(['AnalyticsContainer']);
     expect(holding('INTERNAL_SERVICE_KEY')).toEqual([]);
     // No key in plain environment variables.
     expect(JSON.stringify(defs)).not.toMatch(/"Name":"INTERNAL_(SIGNING|TRUSTED)_KEYS?","Value"/);
@@ -111,8 +126,8 @@ describe('ServicesStack', () => {
   });
 
   it('scales every service on CPU and memory, never drops capacity during a deploy, and has no shell access', () => {
-    template.resourceCountIs('AWS::ApplicationAutoScaling::ScalableTarget', 4);
-    template.resourceCountIs('AWS::ApplicationAutoScaling::ScalingPolicy', 8);
+    template.resourceCountIs('AWS::ApplicationAutoScaling::ScalableTarget', 2);
+    template.resourceCountIs('AWS::ApplicationAutoScaling::ScalingPolicy', 4);
     for (const s of Object.values(template.findResources('AWS::ECS::Service')) as any[]) {
       expect(s.Properties.DeploymentConfiguration).toMatchObject({ MinimumHealthyPercent: 100, MaximumPercent: 200 });
       expect(s.Properties.EnableExecuteCommand).toBe(false);
@@ -159,7 +174,7 @@ describe('ServicesStack', () => {
   it('connects services directly over mutual TLS, by private DNS name, with no internal load balancer', () => {
     template.resourceCountIs('AWS::ElasticLoadBalancingV2::LoadBalancer', 1);
     template.resourceCountIs('AWS::ServiceDiscovery::PrivateDnsNamespace', 1);
-    template.resourceCountIs('AWS::ServiceDiscovery::Service', 3);
+    template.resourceCountIs('AWS::ServiceDiscovery::Service', 1);
     const defs = Object.values(template.findResources('AWS::ECS::TaskDefinition')) as any[];
     for (const d of defs) {
       const names = (d.Properties.ContainerDefinitions[0].Secrets ?? []).map((x: any) => x.Name);
@@ -167,13 +182,15 @@ describe('ServicesStack', () => {
     }
     const gw = defs.find((d) => d.Properties.ContainerDefinitions[0].Name === 'GatewayContainer');
     const env = Object.fromEntries(gw.Properties.ContainerDefinitions[0].Environment.map((e: any) => [e.Name, e.Value]));
-    expect(env.POLICY_ENGINE_URL).toBe('https://policy-engine.ai-gov-test.internal:3001');
+    // Rules and personal-data checks run inside the gateway now: no service to call for them.
+    expect(env.POLICY_ENGINE_URL).toBeUndefined();
+    expect(env.DATA_PROTECTION_URL).toBeUndefined();
     expect(env.ANALYTICS_URL).toBe('https://analytics.ai-gov-test.internal:3003');
   });
 
-  it('lets only the gateway reach the internal services', () => {
+  it('lets only the gateway reach reports', () => {
     const ingress = Object.values(template.findResources('AWS::EC2::SecurityGroupIngress')) as any[];
-    for (const port of [3001, 3002, 3003]) {
+    for (const port of [3003]) {
       const rules = ingress.filter((r) => r.Properties.FromPort === port);
       expect(rules).toHaveLength(1);
       expect(rules[0].Properties.SourceSecurityGroupId).toBeDefined();
@@ -181,7 +198,7 @@ describe('ServicesStack', () => {
     }
     // No service accepts connections by network range; only the public load balancer faces the internet.
     const services = (Object.values(template.findResources('AWS::EC2::SecurityGroup')) as any[]).filter((g) => /service security group/.test(g.Properties.GroupDescription));
-    expect(services).toHaveLength(4);
+    expect(services).toHaveLength(2);
     expect(JSON.stringify(services.map((g) => g.Properties.SecurityGroupIngress ?? []))).not.toContain('CidrIp');
   });
 

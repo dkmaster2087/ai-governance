@@ -322,3 +322,19 @@ Measured (prompt set in `services/gateway/src/__tests__/prompt-attack-corpus.ts`
   prompt you received". Work prompts: 5/25 flagged, 4/25 would be stopped (role-play and "ignore the formatting").
 So Stop would stop about one ordinary prompt in six; the Rules page says so and recommends Flag. Not yet measured: false
 alarms on real customer traffic. Keep Beta until that is known.
+
+## One image (2026-11-12)
+
+The policy engine and data protection were folded into the gateway, and the product ships as one image
+(`services/Dockerfile`) started by `PROBALINE_ROLE`: `all` for customer installs (gateway + reports on 127.0.0.1),
+`gateway` and `reports` for Cloud. Dev runs two services instead of four. Verified: unit tests (gateway 410,
+analytics 50, infra 47, dashboard 104), the full end-to-end suite (54/54) on the local stack, the image running
+in the `all` role, and on dev: rules, secrets, personal data, prompt attacks and reports.
+
+Found and fixed on the way: when the rules couldn't be read (a database error), the rules check returned "no
+rules" and let prompts through even for companies that fail closed. It now reports the check as unavailable and
+the company's fail mode decides.
+
+Cleanup left for later: the old image repositories (gateway, policy-engine, data-protection, analytics) are still
+exported by the registry stack for stacks that haven't moved; the policy-engine and data-protection TLS secrets in
+Secrets Manager are unused. The reporting agent is retired in hybrid step 2.

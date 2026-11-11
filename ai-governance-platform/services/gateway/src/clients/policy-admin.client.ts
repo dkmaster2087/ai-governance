@@ -1,67 +1,70 @@
-import axios, { AxiosError } from 'axios';
+import Fastify, { FastifyInstance, InjectOptions } from 'fastify';
 import { Policy } from '@ai-governance/types';
 import { AppError } from '@ai-governance/utils';
-import { internalHttpsAgent, signedFor } from './internal';
+import { policyRoutes } from '../policy/routes/policy.routes';
+import { complianceRoutes } from '../policy/routes/compliance.routes';
 
 /**
- * Policy management calls to the internal policy engine. The gateway always supplies the tenant from
- * the caller's verified identity; nothing tenant-related is taken from the client's request.
+ * Rules and compliance management. The routes that used to be the policy engine's run here on a private,
+ * in-process app that's never exposed on the network, so their validation and answers are unchanged. The
+ * gateway always supplies the tenant from the caller's verified identity; nothing tenant-related is taken
+ * from the client's request.
  */
-export class PolicyAdminClient {
-  private baseUrl = process.env.POLICY_ENGINE_URL || 'http://policy-engine:3001';
+let engine: Promise<FastifyInstance> | null = null;
+function inProcessEngine(): Promise<FastifyInstance> {
+  return (engine ??= (async () => {
+    const app = Fastify({ logger: false }) as unknown as FastifyInstance;
+    await app.register(policyRoutes, { prefix: '/v1/policies' });
+    await app.register(complianceRoutes, { prefix: '/v1/compliance' });
+    await app.ready();
+    return app;
+  })());
+}
 
-  private rethrow(err: unknown): never {
-    const e = err as AxiosError<{ error?: string; problems?: string[] }>;
-    if (e.response?.status === 400) {
-      const problems = e.response.data?.problems;
-      throw new AppError('INVALID_RULES', problems?.length ? problems.join('; ') : e.response.data?.error ?? 'Invalid rule', 400);
+type Answer = { statusCode: number; body: string; json: () => any };
+
+export class PolicyAdminClient {
+  private async call(opts: InjectOptions): Promise<Answer> {
+    let res: Answer;
+    try {
+      res = (await (await inProcessEngine()).inject(opts)) as unknown as Answer;
+    } catch {
+      throw new AppError('POLICY_ENGINE_UNAVAILABLE', 'Rules are unavailable', 503);
     }
-    // Any other refusal is a bug between the two services, not the engine being down: say so in the log.
-    if (e.response && e.response.status < 500) throw new AppError('POLICY_ENGINE_REFUSED', `The policy engine refused the request (${e.response.status})`, 502);
-    throw new AppError('POLICY_ENGINE_UNAVAILABLE', 'Policy engine unavailable', 503);
+    if (res.statusCode < 400) return res;
+    const data = (() => { try { return res.json(); } catch { return {}; } })() as { error?: string; problems?: string[] };
+    if (res.statusCode === 400) {
+      throw new AppError('INVALID_RULES', data.problems?.length ? data.problems.join('; ') : data.error ?? 'Invalid rule', 400);
+    }
+    if (res.statusCode === 404) throw new AppError('NOT_FOUND', data.error ?? 'Not found', 404);
+    // Anything else is a storage failure underneath: say rules are unavailable, as the separate service did.
+    throw new AppError('POLICY_ENGINE_UNAVAILABLE', 'Rules are unavailable', 503);
   }
 
   async list(tenantId: string): Promise<Policy[]> {
-    try {
-      const { data } = await axios.get<Policy[]>(`${this.baseUrl}/v1/policies/${encodeURIComponent(tenantId)}`, { timeout: 5000, httpsAgent: internalHttpsAgent(), headers: signedFor('policy-engine', tenantId) });
-      return data;
-    } catch (err) { this.rethrow(err); }
+    return (await this.call({ method: 'GET', url: `/v1/policies/${encodeURIComponent(tenantId)}` })).json();
   }
 
   async create(tenantId: string, policy: Omit<Policy, 'policyId' | 'createdAt' | 'updatedAt' | 'tenantId'>): Promise<Policy> {
-    try {
-      const { data } = await axios.post<Policy>(`${this.baseUrl}/v1/policies`, { ...policy, tenantId }, { timeout: 5000, httpsAgent: internalHttpsAgent(), headers: signedFor('policy-engine', tenantId) });
-      return data;
-    } catch (err) { this.rethrow(err); }
+    return (await this.call({ method: 'POST', url: '/v1/policies', payload: { ...policy, tenantId } })).json();
   }
 
   async update(tenantId: string, policy: Policy): Promise<void> {
-    try {
-      await axios.put(
-        `${this.baseUrl}/v1/policies/${encodeURIComponent(tenantId)}/${encodeURIComponent(policy.policyId)}`,
-        { ...policy, tenantId },
-        { timeout: 5000, httpsAgent: internalHttpsAgent(), headers: signedFor('policy-engine', tenantId) }
-      );
-    } catch (err) { this.rethrow(err); }
+    await this.call({ method: 'PUT', url: `/v1/policies/${encodeURIComponent(tenantId)}/${encodeURIComponent(policy.policyId)}`, payload: { ...policy, tenantId } });
   }
 
   async remove(tenantId: string, policyId: string): Promise<unknown> {
-    try {
-      const { data } = await axios.delete(`${this.baseUrl}/v1/policies/${encodeURIComponent(tenantId)}/${encodeURIComponent(policyId)}`, { timeout: 5000, httpsAgent: internalHttpsAgent(), headers: signedFor('policy-engine', tenantId) });
-      return data;
-    } catch (err) { this.rethrow(err); }
+    const res = await this.call({ method: 'DELETE', url: `/v1/policies/${encodeURIComponent(tenantId)}/${encodeURIComponent(policyId)}` });
+    return res.body ? res.json() : undefined;
   }
 
-  /** Compliance calls, always under the given tenant. */
-  async compliance(tenantId: string, method: 'get' | 'post' | 'delete', path: string, body?: unknown): Promise<unknown> {
-    try {
-      // A POST always carries a JSON body: without one, the engine refuses it as an unknown content type.
-      const { data } = await axios.request({ method, url: `${this.baseUrl}/v1/compliance${path}`, data: body ?? (method === 'post' ? {} : undefined), timeout: 10000, httpsAgent: internalHttpsAgent(), headers: signedFor('policy-engine', tenantId) });
-      return data;
-    } catch (err) {
-      const e = err as { response?: { status?: number; data?: { error?: string } } };
-      if (e.response?.status === 404) throw new AppError('NOT_FOUND', e.response.data?.error ?? 'Not found', 404);
-      this.rethrow(err);
-    }
+  /** Compliance calls. Every path names the tenant, which the caller took from the verified identity. */
+  async compliance(_tenantId: string, method: 'get' | 'post' | 'delete', path: string, body?: unknown): Promise<unknown> {
+    const res = await this.call({
+      method: method.toUpperCase() as 'GET' | 'POST' | 'DELETE',
+      url: `/v1/compliance${path}`,
+      ...(body !== undefined || method === 'post' ? { payload: (body ?? {}) as Record<string, unknown> } : {}),
+    });
+    return res.body ? res.json() : undefined;
   }
 }

@@ -1,8 +1,8 @@
-import { PolicyRepository } from '../repositories/policy.repository';
-import { ComplianceService } from '../compliance/compliance.service';
+import { PolicyRepository } from '../../policy/repositories/policy.repository';
+import { ComplianceService } from '../../policy/compliance/compliance.service';
 
-jest.mock('../repositories/policy.repository');
-jest.mock('../compliance/compliance.service');
+jest.mock('../../policy/repositories/policy.repository');
+jest.mock('../../policy/compliance/compliance.service');
 jest.mock('@aws-sdk/client-dynamodb');
 jest.mock('@aws-sdk/lib-dynamodb', () => ({
   DynamoDBDocumentClient: { from: jest.fn().mockReturnValue({ send: jest.fn().mockResolvedValue({ Items: [] }) }) },

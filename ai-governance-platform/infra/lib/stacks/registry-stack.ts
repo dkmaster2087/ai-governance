@@ -2,7 +2,12 @@ import * as cdk from 'aws-cdk-lib';
 import * as ecr from 'aws-cdk-lib/aws-ecr';
 import { Construct } from 'constructs';
 
-export const SERVICE_NAMES = ['gateway', 'policy-engine', 'data-protection', 'analytics'] as const;
+/**
+ * "probaline" holds the one image every service runs. The other four held the separate images before
+ * 2026-11-12; they stay until the services stack no longer refers to them everywhere, then can be removed.
+ */
+export const SERVICE_NAMES = ['probaline', 'gateway', 'policy-engine', 'data-protection', 'analytics'] as const;
+const LEGACY = ['gateway', 'policy-engine', 'data-protection', 'analytics'] as const;
 export type ServiceName = (typeof SERVICE_NAMES)[number];
 
 interface RegistryStackProps extends cdk.StackProps {
@@ -28,5 +33,11 @@ export class RegistryStack extends cdk.Stack {
       emptyOnDelete: stage !== 'prod',
     })])) as Record<ServiceName, ecr.Repository>;
     for (const name of SERVICE_NAMES) new cdk.CfnOutput(this, `${name.replace(/-/g, '')}RepoUri`, { value: this.repositories[name].repositoryUri });
+    // Stacks deployed before the one image still import these; keep exporting them until every stage has moved
+    // to the "probaline" repository, or CloudFormation refuses to update this stack.
+    for (const name of LEGACY) {
+      this.exportValue(this.repositories[name].repositoryName);
+      this.exportValue(this.repositories[name].repositoryArn);
+    }
   }
 }

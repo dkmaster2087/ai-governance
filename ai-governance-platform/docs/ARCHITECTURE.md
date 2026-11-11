@@ -1,5 +1,18 @@
 # Probaline — architecture
 
+**One image, run by role** (since 2026-11-12). The gateway holds every check: rules and compliance, secrets,
+personal data and prompt attacks run in its process; there is no separate policy engine or data-protection
+service any more. Reports (analytics) are the same image in another role. `PROBALINE_ROLE`:
+
+| Role | Runs | Used by |
+|---|---|---|
+| `all` (default) | The gateway and reports in one process; reports listen only on 127.0.0.1 | Customer installs (hybrid, on-premises): one kind of container, scaled by copies behind a load balancer, sharing one database |
+| `gateway` | The gateway alone; reports elsewhere (`ANALYTICS_URL`, mutual TLS) | Our Cloud, on the prompt path |
+| `reports` | Reports alone | Our Cloud, apart from prompts so a heavy report never slows one |
+
+Older sections below mention the policy engine (:3001) and data protection (:3002) as services; read them as the
+gateway's own rules and personal-data steps.
+
 ## Request path (apps)
 
 ```
@@ -7,12 +20,12 @@ App ──POST /v1/chat/completions──▶ Gateway (:3000)
    Authorization: Bearer <Probaline key>   │
                                        ├─ 1. Auth: key → tenant (from the key record, never from headers),
                                        │       scope check, tenant not suspended
-                                       ├─ 2. Policy engine (:3001) evaluates rules on the ORIGINAL prompt
+                                       ├─ 2. Rules (in process) evaluated on the ORIGINAL prompt
                                        │       └─ match with action "block" → 403 POLICY_VIOLATION + audit
                                        ├─ 3. Secrets (in process): tenant setting secretsAction
                                        │       block (default) → 403 SECRET_DETECTED + audit
                                        │       redact → each secret replaced by [REDACTED <type>]; off → skipped
-                                       ├─ 4. Data protection (:3002) removes personal data
+                                       ├─ 4. Personal data (in process; Comprehend optional) removed
                                        ├─ 5. Provider: Bedrock (IAM role) or OpenAI-compatible
                                        │       (provider key read from Secrets Manager)
                                        ├─ 6. Response scanned for personal data (in process + service)
@@ -22,7 +35,6 @@ App ──POST /v1/chat/completions──▶ Gateway (:3000)
 - Policy runs **before** masking so rules about personal data can see it; only the masked prompt leaves.
 - The secrets check never sends the prompt anywhere and has no fail mode. A secret's value is never written to
   the audit record; evidence excerpts from any rule are passed through the same detector before they're saved.
-  The policy engine (step 2) does receive the original prompt, inside the VPC, as it did before.
 - If step 2 or 4 can't run, the tenant's fail mode decides: `closed` (default) returns
   `503 GOVERNANCE_UNAVAILABLE`; `open` continues and marks the audit record `governanceDegraded`.
 - Stopped requests keep a short masked excerpt of the trigger in the audit record; delivered prompts are kept

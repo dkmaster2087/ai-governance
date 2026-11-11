@@ -7,7 +7,7 @@ import { MemoryStore, setRecords } from '@ai-governance/storage';
 import { INTERNAL_HEADER, internalHttpsAgent, newInternalKey, signingKeyFrom, signInternal, trustedKeysFrom } from '@ai-governance/utils';
 import { buildApp } from '../app';
 
-/** The policy engine served over mutual TLS, with certificates made the way an install makes them. */
+/** Reports (analytics) served over mutual TLS, with certificates made the way an install makes them. The gateway calls it this way in Cloud. */
 describe('mutual TLS between services', () => {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'pki-'));
   const other = fs.mkdtempSync(path.join(os.tmpdir(), 'pki-other-'));
@@ -23,7 +23,7 @@ describe('mutual TLS between services', () => {
     execFileSync('node', [script, 'local', dir]);
     execFileSync('node', [script, 'local', other]);
     setRecords(new MemoryStore());
-    app = await buildApp({ trusted: () => trustedKeysFrom([GW.trusted, AGENT.trusted]), tls: tlsOf(dir, 'policy-engine') });
+    app = await buildApp({ trusted: trustedKeysFrom([GW.trusted, AGENT.trusted]), tls: tlsOf(dir, 'analytics') });
     await app.listen({ port: 0, host: '127.0.0.1' });
     port = (app.server.address() as { port: number }).port;
   }, 30_000);
@@ -37,27 +37,22 @@ describe('mutual TLS between services', () => {
       req.on('error', reject);
       req.end();
     });
-  const gatewayToken = () => signInternal({ tenantId: 'tenant_a', userId: 'u', role: 'gateway' }, signingKeyFrom(GW.signing), 'policy-engine');
+  const gatewayToken = () => signInternal({ tenantId: 'tenant_a', userId: 'u', role: 'tenant_admin' }, signingKeyFrom(GW.signing), 'analytics');
 
   it('answers the gateway, with its certificate and token', async () => {
-    expect(await call('/v1/policies/tenant_a', { as: 'gateway', token: gatewayToken() })).toBe(200);
+    expect(await call('/internal/v1/rules/activity', { as: 'gateway', token: gatewayToken() })).toBe(200);
   });
 
   it('refuses callers without a service certificate, or with another install\'s, or the wrong service', async () => {
-    expect(await call('/v1/policies/tenant_a', { token: gatewayToken() })).toBe(401);
+    expect(await call('/internal/v1/rules/activity', { token: gatewayToken() })).toBe(401);
     // A 'gateway' certificate from another install's CA isn't this install's gateway.
-    expect(await call('/v1/policies/tenant_a', { as: 'gateway', certsFrom: other, token: gatewayToken() })).toBe(401);
-    expect(await call('/v1/policies/tenant_a', { as: 'analytics', token: gatewayToken() })).toBe(401);
-  });
-
-  it('lets a reporting agent\'s certificate carry only its own token', async () => {
-    const agentToken = signInternal({ tenantId: 'tenant_a', userId: 'reporting-agent', role: 'reporting_agent' }, signingKeyFrom(AGENT.signing), 'policy-engine');
-    expect(await call('/v1/compliance/status/tenant_a', { as: 'reporting-agent', token: agentToken })).toBe(200);
-    expect(await call('/v1/policies/tenant_a', { as: 'reporting-agent', token: gatewayToken() })).toBe(403);
+    expect(await call('/internal/v1/rules/activity', { as: 'gateway', certsFrom: other, token: gatewayToken() })).toBe(401);
+    // Another service's certificate can't carry the gateway's token.
+    expect(await call('/internal/v1/rules/activity', { as: 'reporting-agent', token: gatewayToken() })).toBe(403);
   });
 
   it('keeps health checks open, and the gateway checks it reached the right service', async () => {
     expect(await call('/health')).toBe(200);
-    await expect(call('/health', { servername: 'analytics' })).rejects.toThrow();
+    await expect(call('/health', { servername: 'gateway' })).rejects.toThrow();
   });
 });

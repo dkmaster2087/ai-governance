@@ -1,38 +1,31 @@
-import axios from 'axios';
 import { NormalizedAIRequest, NormalizedAIResponse } from '@ai-governance/types';
 import { createLogger, GovernanceUnavailableError } from '@ai-governance/utils';
+import { PIIDetectionService } from '../data-protection/pii-detection.service';
 
-import { internalHttpsAgent, signedFor } from './internal';
+const logger = createLogger('gateway:data-protection');
 
-const logger = createLogger('gateway:data-protection-client');
-
+/**
+ * Check 3, personal data. Runs inside the gateway (it used to be a separate service). A failure (for example
+ * Comprehend unreachable when it's turned on) throws GovernanceUnavailableError, and the caller applies the
+ * company's fail mode.
+ */
 export class DataProtectionClient {
-  private baseUrl = process.env.DATA_PROTECTION_URL || 'http://data-protection:3002';
+  private pii = new PIIDetectionService();
 
   async protectRequest(request: NormalizedAIRequest): Promise<NormalizedAIRequest> {
     try {
-      const response = await axios.post<NormalizedAIRequest>(
-        `${this.baseUrl}/v1/protect/request`,
-        request,
-        { timeout: 5000, httpsAgent: internalHttpsAgent(), headers: signedFor('data-protection', request.tenantId, request.userId) }
-      );
-      return response.data;
+      return await this.pii.protectRequest(request);
     } catch (err) {
-      logger.error('Data protection service unavailable', { requestId: request.requestId });
+      logger.error('Personal data check failed', { requestId: request.requestId, error: (err as Error).message });
       throw new GovernanceUnavailableError('data-protection');
     }
   }
 
-  async filterResponse(response: NormalizedAIResponse, tenantId: string): Promise<NormalizedAIResponse> {
+  async filterResponse(response: NormalizedAIResponse, _tenantId: string): Promise<NormalizedAIResponse> {
     try {
-      const result = await axios.post<NormalizedAIResponse>(
-        `${this.baseUrl}/v1/protect/response`,
-        response,
-        { timeout: 5000, httpsAgent: internalHttpsAgent(), headers: signedFor('data-protection', tenantId) }
-      );
-      return result.data;
+      return await this.pii.filterResponse(response);
     } catch (err) {
-      logger.error('Response filtering unavailable', { requestId: response.requestId });
+      logger.error('Response filtering failed', { requestId: response.requestId, error: (err as Error).message });
       throw new GovernanceUnavailableError('data-protection');
     }
   }

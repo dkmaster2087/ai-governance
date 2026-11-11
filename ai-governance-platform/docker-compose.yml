@@ -39,69 +39,18 @@ services:
       timeout: 5s
       retries: 10
 
-  # ── Gateway ────────────────────────────────────────────────────────────────
-  gateway:
+  # ── Probaline: the one image, in the "all" role (gateway with every check, plus reports on 127.0.0.1) ──
+  probaline:
     build:
       context: .
-      dockerfile: services/gateway/Dockerfile
-    container_name: ai-gov-gateway
+      dockerfile: services/Dockerfile
+    container_name: probaline
     ports:
       - '3000:3000'
     env_file: .env.local
     environment:
       - AWS_ENDPOINT_URL=http://localstack:4566
-      - POLICY_ENGINE_URL=http://policy-engine:3001
-      - DATA_PROTECTION_URL=http://data-protection:3002
-    depends_on:
-      localstack:
-        condition: service_healthy
-      policy-engine:
-        condition: service_started
-      data-protection:
-        condition: service_started
-
-  # ── Policy Engine ──────────────────────────────────────────────────────────
-  policy-engine:
-    build:
-      context: .
-      dockerfile: services/policy-engine/Dockerfile
-    container_name: ai-gov-policy-engine
-    ports:
-      - '3001:3001'
-    env_file: .env.local
-    environment:
-      - AWS_ENDPOINT_URL=http://localstack:4566
-    depends_on:
-      localstack:
-        condition: service_healthy
-
-  # ── Data Protection ────────────────────────────────────────────────────────
-  data-protection:
-    build:
-      context: .
-      dockerfile: services/data-protection/Dockerfile
-    container_name: ai-gov-data-protection
-    ports:
-      - '3002:3002'
-    env_file: .env.local
-    environment:
-      - AWS_ENDPOINT_URL=http://localstack:4566
       - COMPREHEND_ENABLED=false
-    depends_on:
-      localstack:
-        condition: service_healthy
-
-  # ── Analytics ──────────────────────────────────────────────────────────────
-  analytics:
-    build:
-      context: .
-      dockerfile: services/analytics/Dockerfile
-    container_name: ai-gov-analytics
-    ports:
-      - '3003:3003'
-    env_file: .env.local
-    environment:
-      - AWS_ENDPOINT_URL=http://localstack:4566
     depends_on:
       localstack:
         condition: service_healthy
