@@ -76,6 +76,40 @@ async function findingsFor(tenantId: string, sent?: FindingsLike): Promise<Findi
   return sent ?? ((await findingsStore().latest(tenantId)) as FindingsLike | null);
 }
 
+/**
+ * Every API behind this company's MCP servers, with what its verifier needs: the issuer and keys address
+ * (the gateway), and the audience (the API's base URL, exactly as added). No credentials.
+ */
+export async function lockKitApis(tenantId: string, issuer: string) {
+  const all = async (name: 'mcpServers' | 'mcpApis' | 'mcpConnectors') => {
+    const out: Record<string, any>[] = [];
+    let after: string | undefined;
+    do {
+      const page = await collection<Record<string, any>>(name).query({ partition: tenantId, limit: 200, after });
+      out.push(...page.items);
+      after = page.next;
+    } while (after && out.length < 1000);
+    return out;
+  };
+  const [servers, apis, connectors] = await Promise.all([all('mcpServers'), all('mcpApis'), all('mcpConnectors')]);
+  const serverName = new Map(servers.map((sv) => [sv.serverId, sv.name as string]));
+  const connectorName = new Map(connectors.filter((c) => c.connectorId).map((c) => [c.connectorId, c.name as string]));
+  return {
+    issuer,
+    jwksUrl: `${issuer}/.well-known/jwks.json`,
+    header: 'X-Probaline-Identity',
+    tokenLifetimeSeconds: 300,
+    egressIps: egressIps(),
+    apis: apis
+      .filter((a) => serverName.has(a.serverId))
+      .map((a) => ({
+        apiId: a.apiId as string, name: a.name as string, serverId: a.serverId as string, serverName: serverName.get(a.serverId) as string, audience: a.baseUrl as string,
+        ...(a.connectorId ? { connector: connectorName.get(a.connectorId) ?? (a.connectorId as string) } : {}),
+      }))
+      .sort((x, y) => `${x.serverName}${x.name}`.localeCompare(`${y.serverName}${y.name}`)),
+  };
+}
+
 interface AwsSettings { gatewayRoleArn?: string; breakGlassRoleArn?: string; targetIds?: string[]; sagemaker?: boolean }
 
 export async function enforcementRoutes(app: FastifyInstance) {
@@ -108,35 +142,24 @@ export async function enforcementRoutes(app: FastifyInstance) {
    * Every API behind this company's MCP servers, with what its verifier needs: the issuer and keys address
    * (the gateway), and the audience (the API's base URL, exactly as added). No credentials.
    */
-  app.get('/enforcement/apis', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
-    const all = async (name: 'mcpServers' | 'mcpApis' | 'mcpConnectors') => {
-      const out: Record<string, any>[] = [];
-      let after: string | undefined;
-      do {
-        const page = await collection<Record<string, any>>(name).query({ partition: request.tenantId, limit: 200, after });
-        out.push(...page.items);
-        after = page.next;
-      } while (after && out.length < 1000);
-      return out;
-    };
-    const [servers, apis, connectors] = await Promise.all([all('mcpServers'), all('mcpApis'), all('mcpConnectors')]);
-    const serverName = new Map(servers.map((sv) => [sv.serverId, sv.name as string]));
-    const connectorName = new Map(connectors.filter((c) => c.connectorId).map((c) => [c.connectorId, c.name as string]));
-    const issuer = base(request);
-    return {
-      issuer,
-      jwksUrl: `${issuer}/.well-known/jwks.json`,
-      header: 'X-Probaline-Identity',
-      tokenLifetimeSeconds: 300,
-      egressIps: egressIps(),
-      apis: apis
-        .filter((a) => serverName.has(a.serverId))
-        .map((a) => ({
-          apiId: a.apiId, name: a.name, serverId: a.serverId, serverName: serverName.get(a.serverId), audience: a.baseUrl,
-          ...(a.connectorId ? { connector: connectorName.get(a.connectorId) ?? a.connectorId } : {}),
-        }))
-        .sort((x, y) => `${x.serverName}${x.name}`.localeCompare(`${y.serverName}${y.name}`)),
-    };
+  app.get('/enforcement/apis', { preHandler: requireAccess(TENANT_READ) }, async (request) => lockKitApis(request.tenantId, base(request)));
+
+  /**
+   * The same list as a file for the collector, so it can tell calls to these APIs apart in access logs: hosts and
+   * base paths only, plus the gateway's outbound addresses (calls from them came through Probaline).
+   */
+  app.get('/enforcement/apis/export', { preHandler: requireAccess(TENANT_READ) }, async (request, reply) => {
+    const kit = await lockKitApis(request.tenantId, base(request));
+    const apis = kit.apis.flatMap((a) => {
+      try {
+        const u = new URL(a.audience);
+        return [{ apiId: a.apiId, name: a.name, server: a.serverName, host: u.host.toLowerCase(), basePath: u.pathname.replace(/\/+$/, '') || '/', ...(a.connector ? { connector: a.connector } : {}) }];
+      } catch { return []; }
+    });
+    const body = { schema: 'probaline.api_inventory/1', generatedAt: new Date().toISOString(), gateway: { issuer: kit.issuer, egressIps: kit.egressIps }, apis };
+    return reply
+      .header('content-disposition', `attachment; filename="probaline-apis-${new Date().toISOString().slice(0, 10)}.json"`)
+      .send(body);
   });
 
   // ── Paths and findings files ───────────────────────────────────────────────────────────────────────────────

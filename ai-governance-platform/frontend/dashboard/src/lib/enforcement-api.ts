@@ -60,6 +60,11 @@ export interface LockKitApis {
   apis: Array<{ apiId: string; name: string; serverId: string; serverName: string; audience: string; connector?: string }>;
 }
 
+/** The API list for the collector (hosts and base paths, the gateway's addresses), to match access logs. */
+export async function exportApiList(): Promise<string> {
+  return JSON.stringify((await gateway.get('/v1/enforcement/apis/export')).data, null, 2);
+}
+
 export async function getLockKitApis(): Promise<LockKitApis> {
   return (await gateway.get<LockKitApis>('/v1/enforcement/apis')).data;
 }

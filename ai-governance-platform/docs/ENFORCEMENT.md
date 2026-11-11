@@ -1,9 +1,8 @@
 # Enforcing that AI traffic goes through Probaline: plan
 
-Status: streaming built (apps and proxy mode); lock and verify steps 1 (one catalog) and 3 (share through
-Probaline in the collector) built 2026-11-07; steps 2 (AI-domain feed) and 4 (AWS lock) built 2026-11-08, beta;
-step 5 (Enforcement page) built 2026-11-08, beta; steps 6 (incoming lock kit) and 7 (laptop MCP discovery)
-built 2026-11-10, beta; step 8 is planned. Written 2026-10-31; build plan for lock and
+Status: streaming built (apps and proxy mode). Lock and verify, all eight steps built as beta: one catalog and the
+share through Probaline (2026-11-07); AI-domain feed, AWS lock and the Enforcement page (2026-11-08); incoming lock
+kit and laptop MCP discovery (2026-11-10); incoming verify (2026-11-11). Written 2026-10-31; build plan for lock and
 verify in both directions (AI going out, agents coming in) added 2026-11-07, see the end.
 
 ## Why
@@ -202,7 +201,12 @@ yet. Scans are read by `collect` (CLI); the in-cloud jobs and the on-premises co
   a Probaline MCP server.
 - Tests: fixture configs for each client; secret-looking values never appear in output.
 
-### 8. Incoming verify (3 days)
+### 8. Incoming verify (3 days) — built, beta
+Built as planned, with one difference: a call counts as through Probaline by where it came from (the gateway's
+outbound addresses, carried in the API list, plus `--gateway` for connector hosts), not by an identity header in
+the log, since access logs rarely record it and couldn't be checked offline. A call that says `Probaline-MCP` but
+came from elsewhere is flagged. Without a host in the log (plain nginx `combined`), a call is matched by the
+longest base path only when one host owns it. Read by `collect` (CLI); the in-cloud jobs don't read them yet.
 - Probaline exports the list of APIs registered behind MCP servers (hosts and paths, no credentials) as a file
   the collector reads.
 - New collector parsers for ALB access logs, API Gateway access logs and nginx/Envoy access logs: calls to

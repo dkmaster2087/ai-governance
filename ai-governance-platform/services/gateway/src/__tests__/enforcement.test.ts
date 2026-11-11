@@ -300,7 +300,7 @@ describe('path status', () => {
     expect(rows.map((r) => r.id)).toEqual(['out_model_api', 'out_cloud_ai', 'out_browser', 'in_agents', 'in_laptop_mcp']);
     expect(rows.every((r) => r.state === 'open' && !r.coming)).toBe(true);
     expect(rows[2].measuredElsewhere).toMatch(/browser extension/);
-    expect(rows[3].measuredElsewhere).toMatch(/access logs/);
+    expect(rows[3].measuredElsewhere).toBeUndefined();
     expect(rows[0].measured).toBeUndefined();
     expect(rows[4].laptops).toBeUndefined();
   });
@@ -446,6 +446,17 @@ describe('enforcement API: the lock kit', () => {
     app.addHook('onRequest', async (req) => { req.principal = { kind: 'user', homeTenantId: T, userId: 'u', role: 'tenant_auditor' }; req.tenantId = T; });
     await app.register(enforcementRoutes, { prefix: '/v1' });
     const res = (await app.inject({ method: 'GET', url: '/v1/enforcement/apis' })).json();
+    process.env.GATEWAY_EGRESS_IPS = '203.0.113.4';
+    const exported = await app.inject({ method: 'GET', url: '/v1/enforcement/apis/export' });
+    delete process.env.GATEWAY_EGRESS_IPS;
+    expect(exported.headers['content-disposition']).toMatch(/^attachment; filename="probaline-apis-\d{4}-\d{2}-\d{2}\.json"$/);
+    expect(exported.json()).toMatchObject({
+      schema: 'probaline.api_inventory/1', gateway: { issuer: 'https://gateway.acme.example', egressIps: ['203.0.113.4'] },
+      apis: [
+        { apiId: 'api2', name: 'Payroll', server: 'HR tools', host: 'payroll.corp:8080', basePath: '/', connector: 'Datacenter' },
+        { apiId: 'api1', name: 'People API', server: 'HR tools', host: 'hr.acme.example', basePath: '/api' },
+      ],
+    });
     delete process.env.PUBLIC_GATEWAY_URL;
     await app.close();
     expect(res).toMatchObject({ issuer: 'https://gateway.acme.example', jwksUrl: 'https://gateway.acme.example/.well-known/jwks.json', header: 'X-Probaline-Identity' });
