@@ -118,6 +118,23 @@ node collector/dist/cli.js report --out ./assessment --days 30 --company "Acme"
 
 `--reveal-names` builds a second copy with real names into `private/`.
 
+## MCP servers on laptops (beta)
+
+`endpoint/mcp-scan.sh` (macOS) and `endpoint/mcp-scan.ps1` (Windows) list the MCP servers people set up in
+Claude Desktop, Claude Code, Cursor, VS Code and Windsurf. Run them through device management (Jamf, Kandji,
+Intune; as root or SYSTEM they scan every account), collect the output files, and give them to `collect` with
+the other logs: they are recognized by content.
+
+They are read-only and print only the app, the server's name, local program or remote URL, the program's name
+and package (`npx @modelcontextprotocol/server-github`, a Docker image), or the URL's host, and whether the
+server is given credentials of its own. Never environment values, header values, other arguments, or anything
+after a URL's host. People and laptop names become codes like every other source.
+
+The report gets a section "MCP servers on laptops" and a recommendation to offer them through Probaline;
+`report --company-domains acme.com,acme.internal` marks servers that reach the company's own systems (private
+addresses always count). The shell script is tested on macOS against fixture settings with secrets planted in
+every field; the PowerShell script isn't yet tested on Windows.
+
 ## Zscaler and Netskope (beta)
 
 Both see laptops wherever they are, which firewall and DNS logs miss once people leave the office. They use
@@ -215,5 +232,6 @@ and Netskope logs in their feed formats; or Azure and Google Cloud logs laid out
 
 `npm test -w collector`: the catalog, AWS, on-premises, Zscaler, Netskope, Azure and Google Cloud parsers, the
 in-cloud job, privacy (pseudonyms, no raw lines, ignored
-callers), the share through Probaline (gateway by role, IP range and host; trend across reports), findings, recommendations, report escaping, repeat-safe processing, and the on-premises server over
+callers), the share through Probaline (gateway by role, IP range and host; trend across reports), the laptop MCP scan
+(no secret reaches the output, the store or the report), findings, recommendations, report escaping, repeat-safe processing, and the on-premises server over
 real UDP and TCP sockets and growing, rotated and compressed files.

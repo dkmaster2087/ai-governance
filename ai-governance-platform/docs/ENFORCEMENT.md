@@ -2,7 +2,8 @@
 
 Status: streaming built (apps and proxy mode); lock and verify steps 1 (one catalog) and 3 (share through
 Probaline in the collector) built 2026-11-07; steps 2 (AI-domain feed) and 4 (AWS lock) built 2026-11-08, beta;
-step 5 (Enforcement page) built 2026-11-08, beta; the rest is planned. Written 2026-10-31; build plan for lock and
+step 5 (Enforcement page) built 2026-11-08, beta; steps 6 (incoming lock kit) and 7 (laptop MCP discovery)
+built 2026-11-10, beta; step 8 is planned. Written 2026-10-31; build plan for lock and
 verify in both directions (AI going out, agents coming in) added 2026-11-07, see the end.
 
 ## Why
@@ -170,7 +171,14 @@ still-direct list are what the logs show, side by side, so a lock that wasn't ap
 - Admin activity records every artifact generated, feed created or revoked, and findings uploaded.
 - Copy in the house style; whole page marked Beta until a customer has applied a lock.
 
-### 6. Incoming lock kit (4 days)
+### 6. Incoming lock kit (4 days) — built, beta
+Built as one package, `packages/verify-identity` (no dependencies), rather than one per language: the Node
+verifier with Express and Fastify guards and an API Gateway Lambda authorizer (HTTP and REST APIs), plus single
+files for Python, Go and Java. Node, the authorizer and Python are tested against tokens the gateway's own key
+code signs, and e2e shows a protected API refusing a direct call and accepting the same call through Probaline;
+Go and Java aren't tested yet and say so on the page. The dashboard bundles the files from the repository, so
+what an admin downloads is what the tests run. Not on npm yet. Replay within the five minutes is left to the API
+(keep `jti` for writes).
 For each API behind a Probaline MCP server, a **Lock this API** panel:
 - **Verifier snippets** that check `X-Probaline-Identity` against `/.well-known/jwks.json` (audience = the API's
   base URL, five-minute tokens): Node (Express/Fastify middleware), Python (FastAPI/Flask), Go, Java (Spring
@@ -181,7 +189,11 @@ For each API behind a Probaline MCP server, a **Lock this API** panel:
 - The verifier libraries are small, published from this repo (`packages/verify-identity-*`), with tests against
   tokens the gateway's test keys sign.
 
-### 7. Laptop MCP discovery (4 days)
+### 7. Laptop MCP discovery (4 days) — built, beta
+Built as planned, with laptop names turned into codes too (they often carry the owner's name). The macOS script
+uses JavaScript for Automation, which every Mac has, so it needs nothing installed; it is tested against fixture
+settings with secrets planted in env, headers, arguments and URLs. The PowerShell script isn't tested on Windows
+yet. Scans are read by `collect` (CLI); the in-cloud jobs and the on-premises container don't read them yet.
 - A read-only script for device management (`collector/endpoint/mcp-scan.sh` and `.ps1`): reads the MCP config
   files of Claude Desktop, Claude Code, Cursor, VS Code and Windsurf; outputs server name, transport, command
   or URL host, and which config. **Never** environment values, headers or arguments that look like secrets.

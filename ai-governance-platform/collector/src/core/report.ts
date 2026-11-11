@@ -10,6 +10,7 @@ const bytes = (b?: number) => (b === undefined ? '' : b < 1e6 ? `${Math.round(b 
 const CATEGORY: Record<string, string> = {
   chat: 'Chat app', model_api: 'Model API', coding: 'Coding assistant', cloud_ai: 'Cloud AI service', work_app: 'AI in a work app',
 };
+const MCP_CLIENTS: Record<string, string> = { claude_desktop: 'Claude Desktop', claude_code: 'Claude Code', cursor: 'Cursor', vscode: 'VS Code', windsurf: 'Windsurf' };
 const KIND: Record<string, string> = { api: 'apps', browser: 'browsers', cloud_ai: 'cloud' };
 
 function trend(t: { first: number; second: number }): string {
@@ -152,6 +153,16 @@ ${f.recommendations.length ? f.recommendations.map(rec).join('') : '<p class="mu
 <div class="panel">${table(['Tool', 'People', 'Devices', 'Visits'], f.browser.map((b) => [
     `<strong>${esc(b.service)}</strong>`, `<span class="num">${n(b.people)}</span>`, `<span class="num">${n(b.machines)}</span>`, `<span class="num">${n(b.count)}</span>`,
   ]))}</div>
+
+${f.laptopMcp ? `<h2>MCP servers on laptops</h2>
+<p class="muted">${esc(plural(f.laptopMcp.scannedDevices, 'laptop'))} scanned; ${esc(plural(f.laptopMcp.devicesWithServers, 'has', 'have'))} MCP servers set up by hand, used by ${esc(plural(f.laptopMcp.people, 'person', 'people'))}. Only names, packages and hosts are read, never credentials.</p>
+<div class="panel">${table(['Server', 'Runs as', 'Apps', 'Laptops', 'With own credentials'], f.laptopMcp.servers.slice(0, 50).map((m) => [
+    `<code>${esc(m.what)}</code>${m.company ? ' <span class="flag">company system</span>' : ''}${m.names.length && !m.names.includes(m.what) ? `<br><span class="muted">${esc(m.names.join(', '))}</span>` : ''}`,
+    m.kind === 'remote' ? 'Remote URL' : 'Local program',
+    esc(m.clients.map((c) => MCP_CLIENTS[c] ?? c).join(', ')),
+    `<span class="num">${n(m.devices)}</span>`,
+    `<span class="num">${n(m.withCredentials)}</span>`,
+  ]))}</div>` : ''}
 
 <h2>What was read</h2>
 <div class="panel">${table(['Source', 'Days', 'Matches', 'What it can’t see'], f.sources.map((s) => [

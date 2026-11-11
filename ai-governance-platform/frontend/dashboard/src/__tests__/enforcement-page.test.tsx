@@ -30,7 +30,9 @@ const data = {
       warning: 'Marked locked, but 5 callers still go direct in findings to 2026-11-07. The lock may not be applied everywhere.' },
     { id: 'out_cloud_ai', direction: 'out', title: 'Apps in AWS calling Bedrock or SageMaker', lock: 'Service control policy', anchor: 'aws', state: 'open', trend: [] },
     { id: 'out_browser', direction: 'out', title: 'People using AI tools in a browser', lock: 'Browser extension', state: 'open', trend: [], measuredElsewhere: 'Measured by the browser extension on the Shadow AI page.' },
-    { id: 'in_agents', direction: 'in', title: 'Agents calling your APIs directly', lock: 'Signed calls', state: 'open', trend: [], coming: true },
+    { id: 'in_agents', direction: 'in', title: 'Agents calling your APIs directly', lock: 'Signed calls', anchor: 'apis', state: 'open', trend: [], measuredElsewhere: 'Measured from your APIs’ access logs: coming next.' },
+    { id: 'in_laptop_mcp', direction: 'in', title: 'MCP servers on laptops using people’s own credentials', lock: 'Scan', anchor: 'laptops', state: 'open', trend: [],
+      laptops: { to: '2026-11-07', scannedDevices: 40, devicesWithServers: 6, people: 5, servers: [{ what: 'hr.acme.example', kind: 'remote', devices: 3, people: 3, withCredentials: 1, company: true, clients: ['cursor'] }] } },
   ],
   findings: [{ findingsId: 'fi1', from: '2026-10-08', to: '2026-11-07', catalogVersion: '2026-11-07', uploadedAt: '2026-11-08T09:00:00Z', fileName: 'findings-2026-11-07.json', services: 13 }],
 };
@@ -52,6 +54,13 @@ vi.mock('../lib/enforcement-api', async (orig) => ({
   generateAws: (...a: unknown[]) => generateAws(...a),
   saveAws: vi.fn(async () => undefined),
   setPathState: (...a: unknown[]) => setPathState(...a),
+  getLockKitApis: vi.fn(async () => ({
+    issuer: 'https://gateway.acme.example', jwksUrl: 'https://gateway.acme.example/.well-known/jwks.json', header: 'X-Probaline-Identity', tokenLifetimeSeconds: 300, egressIps: ['203.0.113.4'],
+    apis: [
+      { apiId: 'a1', name: 'People API', serverId: 's1', serverName: 'HR tools', audience: 'https://hr.acme.example/api' },
+      { apiId: 'a2', name: 'Payroll', serverId: 's1', serverName: 'HR tools', audience: 'http://payroll.corp:8080', connector: 'Datacenter' },
+    ],
+  })),
   uploadFindings: (...a: unknown[]) => uploadFindings(...a),
   deleteFindings: vi.fn(async () => undefined),
   rotateFeed: vi.fn(), revokeFeed: vi.fn(), updateFeed: vi.fn(), feedContent: vi.fn(async () => 'chatgpt.com\n'),
@@ -84,7 +93,10 @@ describe('Enforcement page', () => {
     expect(row).toHaveTextContent('Still direct: host:app-1, host:app-2, host:app-3 and 2 more.');
     expect(row).toHaveTextContent('Marked locked, but 5 callers still go direct');
     expect(screen.getByRole('article', { name: 'Apps in AWS calling Bedrock or SageMaker' })).toHaveTextContent('Not measured yet');
-    expect(screen.getByRole('article', { name: 'Agents calling your APIs directly' })).toHaveTextContent('Coming');
+    expect(screen.getByRole('article', { name: 'Agents calling your APIs directly' })).toHaveTextContent('access logs');
+    const laptops = screen.getByRole('article', { name: 'MCP servers on laptops using people’s own credentials' });
+    expect(laptops).toHaveTextContent('of 40 laptops with MCP servers set up by hand');
+    expect(laptops).toHaveTextContent('hr.acme.example (company system)');
     fireEvent.click(screen.getByRole('group', { name: 'State of Apps in AWS calling Bedrock or SageMaker' }).querySelector('button:nth-child(2)')!);
     await waitFor(() => expect(setPathState).toHaveBeenCalledWith('out_cloud_ai', 'previewing'));
   });
@@ -123,5 +135,25 @@ describe('Enforcement page', () => {
   it('refuses files that aren’t findings', () => {
     expect(() => slimFindings({ hello: 1 })).toThrow(/findings file/);
     expect(() => slimFindings([])).toThrow();
+  });
+
+  it('fills the API lock kit with this gateway and API, report-only first, and marks untested languages', async () => {
+    renderPage();
+    const panel = await screen.findByRole('region', { name: 'Lock your APIs' });
+    await waitFor(() => expect(panel).toHaveTextContent('https://hr.acme.example/api'));
+    const code = () => panel.querySelector('code.block')!.textContent!;
+    expect(code()).toContain("issuer: \"https://gateway.acme.example\"");
+    expect(code()).toContain('reportOnly: true');
+    fireEvent.click(screen.getByRole('switch', { name: 'Report only' }));
+    expect(code()).toContain('reportOnly: false');
+    fireEvent.click(screen.getByRole('button', { name: 'Python' }));
+    expect(code()).toContain('report_only=False');
+    expect(panel).toHaveTextContent('tested against tokens the gateway signs');
+    fireEvent.click(screen.getByRole('button', { name: 'Go' }));
+    expect(panel).toHaveTextContent('Not yet tested');
+    expect(screen.getByRole('button', { name: 'Download probaline_identity.go' })).toBeInTheDocument();
+    fireEvent.change(screen.getByRole('combobox'), { target: { value: 'a2' } });
+    expect(panel).toHaveTextContent('reached through the connector “Datacenter”');
+    expect(screen.getByRole('button', { name: 'Download mcp-scan.sh' })).toBeInTheDocument();
   });
 });

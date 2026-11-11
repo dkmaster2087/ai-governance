@@ -184,7 +184,7 @@ describe('paths and findings files', () => {
     const locked = await call('PUT', '/v1/enforcement/paths/out_model_api', { headers: as(A), body: { state: 'locked' } });
     assert.equal(locked.status, 200);
     assert.match(locked.body.path.warning, /2 callers still go direct/);
-    assert.equal((await call('PUT', '/v1/enforcement/paths/in_agents', { headers: as(A), body: { state: 'locked' } })).status, 409);
+    assert.equal((await call('PUT', '/v1/enforcement/paths/nope', { headers: as(A), body: { state: 'locked' } })).status, 404);
 
     // Previews use the latest stored findings when none are sent.
     const preview = await call('POST', '/v1/enforcement/feeds/preview', { headers: as(A), body: { categories: ['chat'] } });
@@ -196,5 +196,72 @@ describe('paths and findings files', () => {
 
     assert.equal((await call('POST', '/v1/enforcement/findings', { headers: as(A), body: { findings: { not: 'findings' } } })).status, 400);
     assert.equal((await call('POST', '/v1/enforcement/findings', { headers: as(A, 'tenant_auditor'), body: { findings: file(today, 1, 0) } })).status, 403);
+  });
+});
+
+describe('incoming lock: an API protected by the verifier', () => {
+  const SPEC = JSON.stringify({
+    openapi: '3.0.3', info: { title: 'People API', version: '1' },
+    paths: { '/employees/{id}': { get: { operationId: 'getEmployee', parameters: [{ name: 'id', in: 'path', required: true, schema: { type: 'string' } }] } } },
+  });
+  let api; let apiUrl; let serverId; let keyId;
+  const seen = [];
+
+  before(async () => {
+    const http = await import('node:http');
+    // Built by `npm run build -w packages/verify-identity`; the same code the dashboard hands out.
+    const { createVerifier, HEADER } = await import('../../packages/verify-identity/dist/index.js');
+    api = http.createServer(async (req, res) => {
+      const verifier = createVerifier({ issuer: GATEWAY.replace('127.0.0.1', 'localhost'), audience: apiUrl });
+      try {
+        const who = await verifier.verify(req.headers[HEADER]);
+        seen.push({ ...who, token: req.headers[HEADER] });
+        res.writeHead(200, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ id: 'e1', name: 'Jane Doe', askedBy: who.sub }));
+      } catch (err) {
+        res.writeHead(401, { 'content-type': 'application/json' });
+        res.end(JSON.stringify({ error: err.message, code: err.code }));
+      }
+    });
+    await new Promise((r) => api.listen(0, '127.0.0.1', r));
+    apiUrl = `http://127.0.0.1:${api.address().port}`;
+  });
+  after(async () => {
+    if (serverId) await call('DELETE', `/v1/mcp/servers/${serverId}`, { headers: as(A) });
+    if (keyId) await call('DELETE', `/v1/api-keys/${keyId}`, { headers: as(A) });
+    await new Promise((r) => api?.close(r));
+  });
+
+  test('a direct call is refused; the same call through Probaline arrives with who asked', async () => {
+    const direct = await fetch(`${apiUrl}/employees/e1`);
+    assert.equal(direct.status, 401);
+    assert.equal((await direct.json()).code, 'missing');
+
+    const made = await call('POST', '/v1/mcp/servers', { headers: as(A), body: { name: `E2E locked API ${Date.now()}` } });
+    assert.equal(made.status, 201, JSON.stringify(made.body));
+    serverId = made.body.serverId;
+    const added = await call('POST', `/v1/mcp/servers/${serverId}/apis`, { headers: as(A), body: { name: 'People API', baseUrl: apiUrl, openapi: SPEC, auth: { type: 'none' } } });
+    assert.equal(added.status, 201, JSON.stringify(added.body));
+    assert.equal((await call('POST', `/v1/mcp/servers/${serverId}/publish`, { headers: as(A), body: {} })).status, 200);
+    const key = await call('POST', '/v1/api-keys', { headers: as(A), body: { name: 'e2e-locked-agent', scopes: ['mcp'] } });
+    keyId = key.body.keyId;
+
+    // The kit lists this API with the audience its verifier needs.
+    const kit = await call('GET', '/v1/enforcement/apis', { headers: as(A) });
+    assert.ok(kit.body.apis.some((a) => a.serverId === serverId && a.audience === apiUrl));
+
+    const res = await call('POST', `/mcp/${A}/${serverId}`, { headers: { authorization: `Bearer ${key.body.key}` },
+      body: { jsonrpc: '2.0', id: 1, method: 'tools/call', params: { name: 'getEmployee', arguments: { id: 'e1' } } } });
+    assert.equal(res.body.result.isError, false, JSON.stringify(res.body));
+    assert.match(res.body.result.content[0].text, /askedBy/);
+    const who = seen.at(-1);
+    assert.equal(who.tool, 'getEmployee');
+    assert.equal(who.server, serverId);
+    assert.equal(who.tenant, A);
+    assert.match(who.sub, /^key:/);
+
+    // A token replayed against another API is refused.
+    const other = (await import('../../packages/verify-identity/dist/index.js')).createVerifier({ issuer: GATEWAY.replace('127.0.0.1', 'localhost'), audience: 'https://payroll.acme.example' });
+    await assert.rejects(() => other.verify(who.token), (e) => e.code === 'wrong_audience');
   });
 });

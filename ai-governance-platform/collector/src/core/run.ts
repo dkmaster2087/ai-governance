@@ -4,6 +4,7 @@ import { buildFindings, Findings, PathId, ShareHistoryEntry } from './findings';
 import { renderReport } from './report';
 import { Aggregator, mergeSightings, Observation } from './sightings';
 import { loadNames, loadPseudonymizer, loadSightings, saveNames, saveSightings, Store } from './store';
+import { buildLaptopMcp, isEndpointMcp, loadMcpRows, parseEndpointMcp, saveMcpRows } from '../endpoint/mcp';
 
 export interface ProcessResult { lines: number; matched: number; files: number; throughProbaline: number }
 
@@ -35,6 +36,17 @@ export async function processInput(
 
 export const isoDay = (d: Date) => d.toISOString().slice(0, 10);
 
+export { isEndpointMcp };
+
+/** One laptop MCP scan file (endpoint/mcp-scan.sh or .ps1 output) into the store. */
+export async function processMcpScan(store: Store, inputName: string, text: string): Promise<{ servers: number; devices: number }> {
+  const pseudonyms = await loadPseudonymizer(store);
+  const rows = parseEndpointMcp(text, pseudonyms);
+  await saveMcpRows(store, inputName, rows);
+  await saveNames(store, pseudonyms);
+  return { servers: rows.filter((r) => r.kind === 'server').length, devices: new Set(rows.map((r) => r.device)).size };
+}
+
 export const HISTORY_REPORTS = 6;
 
 /** Shares through Probaline from earlier findings files in the store, oldest first. Files without paths are skipped. */
@@ -59,10 +71,10 @@ export async function loadShareHistory(store: Store, before: string): Promise<Sh
 /** Build the report for a period and write it to the store. */
 export async function buildReport(
   store: Store,
-  opts: { from: string; to: string; revealNames?: boolean; company?: string; now?: Date },
+  opts: { from: string; to: string; revealNames?: boolean; company?: string; now?: Date; companyDomains?: string[] },
 ): Promise<{ findings: Findings; key: string; html: string }> {
   const rows = mergeSightings(await loadSightings(store, opts.from, opts.to));
-  const findings = buildFindings(rows, opts.from, opts.to, opts.now);
+  const findings = buildFindings(rows, opts.from, opts.to, opts.now, buildLaptopMcp(await loadMcpRows(store, opts.from, opts.to), opts.companyDomains));
   const history = await loadShareHistory(store, opts.to);
   if (history.length) findings.history = history;
   const names = opts.revealNames ? await loadNames(store) : undefined;

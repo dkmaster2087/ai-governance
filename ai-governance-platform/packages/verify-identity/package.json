@@ -1,0 +1,22 @@
+{
+  "name": "@probaline/verify-identity",
+  "version": "0.1.0",
+  "description": "Check the X-Probaline-Identity header on your API: only calls that came through Probaline, with who asked. No dependencies.",
+  "license": "Apache-2.0",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "files": ["dist", "README.md"],
+  "engines": { "node": ">=18" },
+  "scripts": {
+    "build": "tsc",
+    "test": "jest --runInBand",
+    "clean": "rm -rf dist"
+  },
+  "devDependencies": {
+    "@types/jest": "^29.0.0",
+    "@types/node": "^20.0.0",
+    "jest": "^29.0.0",
+    "ts-jest": "^29.0.0",
+    "typescript": "^5.4.0"
+  }
+}

@@ -293,13 +293,26 @@ const stored = (to: string, share: number | null, stillDirect: number, gatewaySe
 });
 
 describe('path status', () => {
-  it('lists every path, with coming ones marked and unmeasured ones explained', () => {
+  it('lists every path, with unmeasured ones explained', () => {
     const rows = pathStatus({}, []);
     expect(rows.map((r) => r.id)).toEqual(['out_model_api', 'out_cloud_ai', 'out_browser', 'in_agents', 'in_laptop_mcp']);
-    expect(rows.every((r) => r.state === 'open')).toBe(true);
-    expect(rows.filter((r) => r.coming).map((r) => r.id)).toEqual(['in_agents', 'in_laptop_mcp']);
+    expect(rows.every((r) => r.state === 'open' && !r.coming)).toBe(true);
     expect(rows[2].measuredElsewhere).toMatch(/browser extension/);
+    expect(rows[3].measuredElsewhere).toMatch(/access logs/);
     expect(rows[0].measured).toBeUndefined();
+    expect(rows[4].laptops).toBeUndefined();
+  });
+
+  it('shows the latest laptop scan and warns when a locked path still has servers on laptops', () => {
+    const scan = (to: string, devicesWithServers: number): StoredFindings => ({
+      ...stored(to, 1, 0), laptopMcp: { scannedDevices: 40, devicesWithServers, people: devicesWithServers, servers: [{ what: 'hr.acme.example', kind: 'remote', devices: devicesWithServers, people: 1, withCredentials: 1, company: true, clients: ['cursor'] }] },
+    });
+    const open = pathStatus({}, [scan('2026-11-07', 6)])[4];
+    expect(open.laptops).toMatchObject({ to: '2026-11-07', scannedDevices: 40, devicesWithServers: 6 });
+    const locked = { in_laptop_mcp: { state: 'locked' as const, updatedAt: '2026-11-01T00:00:00.000Z' } };
+    expect(pathStatus(locked, [scan('2026-11-07', 6)])[4].warning).toMatch(/6 laptops still have MCP servers/);
+    expect(pathStatus(locked, [scan('2026-11-07', 0)])[4].warning).toBeUndefined();
+    expect(pathStatus(locked, [stored('2026-11-07', 1, 0)])[4].warning).toMatch(/no laptop scan since/);
   });
 
   it('shows the latest share, a trend one point per day, and only days that saw the gateway', () => {
@@ -316,8 +329,7 @@ describe('path status', () => {
     expect(pathStatus(locked, [stored('2026-10-31', 0.9, 2)])[0].warning).toMatch(/no findings since/);
     expect(pathStatus(locked, [stored('2026-11-07', 1, 0)])[0].warning).toBeUndefined();
     expect(pathStatus({ out_model_api: { state: 'previewing', updatedAt: '2026-11-01T09:00:00.000Z' } }, [stored('2026-11-07', 0.9, 2)])[0].warning).toBeUndefined();
-    // Coming paths ignore any saved state.
-    expect(pathStatus({ in_agents: { state: 'locked', updatedAt: 'x' } }, [])[3].state).toBe('open');
+
   });
 });
 
@@ -410,11 +422,35 @@ describe('enforcement API: paths and findings', () => {
     const row = (await app.inject({ method: 'GET', url: '/v1/enforcement' })).json().paths[0];
     expect(row.warning).toMatch(/1 caller still goes direct/);
 
-    expect((await app.inject({ method: 'PUT', url: '/v1/enforcement/paths/in_agents', payload: { state: 'locked' } })).statusCode).toBe(409);
+    expect((await app.inject({ method: 'PUT', url: '/v1/enforcement/paths/in_agents', payload: { state: 'previewing' } })).statusCode).toBe(200);
     expect((await app.inject({ method: 'PUT', url: '/v1/enforcement/paths/nope', payload: { state: 'locked' } })).statusCode).toBe(404);
     expect((await app.inject({ method: 'PUT', url: '/v1/enforcement/paths/out_cloud_ai', payload: { state: 'shut' } })).statusCode).toBe(400);
 
     const actions = (await app.inject({ method: 'GET', url: '/v1/activity?category=admin' })).json().items.map((i: any) => i.action).sort();
-    expect(actions).toEqual(['enforcement_path.state_changed', 'findings.uploaded']);
+    expect(actions).toEqual(['enforcement_path.state_changed', 'enforcement_path.state_changed', 'findings.uploaded']);
+  });
+});
+
+describe('enforcement API: the lock kit', () => {
+  it('lists every API behind the company’s MCP servers with what its verifier needs, and nothing secret', async () => {
+    await collection('mcpServers').put({ tenantId: T, serverId: 'srv1', name: 'HR tools' });
+    await collection('mcpApis').put({ tenantId: T, apiId: 'api1', serverId: 'srv1', name: 'People API', baseUrl: 'https://hr.acme.example/api', auth: { type: 'bearer', secretArn: 'arn:secret' } });
+    await collection('mcpApis').put({ tenantId: T, apiId: 'api2', serverId: 'srv1', name: 'Payroll', baseUrl: 'http://payroll.corp:8080', auth: { type: 'none' }, connectorId: 'c1' });
+    await collection('mcpConnectors').put({ tenantId: T, recordKey: 'connector#c1', connectorId: 'c1', name: 'Datacenter' });
+    await collection('mcpApis').put({ tenantId: 'other', apiId: 'x', serverId: 'sx', name: 'Not ours', baseUrl: 'https://x.example' });
+    process.env.PUBLIC_GATEWAY_URL = 'https://gateway.acme.example';
+    const app = Fastify();
+    app.decorateRequest('principal', null);
+    app.addHook('onRequest', async (req) => { req.principal = { kind: 'user', homeTenantId: T, userId: 'u', role: 'tenant_auditor' }; req.tenantId = T; });
+    await app.register(enforcementRoutes, { prefix: '/v1' });
+    const res = (await app.inject({ method: 'GET', url: '/v1/enforcement/apis' })).json();
+    delete process.env.PUBLIC_GATEWAY_URL;
+    await app.close();
+    expect(res).toMatchObject({ issuer: 'https://gateway.acme.example', jwksUrl: 'https://gateway.acme.example/.well-known/jwks.json', header: 'X-Probaline-Identity' });
+    expect(res.apis).toEqual([
+      { apiId: 'api2', name: 'Payroll', serverId: 'srv1', serverName: 'HR tools', audience: 'http://payroll.corp:8080', connector: 'Datacenter' },
+      { apiId: 'api1', name: 'People API', serverId: 'srv1', serverName: 'HR tools', audience: 'https://hr.acme.example/api' },
+    ]);
+    expect(JSON.stringify(res)).not.toContain('arn:secret');
   });
 });

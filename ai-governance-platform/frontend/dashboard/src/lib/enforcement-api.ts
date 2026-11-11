@@ -40,7 +40,28 @@ export interface PathStatus {
   stateUpdatedAt?: string;
   measured?: { to: string; share: number | null; through: number; direct: number; gatewaySeen: boolean; measuredBy?: string; stillDirectCount: number; stillDirect: Caller[] };
   trend: Array<{ to: string; share: number }>;
+  laptops?: LaptopScan & { to: string };
   warning?: string;
+}
+
+export interface LaptopScan {
+  scannedDevices: number;
+  devicesWithServers: number;
+  people: number;
+  servers: Array<{ what: string; kind: 'local' | 'remote'; devices: number; people: number; withCredentials: number; company: boolean; clients: string[] }>;
+}
+
+export interface LockKitApis {
+  issuer: string;
+  jwksUrl: string;
+  header: string;
+  tokenLifetimeSeconds: number;
+  egressIps: string[];
+  apis: Array<{ apiId: string; name: string; serverId: string; serverName: string; audience: string; connector?: string }>;
+}
+
+export async function getLockKitApis(): Promise<LockKitApis> {
+  return (await gateway.get<LockKitApis>('/v1/enforcement/apis')).data;
 }
 
 export interface StoredFindings {
@@ -154,6 +175,7 @@ export function slimFindings(raw: unknown): Findings {
     services: f.services.map((s: any) => ({ id: String(s.id), name: String(s.name), category: String(s.category), people: Number(s.people) || 0, machines: Number(s.machines) || 0, count: Number(s.count) || 0 })),
     ...(Array.isArray(f.cloudAi) ? { cloudAi: f.cloudAi.slice(0, 200).map(caller) } : {}),
     ...(Array.isArray(f.directApi) ? { directApi: f.directApi.slice(0, 200).map(caller) } : {}),
+    ...(f.laptopMcp && typeof f.laptopMcp === 'object' ? { laptopMcp: { ...f.laptopMcp, servers: (f.laptopMcp.servers ?? []).slice(0, 100) } } : {}),
     ...(Array.isArray(f.paths) ? {
       paths: f.paths.map((p: any) => ({
         id: String(p.id), share: typeof p.share === 'number' ? p.share : null, through: Number(p.through) || 0, direct: Number(p.direct) || 0,

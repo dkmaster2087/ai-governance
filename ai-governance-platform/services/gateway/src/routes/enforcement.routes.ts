@@ -1,6 +1,7 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { CATALOG_VERSION, Category } from '@ai-governance/catalog';
+import { collection } from '@ai-governance/storage';
 import { createLogger } from '@ai-governance/utils';
 import { requireAccess, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
 import { publicBase } from '../mcp/base';
@@ -98,6 +99,43 @@ export async function enforcementRoutes(app: FastifyInstance) {
       aws: { ...(aws ?? {}), gatewayRoleArn: aws?.gatewayRoleArn || process.env.GATEWAY_ROLE_ARN || '' },
       paths: pathStatus(states ?? {}, findings),
       findings: findings.map(findingsView),
+    };
+  });
+
+  // ── Incoming: lock your APIs to Probaline ──────────────────────────────────────────────────────────────────
+
+  /**
+   * Every API behind this company's MCP servers, with what its verifier needs: the issuer and keys address
+   * (the gateway), and the audience (the API's base URL, exactly as added). No credentials.
+   */
+  app.get('/enforcement/apis', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
+    const all = async (name: 'mcpServers' | 'mcpApis' | 'mcpConnectors') => {
+      const out: Record<string, any>[] = [];
+      let after: string | undefined;
+      do {
+        const page = await collection<Record<string, any>>(name).query({ partition: request.tenantId, limit: 200, after });
+        out.push(...page.items);
+        after = page.next;
+      } while (after && out.length < 1000);
+      return out;
+    };
+    const [servers, apis, connectors] = await Promise.all([all('mcpServers'), all('mcpApis'), all('mcpConnectors')]);
+    const serverName = new Map(servers.map((sv) => [sv.serverId, sv.name as string]));
+    const connectorName = new Map(connectors.filter((c) => c.connectorId).map((c) => [c.connectorId, c.name as string]));
+    const issuer = base(request);
+    return {
+      issuer,
+      jwksUrl: `${issuer}/.well-known/jwks.json`,
+      header: 'X-Probaline-Identity',
+      tokenLifetimeSeconds: 300,
+      egressIps: egressIps(),
+      apis: apis
+        .filter((a) => serverName.has(a.serverId))
+        .map((a) => ({
+          apiId: a.apiId, name: a.name, serverId: a.serverId, serverName: serverName.get(a.serverId), audience: a.baseUrl,
+          ...(a.connectorId ? { connector: connectorName.get(a.connectorId) ?? a.connectorId } : {}),
+        }))
+        .sort((x, y) => `${x.serverName}${x.name}`.localeCompare(`${y.serverName}${y.name}`)),
     };
   });
 

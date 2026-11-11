@@ -17,26 +17,36 @@ export interface PathDef {
   title: string;
   /** How it's locked, and where on the page. */
   lock: string;
-  anchor?: 'feed' | 'aws';
+  anchor?: 'feed' | 'aws' | 'apis' | 'laptops';
   /** Which findings path measures it; absent when the collector doesn't measure it (yet). */
   findingsPath?: 'model_api' | 'cloud_ai';
   /** Said instead of a share when the collector doesn't measure it. */
   measuredElsewhere?: string;
   /** Not built yet: the row says so, and its state can't be set. */
   coming?: boolean;
+  /** Measured by the laptop MCP scan in the findings, not a share. */
+  laptops?: boolean;
 }
 
 export const PATHS: PathDef[] = [
   { id: 'out_model_api', direction: 'out', title: 'Apps calling model APIs over the internet', lock: 'AI-domain feed in your firewall, web gateway or DNS', anchor: 'feed', findingsPath: 'model_api' },
   { id: 'out_cloud_ai', direction: 'out', title: 'Apps in AWS calling Bedrock or SageMaker', lock: 'Service control policy in your AWS organization', anchor: 'aws', findingsPath: 'cloud_ai' },
   { id: 'out_browser', direction: 'out', title: 'People using AI tools in a browser', lock: 'Browser extension blocks unapproved tools', measuredElsewhere: 'Measured by the browser extension on the Shadow AI page.' },
-  { id: 'in_agents', direction: 'in', title: 'Agents calling your APIs directly', lock: 'APIs accept only calls signed by Probaline', coming: true },
-  { id: 'in_laptop_mcp', direction: 'in', title: 'MCP servers on laptops using people’s own credentials', lock: 'Found by a device-management scan, offered as Probaline MCP servers', coming: true },
+  { id: 'in_agents', direction: 'in', title: 'Agents calling your APIs directly', lock: 'Your APIs accept only calls signed by Probaline', anchor: 'apis',
+    measuredElsewhere: 'Measured from your APIs’ access logs: coming next. Until then, the verifier’s report-only log shows calls that didn’t come through Probaline.' },
+  { id: 'in_laptop_mcp', direction: 'in', title: 'MCP servers on laptops using people’s own credentials', lock: 'Found by a device-management scan; offered as Probaline MCP servers, local copies removed', anchor: 'laptops', laptops: true },
 ];
 
 // ── Stored findings files ────────────────────────────────────────────────────────────────────────────────────
 
 export interface StoredCaller { who: string; services: string[]; count: number; fix?: string }
+export interface StoredLaptopMcp {
+  scannedDevices: number;
+  devicesWithServers: number;
+  people: number;
+  servers: Array<{ what: string; kind: 'local' | 'remote'; devices: number; people: number; withCredentials: number; company: boolean; clients: string[] }>;
+}
+
 export interface StoredPath {
   id: string;
   share: number | null;
@@ -61,6 +71,7 @@ export interface StoredFindings {
   cloudAi?: StoredCaller[];
   directApi?: StoredCaller[];
   paths?: StoredPath[];
+  laptopMcp?: StoredLaptopMcp;
 }
 
 export const FINDINGS_KEEP_DAYS = 400;
@@ -137,6 +148,8 @@ export interface PathStatus {
     stillDirectCount: number;
     stillDirect: StoredCaller[];
   };
+  /** For the laptop path: what the latest scan in the findings found. */
+  laptops?: StoredLaptopMcp & { to: string };
   /** Oldest first, from stored findings files that saw the gateway on this path. */
   trend: Array<{ to: string; share: number }>;
   /**
@@ -160,6 +173,19 @@ export function pathStatus(states: Partial<Record<PathId, PathStateRecord>>, fin
       state, ...(st && !def.coming ? { stateUpdatedAt: st.updatedAt } : {}),
       trend: [],
     };
+    if (def.laptops) {
+      const latest = findings.find((f) => f.laptopMcp);
+      if (latest) row.laptops = { ...latest.laptopMcp!, servers: latest.laptopMcp!.servers.slice(0, 10), to: latest.to };
+      if (state === 'locked' && st) {
+        const after = findings.filter((f) => f.laptopMcp && f.to >= st.updatedAt.slice(0, 10));
+        if (after.length === 0) row.warning = 'Marked locked, but no laptop scan since. Upload findings that include a scan to confirm it holds.';
+        else if (after[0].laptopMcp!.devicesWithServers > 0) {
+          const n = after[0].laptopMcp!.devicesWithServers;
+          row.warning = `Marked locked, but ${n} ${n === 1 ? 'laptop still has' : 'laptops still have'} MCP servers set up by hand in the scan to ${after[0].to}.`;
+        }
+      }
+      return row;
+    }
     if (!def.findingsPath) return row;
 
     const withPath = findings
@@ -226,6 +252,18 @@ export function trimFindings(raw: any): Omit<StoredFindings, 'tenantId' | 'recor
         stillDirectCount: Number(p.stillDirectCount) || (Array.isArray(p.stillDirect) ? p.stillDirect.length : 0),
         stillDirect: (Array.isArray(p.stillDirect) ? p.stillDirect : []).slice(0, 50).map((c: any) => caller(c, true)),
       })),
+    } : {}),
+    ...(raw.laptopMcp && typeof raw.laptopMcp === 'object' ? {
+      laptopMcp: {
+        scannedDevices: Number(raw.laptopMcp.scannedDevices) || 0,
+        devicesWithServers: Number(raw.laptopMcp.devicesWithServers) || 0,
+        people: Number(raw.laptopMcp.people) || 0,
+        servers: (Array.isArray(raw.laptopMcp.servers) ? raw.laptopMcp.servers : []).slice(0, 100).map((m: any) => ({
+          what: String(m.what).slice(0, 255), kind: m.kind === 'remote' ? 'remote' as const : 'local' as const,
+          devices: Number(m.devices) || 0, people: Number(m.people) || 0, withCredentials: Number(m.withCredentials) || 0,
+          company: m.company === true, clients: (Array.isArray(m.clients) ? m.clients : []).slice(0, 10).map((c: unknown) => String(c).slice(0, 30)),
+        })),
+      },
     } : {}),
   };
 }

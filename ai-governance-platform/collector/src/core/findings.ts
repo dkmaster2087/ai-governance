@@ -1,5 +1,6 @@
 import { CATALOG_VERSION, Category, serviceById } from './catalog';
 import { Kind, Sighting } from './sightings';
+import type { LaptopMcp } from '../endpoint/mcp';
 
 export const SOURCE_LABELS: Record<string, string> = {
   aws_dns: 'AWS Route 53 Resolver DNS query logs',
@@ -164,6 +165,8 @@ export interface Findings {
   paths: PathFinding[];
   /** Added by buildReport from earlier findings files; absent when there are none. */
   history?: ShareHistoryEntry[];
+  /** MCP servers configured on laptops, from endpoint scans; absent when no scan was read. */
+  laptopMcp?: LaptopMcp;
   recommendations: Recommendation[];
 }
 
@@ -247,7 +250,7 @@ export function buildPaths(rows: Sighting[]): PathFinding[] {
 }
 
 /** Everything the report says, from the sightings in a period. */
-export function buildFindings(allRows: Sighting[], from: string, to: string, now = new Date()): Findings {
+export function buildFindings(allRows: Sighting[], from: string, to: string, now = new Date(), laptopMcp?: LaptopMcp): Findings {
   // Traffic through Probaline is reported once, in `paths`; everything else describes use outside it.
   const rows = allRows.filter((r) => r.via !== 'probaline');
   const mid = new Date((new Date(from).getTime() + new Date(to).getTime()) / 2).toISOString().slice(0, 10);
@@ -309,6 +312,7 @@ export function buildFindings(allRows: Sighting[], from: string, to: string, now
     },
     services, directApi, cloudAi, browser, sources, coverage,
     paths: buildPaths(allRows),
+    ...(laptopMcp ? { laptopMcp } : {}),
     recommendations: [],
   };
   findings.recommendations = recommend(findings);
@@ -363,6 +367,19 @@ export function recommend(f: Findings): Recommendation[] {
       why: 'People are spread across several consumer AI tools, each with its own data handling and no shared policy.',
       action: 'Pick one with business terms (or an internal assistant behind Probaline), approve it, and steer people to it with the browser extension’s block page.',
       items: chats.map((s) => s.name),
+    });
+  }
+
+  const laptop = f.laptopMcp;
+  if (laptop && laptop.servers.length > 0) {
+    const company = laptop.servers.filter((s) => s.company);
+    const creds = laptop.servers.filter((s) => s.withCredentials > 0);
+    out.push({
+      priority: company.length > 0 ? 'high' : 'medium',
+      title: `Offer ${company.length > 0 ? `the ${plural(company.length, 'MCP server')} reaching company systems` : 'the MCP servers people installed'} through Probaline`,
+      why: `${plural(laptop.devicesWithServers, 'laptop')} ${laptop.devicesWithServers === 1 ? 'runs' : 'run'} MCP servers set up by hand${creds.length ? `, ${plural(creds.length, 'server')} with ${creds.length === 1 ? 'its' : 'their'} own credentials` : ''}. Their calls skip company rules, approvals and the record of who did what.`,
+      action: 'Publish each one as a Probaline MCP server (people sign in with their company account; writes wait for approval), then remove the local copies through device management.',
+      items: (company.length ? company : laptop.servers).slice(0, TOP_CALLERS).map((s) => `${s.what} (${s.kind === 'remote' ? 'remote' : 'local program'}): ${plural(s.devices, 'laptop')}${s.withCredentials ? `, ${s.withCredentials} with credentials` : ''}`),
     });
   }
 

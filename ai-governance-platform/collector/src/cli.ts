@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 import { promises as fs } from 'fs';
 import path from 'path';
-import { buildReport, decode, isoDay, processInput } from './core/run';
+import { buildReport, decode, isEndpointMcp, isoDay, processInput, processMcpScan } from './core/run';
 import { FileStore } from './core/store';
 import { AwsSource, detectSource, parse } from './aws/parsers';
 import { parseOnpremText } from './onprem/parsers';
@@ -15,7 +15,8 @@ const USAGE = `Probaline collector: finds AI usage in your logs. Everything stay
       --gateway names the Probaline gateway and connector (type:value; ip: takes a range like ip:203.0.113.0/28,
       and a trailing * matches a prefix). Their traffic counts as through Probaline, for the share in the report.
       --ignore leaves other known-good callers out entirely.
-  probaline-collector report  --out <dir> [--days 30 | --from YYYY-MM-DD --to YYYY-MM-DD] [--company "Acme"] [--reveal-names]
+      Laptop MCP scans (endpoint/mcp-scan.sh or .ps1 output) are recognized and read too.
+  probaline-collector report  --out <dir> [--days 30 | --from YYYY-MM-DD --to YYYY-MM-DD] [--company "Acme"] [--company-domains acme.com,acme.internal] [--reveal-names]
   probaline-collector cloud-job
       One run of the in-cloud collector (Azure Container Apps job or Cloud Run job), configured by
       environment variables: see collector/README.md.
@@ -62,10 +63,15 @@ async function main() {
     const wanted = typeof flags.source === 'string' && flags.source !== 'auto' ? flags.source : null;
     const ignore = typeof flags.ignore === 'string' ? flags.ignore.split(',') : [];
     const gateway = typeof flags.gateway === 'string' ? flags.gateway.split(',') : [];
-    let matched = 0; let count = 0; let through = 0;
+    let matched = 0; let count = 0; let through = 0; let mcpServers = 0; let mcpDevices = 0;
     for (const f of await files(rest)) {
       count++;
       const text = decode(await fs.readFile(f));
+      if (isEndpointMcp(text)) {
+        const m = await processMcpScan(store, path.resolve(f), text);
+        mcpServers += m.servers; mcpDevices += m.devices;
+        continue;
+      }
       const aws = wanted === 'onprem' ? null : ((wanted as AwsSource | null) ?? detectSource(f, text));
       const observations = aws ? parse(aws, text) : parseOnpremText(text);
       const r = await processInput(store, path.resolve(f), observations, ignore, gateway);
@@ -73,7 +79,7 @@ async function main() {
       through += r.throughProbaline;
     }
     // Files can be one record per line or one big JSON document, so lines aren't a useful count.
-    console.log(`Read ${count} ${count === 1 ? 'file' : 'files'}; ${matched} records matched an AI service${gateway.length ? `, ${through} of them through Probaline` : ''}.`);
+    console.log(`Read ${count} ${count === 1 ? 'file' : 'files'}; ${matched} records matched an AI service${gateway.length ? `, ${through} of them through Probaline` : ''}.${mcpDevices ? ` Laptop MCP scans: ${mcpServers} servers on ${mcpDevices} ${mcpDevices === 1 ? 'device' : 'devices'}.` : ''}`);
     return;
   }
 
@@ -81,7 +87,7 @@ async function main() {
     const days = Number(flags.days) || 30;
     const to = typeof flags.to === 'string' ? flags.to : isoDay(new Date());
     const from = typeof flags.from === 'string' ? flags.from : isoDay(new Date(new Date(`${to}T00:00:00Z`).getTime() - (days - 1) * 86_400_000));
-    const { findings, key } = await buildReport(store, { from, to, revealNames: flags['reveal-names'] === true, company: typeof flags.company === 'string' ? flags.company : undefined });
+    const { findings, key } = await buildReport(store, { from, to, revealNames: flags['reveal-names'] === true, company: typeof flags.company === 'string' ? flags.company : undefined, companyDomains: typeof flags['company-domains'] === 'string' ? flags['company-domains'].split(',') : [] });
     console.log(`${findings.totals.services} AI services, ${findings.recommendations.length} recommendations. Report: ${path.join(out, key)}`);
     return;
   }

@@ -4,10 +4,11 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
   AwsLock, AwsSettings, Blocked, createFeed, deleteFindings, Enforcement, Feed, FeedCategory, feedContent, FeedFormat, generateAws,
-  getEnforcement, NewFeedUrls, PathState, PathStatus, previewFeed, revokeFeed, rotateFeed, saveAws, setPathState, slimFindings, uploadFindings,
+  getEnforcement, getLockKitApis, NewFeedUrls, PathState, PathStatus, previewFeed, revokeFeed, rotateFeed, saveAws, setPathState, slimFindings, uploadFindings,
 } from '../lib/enforcement-api';
 import { errorMessage } from '../lib/rules-api';
 import { Button, Note, Panel, Segmented, SectionLabel, Switch, formatCount } from '../components/kit/primitives';
+import { KitLanguage, lockKit, SCAN_SCRIPTS } from '../lib/lock-kit';
 
 const Beta = () => <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-line-subtle text-ink-soft">Beta</span>;
 const input = 'min-h-[42px] px-3 border border-line-strong rounded-lg bg-white w-full';
@@ -21,8 +22,8 @@ function CopyButton({ text, label = 'Copy' }: { text: string; label?: string }) 
   return <Button variant="secondary" onClick={async () => { try { await navigator.clipboard.writeText(text); setDone(true); setTimeout(() => setDone(false), 1500); } catch { /* clipboard unavailable */ } }}>{done ? 'Copied' : label}</Button>;
 }
 
-function download(name: string, body: string) {
-  const url = URL.createObjectURL(new Blob([body], { type: 'application/json' }));
+function download(name: string, body: string, type = 'application/json') {
+  const url = URL.createObjectURL(new Blob([body], { type }));
   const a = Object.assign(document.createElement('a'), { href: url, download: name });
   a.click();
   URL.revokeObjectURL(url);
@@ -82,7 +83,19 @@ function PathRow({ p }: { p: PathStatus }) {
       {p.warning && <p role="alert" className="m-0 text-sm font-semibold text-stop">{p.warning}</p>}
       {p.coming && <p className="m-0 text-sm text-ink-muted">Not built yet. This path stays open until it is.</p>}
       {p.measuredElsewhere && <p className="m-0 text-sm text-ink-muted">{p.measuredElsewhere} <Link to="/shadow-ai" className="font-semibold text-ink">Shadow AI</Link></p>}
-      {!p.coming && !p.measuredElsewhere && !m && <p className="m-0 text-sm text-ink-muted">Not measured yet. Upload a findings file below.</p>}
+      {!p.coming && !p.measuredElsewhere && !m && !p.laptops && <p className="m-0 text-sm text-ink-muted">{p.id === 'in_laptop_mcp' ? 'Not scanned yet. Run the laptop scan, then upload the findings below.' : 'Not measured yet. Upload a findings file below.'}</p>}
+      {p.laptops && (
+        <div className="flex flex-col gap-3 sm:flex-row sm:gap-6">
+          <div className="sm:w-[150px] shrink-0">
+            <div className={clsx('text-[34px] leading-none font-bold tracking-[-0.02em]', p.laptops.devicesWithServers > 0 && 'text-stop')}>{formatCount(p.laptops.devicesWithServers)}</div>
+            <div className="text-xs text-ink-muted mt-1">of {formatCount(p.laptops.scannedDevices)} {p.laptops.scannedDevices === 1 ? 'laptop' : 'laptops'} with MCP servers set up by hand</div>
+          </div>
+          <div className="flex-1 min-w-0 flex flex-col gap-1.5 text-sm">
+            <p className="m-0 text-ink-muted">Scan in findings to {day(p.laptops.to)}; {formatCount(p.laptops.people)} {p.laptops.people === 1 ? 'person' : 'people'}.</p>
+            {p.laptops.servers.length > 0 && <p className="m-0"><strong>Most common:</strong> {p.laptops.servers.slice(0, 4).map((x) => `${x.what}${x.company ? ' (company system)' : ''}`).join(', ')}.</p>}
+          </div>
+        </div>
+      )}
       {m && (
         <div className="flex flex-col gap-3 sm:flex-row sm:gap-6">
           <div className="sm:w-[150px] shrink-0">
@@ -265,6 +278,98 @@ function FeedCard({ f, data, onUrls }: { f: Feed; data: Enforcement; onUrls: (c:
 
 // ── AWS ─────────────────────────────────────────────────────────────────────────────────────────────────────
 
+// ── Incoming: lock your APIs ────────────────────────────────────────────────────────────────────────────────
+
+const KIT_TABS: Array<{ value: KitLanguage; label: string }> = [
+  { value: 'node', label: 'Node' }, { value: 'python', label: 'Python' }, { value: 'lambda', label: 'Lambda' }, { value: 'go', label: 'Go' }, { value: 'java', label: 'Java' },
+];
+
+function LockApisPanel({ egressIps }: { egressIps: string[] }) {
+  const { data, isLoading, isError } = useQuery({ queryKey: ['lock-kit-apis'], queryFn: getLockKitApis });
+  const [apiId, setApiId] = useState<string | null>(null);
+  const [lang, setLang] = useState<KitLanguage>('node');
+  const [reportOnly, setReportOnly] = useState(true);
+  const api = data?.apis.find((a) => a.apiId === apiId) ?? data?.apis[0];
+  const kit = api && data ? lockKit(data.issuer, api.audience, reportOnly).find((k) => k.id === lang)! : null;
+  return (
+    <Panel aria-label="Lock your APIs" className="px-6 py-5 flex flex-col gap-4">
+      <div>
+        <div className="flex items-center gap-3"><h2 className="m-0 text-xl font-semibold">Your APIs: only calls that came through Probaline</h2><Beta /></div>
+        <p className="m-0 mt-1 text-sm text-ink-muted max-w-[760px]">
+          Every call Probaline makes to an API behind an MCP server carries <code className="font-mono">X-Probaline-Identity</code>: a five-minute token, signed by the gateway, saying who asked and through which tool. Add the check below to the API and anything that didn’t come through Probaline is refused.
+        </p>
+      </div>
+      <ol className="m-0 pl-5 text-sm flex flex-col gap-1 list-decimal">
+        <li>Add the check with report-only on: calls without a valid token are logged, not refused.</li>
+        <li>Watch that log until only Probaline’s calls arrive.</li>
+        <li>Turn report-only off, deploy, and mark “Agents calling your APIs directly” Locked above.</li>
+      </ol>
+      {isError && <p role="alert" className="m-0 text-sm text-stop">Couldn’t load your APIs.</p>}
+      {isLoading && <p className="m-0 text-sm text-ink-muted">Loading…</p>}
+      {data && data.apis.length === 0 && <Note title="No APIs behind MCP servers yet."><>Add one on <Link to="/mcp" className="font-semibold text-ink">MCP servers</Link>; its lock appears here.</></Note>}
+      {data && api && kit && (
+        <>
+          <div className="grid gap-4 md:grid-cols-2">
+            <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">API</span>
+              <select className={input} value={api.apiId} onChange={(e) => setApiId(e.target.value)}>
+                {data.apis.map((a) => <option key={a.apiId} value={a.apiId}>{a.serverName} · {a.name}</option>)}
+              </select>
+            </label>
+            <div className="flex items-end gap-3 pb-2"><Switch checked={reportOnly} onChange={setReportOnly} label="Report only" /><span className="text-sm font-semibold">Report only (log, don’t refuse)</span></div>
+          </div>
+          <dl className="m-0 grid gap-x-4 gap-y-1 text-sm sm:grid-cols-[140px_1fr]">
+            <dt className="text-ink-muted">Issuer</dt><dd className="m-0 font-mono text-[13px] [overflow-wrap:anywhere]">{data.issuer}</dd>
+            <dt className="text-ink-muted">Audience</dt><dd className="m-0 font-mono text-[13px] [overflow-wrap:anywhere]">{api.audience}</dd>
+            <dt className="text-ink-muted">Keys</dt><dd className="m-0 font-mono text-[13px] [overflow-wrap:anywhere]">{data.jwksUrl}</dd>
+          </dl>
+          <div className="max-w-full overflow-x-auto"><Segmented label="Language" options={KIT_TABS} value={lang} onChange={setLang} /></div>
+          <div className="flex flex-col gap-2">
+            <p className="m-0 text-sm"><strong>{kit.label}</strong> {kit.tested ? <span className="text-ink-muted">· tested against tokens the gateway signs</span> : <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-line-subtle text-ink-soft">Not yet tested</span>}</p>
+            <p className="m-0 text-sm text-ink-soft">{kit.setup}</p>
+            <code className={code}>{kit.usage}</code>
+            <div className="flex gap-2 flex-wrap">
+              <CopyButton text={kit.usage} label="Copy" />
+              {kit.files.map((f) => <Button key={f.name} variant="secondary" onClick={() => download(f.name, f.body, 'text/plain')}>Download {f.name}</Button>)}
+            </div>
+          </div>
+          <div className="text-sm flex flex-col gap-1">
+            <p className="m-0 font-semibold">Or, without code changes: allow only Probaline’s addresses</p>
+            <p className="m-0 text-ink-muted">
+              {api.connector
+                ? <>This API is reached through the connector “{api.connector}”: allow only that connector’s host in the API’s firewall or security group.</>
+                : egressIps.length
+                  ? <>Allow only {egressIps.join(', ')} in the API’s security group, WAF IP set or nginx <code className="font-mono">allow</code> list. This proves where a call came from, not who asked: use it with the check above where you can.</>
+                  : <>The gateway’s outbound addresses aren’t set for this installation; ask your Probaline operator for them.</>}
+            </p>
+          </div>
+        </>
+      )}
+    </Panel>
+  );
+}
+
+// ── Incoming: MCP servers on laptops ────────────────────────────────────────────────────────────────────────
+
+function LaptopScanPanel() {
+  return (
+    <Panel aria-label="MCP servers on laptops" className="px-6 py-5 flex flex-col gap-3">
+      <div className="flex items-center gap-3"><h2 className="m-0 text-xl font-semibold">Laptops: find MCP servers people set up themselves</h2><Beta /></div>
+      <p className="m-0 text-sm text-ink-muted max-w-[760px]">
+        A read-only script for your device management (Jamf, Kandji, Intune). It lists the MCP servers in Claude Desktop, Claude Code, Cursor, VS Code and Windsurf: the app, the server’s name, the package or the URL’s host. It never reads or prints credentials, environment values or other arguments, and sends nothing anywhere.
+      </p>
+      <ol className="m-0 pl-5 text-sm flex flex-col gap-1 list-decimal">
+        <li>Run it on every laptop (as root or SYSTEM it scans every account) and collect the output files.</li>
+        <li>Give them to the collector with the other logs: <code className="font-mono">probaline-collector collect --out ./results ./mcp-scans</code>. Add <code className="font-mono">--company-domains acme.com</code> to the report to flag servers that reach your own systems.</li>
+        <li>Upload the findings file above. Then offer each server as a Probaline MCP server and remove the local copies.</li>
+      </ol>
+      <div className="flex gap-2 flex-wrap">
+        {SCAN_SCRIPTS.map((f) => <Button key={f.name} variant="secondary" onClick={() => download(f.name, f.body, 'text/plain')}>Download {f.name}</Button>)}
+      </div>
+      <p className="m-0 text-xs text-ink-muted">mcp-scan.sh (macOS) is tested; mcp-scan.ps1 (Windows) isn’t yet.</p>
+    </Panel>
+  );
+}
+
 function AwsLockPanel({ data, latestTo }: { data: Enforcement; latestTo?: string }) {
   const [s, setS] = useState<AwsSettings>({ sagemaker: true, ...data.aws });
   const [targets, setTargets] = useState((data.aws.targetIds ?? []).join(', '));
@@ -388,6 +493,8 @@ export function EnforcementPage() {
           </section>
 
           <div id="aws" className="scroll-mt-24"><AwsLockPanel data={data} latestTo={data.findings[0]?.to} /></div>
+          <div id="apis" className="scroll-mt-24"><LockApisPanel egressIps={data.egressIps} /></div>
+          <div id="laptops" className="scroll-mt-24"><LaptopScanPanel /></div>
         </>
       )}
     </div>
