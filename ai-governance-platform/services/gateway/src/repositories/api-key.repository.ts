@@ -24,7 +24,8 @@ export interface ApiKey {
 export interface LicenseInfo {
   plan: string;
   type: 'cloud' | 'onprem';
-  maxUsers: number;
+  /** No longer used: licenses don't limit users. Kept so older records still read. */
+  maxUsers?: number;
   /** What the on-prem agent is allowed to report back. */
   /** From the retired reporting agent; ignored, kept so older records still read. */
   reportingConfig?: { usageMetrics: boolean; costData: boolean; complianceStatus: boolean; auditLogs: boolean };

@@ -155,9 +155,7 @@ by platform admins only.
   in to the dashboard, enter a new key (which takes effect at once) and read their evidence.
 - The platform admin can revoke with the 30 days, or stop at once. Companies that never entered a license get
   the same 30 days: new companies from creation, existing ones from when licensing started being enforced.
-- **Users included:** the License page counts everyone with a dashboard account plus people who used AI through
-  Probaline in the last 30 days (named on AI requests, or signed in to MCP servers), each once. Above the
-  license's number it warns; nothing is cut off.
+- Licenses don't limit or count users: one license covers the whole company.
 - Settings: `LICENSE_GRACE_DAYS` and `LICENSE_WARN_DAYS` (both 30). The platform's own tenant needs no license.
 
 ## Deployment

@@ -62,7 +62,7 @@ describe('licenses', () => {
   }
   const platform = () => appAs('platform_admin', 'tenant_platform');
   const issue = async (tenantId = 'tenant_acme', over: object = {}) =>
-    (await (await platform()).inject({ method: 'POST', url: `/v1/tenants/${tenantId}/licenses`, payload: { plan: 'starter', type: 'cloud', maxUsers: 10, validityDays: 365, ...over } })).json();
+    (await (await platform()).inject({ method: 'POST', url: `/v1/tenants/${tenantId}/licenses`, payload: { plan: 'starter', type: 'cloud', validityDays: 365, ...over } })).json();
 
   it('issues a key that counts only once the company enters it', async () => {
     const issued = await issue();
@@ -80,26 +80,14 @@ describe('licenses', () => {
     expect(JSON.stringify(overview)).not.toContain(issued.licenseKey);
   });
 
-  it('counts users against the license, warning above it without cutting anyone off', async () => {
+  it('sets no limit on users: nothing is counted, and an older client sending a number is ignored', async () => {
     const issued = await issue('tenant_acme', { maxUsers: 3 });
+    expect(issued.maxUsers).toBeUndefined();
     const admin = await appAs('tenant_admin');
     await admin.inject({ method: 'POST', url: '/v1/license/activate', payload: { licenseKey: issued.licenseKey } });
-    for (const [email, status] of [['ana@acme.example', 'active'], ['Bo@Acme.example', 'invited'], ['old@acme.example', 'disabled']]) {
-      await collection('users').put({ tenantId: 'tenant_acme', email, status, role: 'tenant_user' });
-    }
-    let people: { people: string[]; truncated: boolean } | null = { people: ['ana@acme.example', 'cy@acme.example', 'dee@acme.example'], truncated: false };
-    setAnalyticsClient({ optional: async () => people } as any);
-    try {
-      // Accounts ana, bo; people using AI ana (again), cy, dee: 4 people for 3 included.
-      expect((await admin.inject({ method: 'GET', url: '/v1/license/overview' })).json().users)
-        .toEqual({ included: 3, counted: 4, accounts: 2, usedAi: 3, partial: false, over: true });
-      // Analytics down: accounts only, and the page is told the count is partial.
-      people = null;
-      expect((await admin.inject({ method: 'GET', url: '/v1/license/overview' })).json().users)
-        .toMatchObject({ counted: 2, usedAi: null, partial: true, over: false });
-    } finally {
-      setAnalyticsClient(null);
-    }
+    const overview = (await admin.inject({ method: 'GET', url: '/v1/license/overview' })).json();
+    expect(overview.users).toBeUndefined();
+    expect(overview.licenses[0].maxUsers).toBeUndefined();
   });
 
   it('refuses keys that are wrong, for another company, revoked or expired; only admins enter keys', async () => {
@@ -207,7 +195,7 @@ describe('license files for customer-run installs', () => {
     const missing = await platform.inject({ method: 'POST', url: '/v1/tenants/tenant_acme/licenses', payload: { type: 'onprem', plan: 'enterprise' } });
     expect(missing.statusCode).toBe(400);
     expect(missing.json().error).toMatch(/gateway’s address/);
-    const res = await platform.inject({ method: 'POST', url: '/v1/tenants/tenant_acme/licenses', payload: { type: 'onprem', plan: 'enterprise', maxUsers: 100, validityDays: 365, addresses: ['AI-Gateway.Acme.com'] } });
+    const res = await platform.inject({ method: 'POST', url: '/v1/tenants/tenant_acme/licenses', payload: { type: 'onprem', plan: 'enterprise', validityDays: 365, addresses: ['AI-Gateway.Acme.com'] } });
     expect(res.statusCode).toBe(201);
     const issued = res.json();
     expect(issued).toMatchObject({ file: true, addresses: ['ai-gateway.acme.com'], plan: 'enterprise' });
@@ -228,7 +216,8 @@ describe('license files for customer-run installs', () => {
     expect(ok.statusCode).toBe(200);
     expect(ok.json()).toMatchObject({ license: { licenseId: issued.licenseId, addresses: ['ai-gateway.acme.com'] }, status: { state: 'active', plan: 'enterprise' } });
     const overview = (await customer.inject({ method: 'GET', url: '/v1/license/overview' })).json();
-    expect(overview).toMatchObject({ offline: true, licenses: [{ licenseId: issued.licenseId, maxUsers: 100 }], users: { included: 100 } });
+    expect(overview).toMatchObject({ offline: true, licenses: [{ licenseId: issued.licenseId }] });
+    expect(overview.users).toBeUndefined();
   });
 
   it('can’t issue files without a signing key', async () => {

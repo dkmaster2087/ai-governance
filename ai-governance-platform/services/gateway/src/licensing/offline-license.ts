@@ -66,7 +66,7 @@ export class OfflineLicenseState {
       const keys: LicenseKey[] = license ? [{
         tenantId: license.claims.tenantId, keyId: license.claims.id, keyHash: '', keyPrefix: '', name: 'License', scopes: [], status: 'active',
         rateLimit: 0, createdAt: license.claims.issuedAt, expiresAt: license.claims.endsAt, activation: 'active',
-        license: { plan: license.claims.plan, type: 'onprem', maxUsers: license.claims.maxUsers },
+        license: { plan: license.claims.plan, type: 'onprem' },
       } as unknown as LicenseKey] : [];
       return computeLicenseStatus(keys, since);
     } catch (err) {

@@ -861,7 +861,7 @@ describe('compliance frameworks', () => {
 });
 
 describe('licenses', () => {
-  const issue = async (tenantId) => (await call('POST', `/v1/tenants/${tenantId}/licenses`, { headers: platform, body: { plan: 'professional', type: 'cloud', maxUsers: 50, validityDays: 365 } })).body;
+  const issue = async (tenantId) => (await call('POST', `/v1/tenants/${tenantId}/licenses`, { headers: platform, body: { plan: 'professional', type: 'cloud', validityDays: 365 } })).body;
   const enter = (tenantId, licenseKey) => call('POST', '/v1/license/activate', { headers: adminOf(tenantId), body: { licenseKey } });
 
   test('a company enters its key; when the license ends AI requests stop, and a new key starts them again', async () => {

@@ -49,7 +49,7 @@ loaded live as a company admin and as the platform admin, and the deploy, CI and
 | C5 | **The website's contact form tells nobody**: submissions go to a file in the audit bucket. | Email the team (SES) and keep the copy. | ½ day |
 | C6 | **The activity trail and log export** (built in another session) sit on branch `claude/jolly-jemison-6ca103`, and their AWS tables aren't in the deployment. | Merge, add the tables and grants, rerun the end-to-end suite. | 1 day |
 | C7 | **The connector and collector images aren't published**, but the docs tell customers to `docker run probaline/connector`. | Publish both to a public registry from the deploy workflow, versioned. | ½ day |
-| C8 | **"Users included" on a license isn't checked.** | Count active users and keys per company; warn above the limit (don't cut off). | 1 day |
+| C8 | ~~**"Users included" on a license isn't checked.**~~ | Dropped (2026-11-12): licenses no longer carry a user count, so there is nothing to check. | 1 day |
 | C9 | **PostgreSQL deployments still need AWS Secrets Manager.** | A secret backend that encrypts into the database with a key from the environment. | 1–2 days |
 
 ### D. Running it

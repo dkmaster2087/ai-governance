@@ -524,8 +524,6 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           ['A new key is added', 'Everything works again at once.'],
         ]} />
         <P>Administrators can remove a license from the License page. Without another license, the same 30 days start.</P>
-        <H2>Users included</H2>
-        <P>The License page shows how many people count against your license: everyone with a dashboard account, plus people who used AI through Probaline in the last 30 days (named on AI requests by your apps, or signed in to an MCP server). Each person counts once. If you go above the number included, the page says so; nothing is cut off.</P>
       </>
     ),
   },

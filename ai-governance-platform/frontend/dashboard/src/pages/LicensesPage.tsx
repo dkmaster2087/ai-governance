@@ -12,7 +12,7 @@ const field = 'min-h-[42px] px-3 border border-line-strong rounded-lg bg-white';
 export function LicensesPage() {
   const qc = useQueryClient();
   const [issuing, setIssuing] = useState(false);
-  const [form, setForm] = useState({ tenantId: '', plan: 'professional', type: 'cloud' as 'cloud' | 'onprem', maxUsers: 50, validityDays: 365, address: '' });
+  const [form, setForm] = useState({ tenantId: '', plan: 'professional', type: 'cloud' as 'cloud' | 'onprem', validityDays: 365, address: '' });
   const [newKey, setNewKey] = useState<{ key: string; tenantName: string; file?: boolean; licenseId: string; addresses?: string[] } | null>(null);
   const [copied, setCopied] = useState(false);
 
@@ -21,7 +21,7 @@ export function LicensesPage() {
   const refresh = () => qc.invalidateQueries({ queryKey: ['licenses'] });
   const issue = useMutation({
     mutationFn: () => issueLicense(form.tenantId, {
-      plan: form.plan, type: form.type, maxUsers: form.maxUsers, validityDays: form.validityDays,
+      plan: form.plan, type: form.type, validityDays: form.validityDays,
       ...(form.type === 'onprem' ? { addresses: form.address.split(',').map((a) => a.trim()).filter(Boolean) } : {}),
     }),
     onSuccess: (r) => {
@@ -97,9 +97,6 @@ export function LicensesPage() {
                 <span className="text-xs text-ink-muted">Their gateway will serve only this address. For one gateway with two names, separate them with a comma.</span>
               </label>
             )}
-            <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Users included</span>
-              <input className={field} type="number" min={1} value={form.maxUsers} onChange={(e) => setForm({ ...form, maxUsers: Math.max(1, Number(e.target.value) || 1) })} />
-            </label>
             <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Valid for</span>
               <select className={field} value={form.validityDays} onChange={(e) => setForm({ ...form, validityDays: Number(e.target.value) })}>
                 <option value={30}>30 days (trial)</option><option value={365}>1 year</option><option value={730}>2 years</option><option value={1095}>3 years</option>
@@ -122,7 +119,7 @@ export function LicensesPage() {
           <table className="w-full border-collapse min-w-[760px]">
             <thead>
               <tr className="text-left text-xs text-ink-muted">
-                {['Tenant', 'Plan', 'Runs', 'Users', 'Valid until', 'Status', ''].map((h) => <th key={h} className="font-medium px-4 py-3">{h}</th>)}
+                {['Tenant', 'Plan', 'Runs', 'Valid until', 'Status', ''].map((h) => <th key={h} className="font-medium px-4 py-3">{h}</th>)}
               </tr>
             </thead>
             <tbody>
@@ -131,7 +128,6 @@ export function LicensesPage() {
                   <td className="px-4 py-3"><div className="font-semibold">{l.tenantName}</div><div className="font-mono text-xs text-ink-muted">{l.keyPrefix}</div></td>
                   <td className="px-4 py-3 capitalize">{l.plan}</td>
                   <td className="px-4 py-3">{l.file ? <>Their own<div className="font-mono text-xs text-ink-muted">{l.addresses?.join(', ')}</div></> : 'Hosted'}</td>
-                  <td className="px-4 py-3">{l.maxUsers > 0 ? l.maxUsers.toLocaleString() : "—"}</td>
                   <td className="px-4 py-3">{formatDate(l.expiresAt)}</td>
                   <td className="px-4 py-3">
                     <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full whitespace-nowrap', l.status === 'active' ? 'bg-ink-tint text-ink' : 'bg-line-subtle text-ink-soft')}>{STATUS_LABEL[l.status]}</span>

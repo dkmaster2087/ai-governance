@@ -6,7 +6,7 @@ import type { License } from '../lib/license-api';
 
 const fileLicense: License = {
   licenseId: 'lic_9', keyPrefix: 'lic_9', tenantId: 'tenant_acme', tenantName: 'Acme', status: 'active', issuedAt: '2026-11-12T00:00:00Z',
-  expiresAt: '2027-11-12T00:00:00Z', plan: 'enterprise', type: 'onprem', maxUsers: 100, file: true, addresses: ['ai-gateway.acme.com'],
+  expiresAt: '2027-11-12T00:00:00Z', plan: 'enterprise', type: 'onprem', file: true, addresses: ['ai-gateway.acme.com'],
 };
 const issueLicense = vi.fn(async (..._a: unknown[]) => ({ ...fileLicense, licenseFile: 'PBL1.payload.signature' }));
 vi.mock('../lib/license-api', async (orig) => ({

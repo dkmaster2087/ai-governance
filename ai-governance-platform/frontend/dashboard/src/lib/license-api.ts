@@ -19,7 +19,6 @@ export interface License {
   lastUsedAt?: string;
   plan: string;
   type: 'cloud' | 'onprem';
-  maxUsers: number;
   /** A license file for a customer-run install: its gateway address(es). */
   file?: boolean;
   addresses?: string[];
@@ -38,18 +37,7 @@ export interface LicenseStatus {
 }
 
 export const fetchLicenseStatus = async () => (await gateway.get<LicenseStatus>('/v1/license/status')).data;
-/** People counted against the license's "users included". Being over only warns. */
-export interface LicenseUsers {
-  included: number;
-  counted: number;
-  accounts: number;
-  /** People who used AI through Probaline in the last 30 days; null when that couldn't be read. */
-  usedAi: number | null;
-  partial: boolean;
-  over: boolean;
-}
-
-export const fetchLicenseOverview = async () => (await gateway.get<{ status: LicenseStatus; licenses: License[]; users?: LicenseUsers; offline?: boolean }>('/v1/license/overview')).data;
+export const fetchLicenseOverview = async () => (await gateway.get<{ status: LicenseStatus; licenses: License[]; offline?: boolean }>('/v1/license/overview')).data;
 export const activateLicense = async (licenseKey: string) => (await gateway.post<{ license: License; status: LicenseStatus }>('/v1/license/activate', { licenseKey })).data;
 export const removeLicense = async (licenseId: string) => (await gateway.post(`/v1/license/${encodeURIComponent(licenseId)}/remove`, {})).data;
 
@@ -64,7 +52,7 @@ export const fetchMyLicense = async (): Promise<License | null> => {
 };
 export const fetchTenantLicenses = async (tenantId: string) =>
   (await gateway.get<License[]>(`/v1/tenants/${encodeURIComponent(tenantId)}/licenses`, { headers: { 'x-tenant-id': tenantId } })).data;
-export const issueLicense = async (tenantId: string, input: { plan: string; type: 'cloud' | 'onprem'; maxUsers: number; validityDays: number; addresses?: string[] }) =>
+export const issueLicense = async (tenantId: string, input: { plan: string; type: 'cloud' | 'onprem'; validityDays: number; addresses?: string[] }) =>
   (await gateway.post<License & { licenseKey?: string; licenseFile?: string }>(`/v1/tenants/${encodeURIComponent(tenantId)}/licenses`, input)).data;
 /** A customer-run license file again (platform admins): it's signed, not secret, and works only at its address. */
 export const fetchLicenseFile = async (tenantId: string, licenseId: string) =>

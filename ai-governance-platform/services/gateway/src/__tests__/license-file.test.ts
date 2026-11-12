@@ -14,7 +14,7 @@ const pair = () => {
 const OURS = pair();
 const signer = new LocalLicenseSigner(OURS.priv);
 const claims = (over: object = {}) => ({
-  id: 'lic_1', customer: 'Acme', tenantId: 'tenant_acme', plan: 'enterprise' as const, maxUsers: 50,
+  id: 'lic_1', customer: 'Acme', tenantId: 'tenant_acme', plan: 'enterprise' as const,
   addresses: ['AI-Gateway.Acme.com'], issuedAt: iso(-1), endsAt: iso(365), ...over,
 });
 const fileFor = (over: object = {}, s = signer) => signLicenseFile(claims(over), s);
@@ -26,6 +26,10 @@ describe('license files', () => {
   it('verifies what we signed, with the address normalised', async () => {
     const c = verifyLicenseFile(await fileFor());
     expect(c).toMatchObject({ id: 'lic_1', plan: 'enterprise', addresses: ['ai-gateway.acme.com'] });
+  });
+
+  it('still verifies an older file that names a number of users (no longer used)', async () => {
+    expect(verifyLicenseFile(await fileFor({ maxUsers: 50 }))).toMatchObject({ id: 'lic_1', plan: 'enterprise' });
   });
 
   it('refuses a changed file, one signed by someone else, and anything malformed', async () => {

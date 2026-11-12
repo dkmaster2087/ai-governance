@@ -25,7 +25,6 @@ export interface LicenseClaims {
   customer: string;
   tenantId: string;
   plan: 'starter' | 'professional' | 'enterprise';
-  maxUsers: number;
   /** The gateway's address(es): the hostnames it may serve (one gateway, perhaps an internal and an external name). */
   addresses: string[];
   issuedAt: string;
