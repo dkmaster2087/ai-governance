@@ -98,9 +98,24 @@ One image, `services/Dockerfile`, started by `PROBALINE_ROLE`:
 | Step | What | Size | Status |
 |---|---|---|---|
 | 1 | One image, run by role; Cloud runs two roles of it | about 1 week | Built 2026-11-12 |
-| 2 | Signed license file: local checks of signature, end date and gateway address, with notices and grace; the platform issues licenses as files and tracks customers; remove the reporting agent | about 1 week | |
+| 2 | Signed license file: local checks of signature, end date and gateway address, with notices and grace; the platform issues licenses as files and tracks customers; remove the reporting agent | about 1 week | Built 2026-11-12 |
 | 3 | The image serves the dashboard; the customer's SSO (OIDC) and local accounts | about 1 week | |
 | 4 | Packaging: Helm chart, docker-compose, AWS template, install guide, test in a clean environment | about 1 week | |
+
+## How the license works (step 2, built)
+
+- **Issuing (our Cloud):** Licenses page → Issue a license → Runs: On their own infrastructure, with the gateway
+  address. The gateway signs the file with a KMS key (`LicenseSigningKey` in the services stack); we keep a copy
+  for our records and re-download. A license file can't be revoked.
+- **Checking (the customer's install, `LICENSING=offline`):**
+  - The gateway trusts only the public keys compiled into the image (`services/gateway/src/licensing/trusted-keys.ts`).
+  - The license is entered on the License page, or set in `PROBALINE_LICENSE` when installing, and stored in the
+    install's database so every copy agrees.
+  - Before any license is entered, the install has 30 days from its first start.
+- **One gateway:** requests to an address the license doesn't name are refused with 421 ("This Probaline license is
+  for …"). Health checks and the License page answer on any address.
+- **Limits, stated plainly:** offline licensing is a commercial control. Someone who alters the image can bypass it,
+  as with any offline license; the signed file stops casual copying and editing, and the terms cover the rest.
 
 ## Open questions
 

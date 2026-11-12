@@ -89,12 +89,9 @@ describe('analytics', () => {
     expect(usage.tenants.map((t: any) => t.tenantId).sort()).toEqual(['tenant_a', 'tenant_b']);
   });
 
-  it('gives the reporting agent its own summary and nothing else', async () => {
-    const agent = as('tenant_a', 'reporting_agent');
-    const summary = (await get('/internal/v1/reporting/summary', agent)).json();
-    expect(summary.usage).toMatchObject({ totalRequests: 3, blockedRequests: 1, activeUsers: 1 });
-    expect(summary.cost.totalCost).toBe(1.5);
-    expect((await get('/internal/v1/evidence', agent)).statusCode).toBe(403);
-    expect((await get('/internal/v1/reporting/summary', as('tenant_a', 'tenant_user'))).statusCode).toBe(403);
+  it('has no summary for the retired reporting agent, and refuses its role', async () => {
+    // Customer-run installs send nothing back (docs/HYBRID.md).
+    expect((await get('/internal/v1/reporting/summary', as('tenant_a', 'tenant_admin'))).statusCode).toBe(404);
+    expect((await get('/internal/v1/evidence', as('tenant_a', 'reporting_agent'))).statusCode).toBe(403);
   });
 });

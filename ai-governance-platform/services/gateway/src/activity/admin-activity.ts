@@ -46,7 +46,6 @@ export const ADMIN_ACTIONS: Record<string, string> = {
   'PUT /v1/tenants/:tenantId': 'tenant.updated',
   'POST /v1/tenants/:tenantId/suspend': 'tenant.suspended',
   'POST /v1/tenants/:tenantId/activate': 'tenant.activated',
-  'PUT /v1/license/reporting': 'reporting_license.updated',
   'POST /v1/tenants/:tenantId/licenses': 'license.issued',
   'POST /v1/tenants/:tenantId/licenses/:licenseId/revoke': 'license.revoked',
   'POST /v1/metrics/reset': 'metrics.reset',
@@ -88,7 +87,7 @@ export const ADMIN_ACTIONS: Record<string, string> = {
 };
 
 /** Traffic and machine routes: not admin activity (decisions and sign-ins cover them). */
-const NOT_ADMIN = [/^\/v1\/enforcement\/feeds\/preview$/, /^\/v1\/chat\//, /^\/v1\/proxy\//, /^\/v1\/shadow-ai\/events/, /^\/v1\/reporting\//, /^\/v1\/ai\//,
+const NOT_ADMIN = [/^\/v1\/enforcement\/feeds\/preview$/, /^\/v1\/chat\//, /^\/v1\/proxy\//, /^\/v1\/shadow-ai\/events/, /^\/v1\/ai\//,
   /^\/v1\/multimodal/, /^\/connector\//, /^\/mcp\//, /^\/oauth\//, /^\/public\//, /^\/health/, /^\/internal\//, /^\/\.well-known\//];
 
 const MUTATING = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);

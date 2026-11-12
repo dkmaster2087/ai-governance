@@ -14,7 +14,7 @@ const SCOPES: Array<{ value: Scope; label: string; hint: string; category: KeyCa
   { value: 'mcp', label: 'Connect AI agents (MCP)', hint: 'Use the tools on your MCP servers', category: 'agents' },
   { value: 'shadow_ai:ingest', label: 'Browser extension', hint: 'Report visits and read extension settings only', category: 'extension' },
 ];
-const SCOPE_LABEL: Record<string, string> = { chat: 'Send AI requests', models: 'List models', 'shadow_ai:ingest': 'Browser extension', 'reporting:ingest': 'On-prem license', mcp: 'Connect AI agents (MCP)' };
+const SCOPE_LABEL: Record<string, string> = { chat: 'Send AI requests', models: 'List models', 'shadow_ai:ingest': 'Browser extension', 'reporting:ingest': 'License', mcp: 'Connect AI agents (MCP)' };
 
 type Status = 'active' | 'ended';
 const isActive = (k: ApiKeySummary) => k.status === 'active' && !(k.expiresAt && new Date(k.expiresAt) < new Date());

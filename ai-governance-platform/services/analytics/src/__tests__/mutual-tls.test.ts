@@ -47,8 +47,8 @@ describe('mutual TLS between services', () => {
     expect(await call('/internal/v1/rules/activity', { token: gatewayToken() })).toBe(401);
     // A 'gateway' certificate from another install's CA isn't this install's gateway.
     expect(await call('/internal/v1/rules/activity', { as: 'gateway', certsFrom: other, token: gatewayToken() })).toBe(401);
-    // Another service's certificate can't carry the gateway's token.
-    expect(await call('/internal/v1/rules/activity', { as: 'reporting-agent', token: gatewayToken() })).toBe(403);
+    // Another service's certificate (here, analytics' own) isn't the gateway's.
+    expect(await call('/internal/v1/rules/activity', { as: 'analytics', token: gatewayToken() })).toBe(401);
   });
 
   it('keeps health checks open, and the gateway checks it reached the right service', async () => {

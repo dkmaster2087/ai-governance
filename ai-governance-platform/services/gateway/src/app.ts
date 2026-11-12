@@ -12,7 +12,6 @@ import { costRoutes } from './routes/cost.routes';
 import { proxyRoutes } from './routes/proxy.routes';
 import { apiKeyRoutes } from './routes/api-key.routes';
 import { alertRoutes } from './routes/alert.routes';
-import { reportingRoutes } from './routes/reporting.routes';
 import { errorHandler } from './middleware/error.handler';
 import { authMiddleware } from './middleware/auth.middleware';
 import { inputValidation } from './middleware/input-validation';
@@ -20,6 +19,7 @@ import { setupGracefulShutdown } from './middleware/graceful-shutdown';
 import { requestTracing } from './middleware/request-tracing';
 import { getSecurityConfig } from './config/security';
 import { clientAddressConfig, clientAddressPlugin } from './middleware/client-address';
+import { licensedAddressOnly, offlineLicensing } from './licensing/offline-license';
 import { metricsRoutes } from './routes/metrics.routes';
 import { gatewayRoutes } from './routes/gateway.routes';
 import { platformRoutes } from './routes/platform.routes';
@@ -79,6 +79,10 @@ export async function buildApp() {
     }
   });
 
+  // A customer-run install serves only the address its license names: one license, one gateway (docs/HYBRID.md).
+  // Health checks and the License page answer on any address, so an install reached the wrong way can be fixed.
+  if (offlineLicensing()) licensedAddressOnly(app);
+
   // Auth & validation
   await app.register(requestTracing);
   await app.register(authMiddleware);
@@ -98,7 +102,6 @@ export async function buildApp() {
   await app.register(proxyRoutes, { prefix: '/v1' });
   await app.register(apiKeyRoutes, { prefix: '/v1' });
   await app.register(alertRoutes, { prefix: '/v1' });
-  await app.register(reportingRoutes, { prefix: '/v1' });
   await app.register(gatewayRoutes, { prefix: '/v1' });
   await app.register(platformRoutes, { prefix: '/v1' });
   await app.register(rulesRoutes, { prefix: '/v1' });

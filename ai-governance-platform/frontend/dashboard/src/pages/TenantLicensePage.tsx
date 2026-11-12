@@ -3,26 +3,33 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
 import {
-  activateLicense, fetchLicenseOverview, formatDate, License, removeLicense, REPORTING_LABELS, ReportingConfig, setReporting, statusMessage,
+  activateLicense, fetchLicenseOverview, formatDate, License, removeLicense, statusMessage,
 } from '../lib/license-api';
 import { errorMessage } from '../lib/rules-api';
-import { Button, ConfirmAction, Note, Panel, SectionLabel, Switch } from '../components/kit/primitives';
+import { Button, ConfirmAction, Note, Panel, SectionLabel } from '../components/kit/primitives';
 
 /** What a company sees of its own licenses: an ended license is "Expired", whatever ended it. */
 const companyLabel = (l: License) => (l.status === 'active' ? 'Active' : l.status === 'removed' ? 'Removed' : 'Expired');
 
-function EnterKey({ onDone }: { onDone: () => void }) {
+function EnterKey({ onDone, file }: { onDone: () => void; file: boolean }) {
   const [key, setKey] = useState('');
   const enter = useMutation({ mutationFn: () => activateLicense(key.trim()), onSuccess: () => { setKey(''); onDone(); } });
+  const input = 'flex-1 min-w-[240px] min-h-[42px] px-3 border border-line-strong rounded-lg bg-white font-mono text-[13px]';
   return (
     <Panel aria-label="Enter a license key" className="px-7 py-6 flex flex-col gap-3">
-      <SectionLabel>Enter a license key</SectionLabel>
-      <p className="m-0 text-ink-muted">Paste the key your provider sent. It takes effect at once.</p>
+      <SectionLabel>{file ? 'Enter a license file' : 'Enter a license key'}</SectionLabel>
+      <p className="m-0 text-ink-muted">
+        {file
+          ? 'Paste the license file Probaline sent (it starts with PBL1). This gateway checks it by itself; nothing is sent to Probaline. It takes effect at once and replaces the current one.'
+          : 'Paste the key your provider sent. It takes effect at once.'}
+      </p>
       <form className="flex flex-wrap gap-2 items-start" onSubmit={(e) => { e.preventDefault(); if (key.trim()) enter.mutate(); }}>
-        <input
-          aria-label="License key" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" spellCheck={false}
-          placeholder="pbl_…" className="flex-1 min-w-[240px] min-h-[42px] px-3 border border-line-strong rounded-lg bg-white font-mono text-[13px]"
-        />
+        {file ? (
+          <textarea aria-label="License file" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" spellCheck={false} rows={4}
+            placeholder="PBL1.…" className={`${input} py-2 w-full`} />
+        ) : (
+          <input aria-label="License key" value={key} onChange={(e) => setKey(e.target.value)} autoComplete="off" spellCheck={false} placeholder="pbl_…" className={input} />
+        )}
         <Button type="submit" disabled={!key.trim() || enter.isPending}>{enter.isPending ? 'Checking…' : 'Add license'}</Button>
       </form>
       {enter.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(enter.error)}</p>}
@@ -38,7 +45,7 @@ function LicenseCard({ l, canRemove, onRemoved }: { l: License; canRemove: boole
       <div className="flex flex-wrap items-center gap-3">
         <h2 className="m-0 text-[22px] font-bold capitalize">{l.plan} plan</h2>
         <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full', l.status === 'active' ? 'bg-ink-tint text-ink' : 'bg-stop-soft text-stop-text')}>{companyLabel(l)}</span>
-        {canRemove && l.status === 'active' && (
+        {canRemove && l.status === 'active' && !l.addresses && (
           <span className="ml-auto">
             <ConfirmAction label="Remove" variant="ghost" disabled={remove.isPending} onConfirm={() => remove.mutate()}
               question="Remove this license from your company? Without another license, AI requests stop after the grace period." />
@@ -46,12 +53,13 @@ function LicenseCard({ l, canRemove, onRemoved }: { l: License; canRemove: boole
         )}
       </div>
       <dl className="m-0 grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(160px, 1fr))' }}>
-        <div><dt className="text-xs text-ink-muted">Runs</dt><dd className="m-0 mt-0.5 font-semibold">{l.type === 'onprem' ? 'In your own AWS account' : 'Hosted'}</dd></div>
+        <div><dt className="text-xs text-ink-muted">Runs</dt><dd className="m-0 mt-0.5 font-semibold">{l.addresses ? 'On your own infrastructure' : 'Hosted'}</dd></div>
+        {l.addresses && <div><dt className="text-xs text-ink-muted">Gateway address</dt><dd className="m-0 mt-0.5 font-mono text-[13px] [overflow-wrap:anywhere]">{l.addresses.join(', ')}</dd></div>}
         <div><dt className="text-xs text-ink-muted">Users included</dt><dd className="m-0 mt-0.5 font-semibold">{l.maxUsers.toLocaleString()}</dd></div>
         <div><dt className="text-xs text-ink-muted">Added</dt><dd className="m-0 mt-0.5 font-semibold">{formatDate(l.activatedAt ?? l.issuedAt)}</dd></div>
         <div><dt className="text-xs text-ink-muted">{l.status === 'active' ? 'Valid until' : 'Ended'}</dt>
           <dd className="m-0 mt-0.5 font-semibold">{formatDate(l.status === 'active' ? l.expiresAt : l.revokedAt ?? l.removedAt ?? l.expiresAt)}</dd></div>
-        <div><dt className="text-xs text-ink-muted">Key</dt><dd className="m-0 mt-0.5 font-mono text-xs">{l.keyPrefix}</dd></div>
+        <div><dt className="text-xs text-ink-muted">{l.addresses ? 'License' : 'Key'}</dt><dd className="m-0 mt-0.5 font-mono text-xs">{l.keyPrefix}</dd></div>
       </dl>
       {remove.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(remove.error)}</p>}
     </Panel>
@@ -64,7 +72,6 @@ export function TenantLicensePage() {
   const qc = useQueryClient();
   const { data, isLoading, isError, refetch } = useQuery({ queryKey: ['license-overview', user?.tenantId], queryFn: fetchLicenseOverview });
   const refresh = () => { qc.invalidateQueries({ queryKey: ['license-overview'] }); qc.invalidateQueries({ queryKey: ['license-status'] }); };
-  const save = useMutation({ mutationFn: setReporting, onSuccess: refresh });
 
   if (isLoading) return <Panel className="px-6 py-5 max-w-[900px]"><p className="m-0 text-ink-muted">Loading…</p></Panel>;
   if (isError || !data) return <Panel className="px-6 max-w-[900px]"><Note title="Couldn’t load your license."><button type="button" className="underline font-semibold" onClick={() => refetch()}>Try again</button></Note></Panel>;
@@ -72,8 +79,6 @@ export function TenantLicensePage() {
   const message = statusMessage(data.status, isAdmin);
   const active = data.licenses.filter((l) => l.status === 'active');
   const ended = data.licenses.filter((l) => l.status !== 'active');
-  const reporting = active.find((l) => l.type === 'onprem');
-  const toggle = (key: keyof ReportingConfig, value: boolean) => reporting && save.mutate({ ...reporting.reportingConfig, [key]: value });
 
   return (
     <div className="flex flex-col gap-6 max-w-[900px]">
@@ -84,7 +89,7 @@ export function TenantLicensePage() {
         {message && <p className="m-0 mt-1.5 text-ink-muted text-[15px]">{message.detail}</p>}
       </div>
 
-      {isAdmin && <EnterKey onDone={refresh} />}
+      {isAdmin && <EnterKey onDone={refresh} file={!!data.offline} />}
       {!isAdmin && data.status.state !== 'active' && <Panel className="px-6"><Note title="Only an administrator can enter a license key." /></Panel>}
 
       {active.map((l) => <LicenseCard key={l.licenseId} l={l} canRemove={isAdmin} onRemoved={refresh} />)}
@@ -105,22 +110,6 @@ export function TenantLicensePage() {
               Nothing is cut off. Talk to your Probaline contact to add users at renewal or sooner.
             </Note>
           )}
-        </Panel>
-      )}
-
-      {reporting && (
-        <Panel className="px-7 py-6 flex flex-col gap-3">
-          <SectionLabel>What your on-prem agent sends us</SectionLabel>
-          <p className="m-0 text-ink-muted">Prompts never leave your account. Choose which summaries the reporting agent may send back.</p>
-          {(Object.keys(REPORTING_LABELS) as Array<keyof ReportingConfig>).map((key) => (
-            <div key={key} className="flex items-center justify-between gap-4 py-2 border-b border-line-subtle last:border-b-0">
-              <span className="font-medium">{REPORTING_LABELS[key]}</span>
-              {isAdmin
-                ? <Switch checked={reporting.reportingConfig[key]} label={REPORTING_LABELS[key]} disabled={save.isPending} onChange={(v) => toggle(key, v)} />
-                : <span className="text-sm text-ink-muted">{reporting.reportingConfig[key] ? 'Sent' : 'Not sent'}</span>}
-            </div>
-          ))}
-          {save.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(save.error)}</p>}
         </Panel>
       )}
 

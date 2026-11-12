@@ -117,6 +117,10 @@ node scripts/create-platform-admin.mjs <user-pool-id> you@example.com "First" "L
 | `GOVERNANCE_FAIL_MODE` | gateway | Default when a check can't run: `closed` (block) or `open` |
 | `PROVIDER_KEYS_SECRET_PREFIX` | gateway | Secrets Manager prefix for customers' provider keys |
 | `STORAGE_BACKEND` | gateway, analytics | `dynamodb` (default), `postgres` or `memory` |
+| `PROBALINE_ROLE` | the image | `all` (default: gateway + reports), `gateway` or `reports` |
+| `LICENSING` | gateway | `offline` for a customer-run install: the signed license file is checked locally and the gateway serves only the address it names. Unset in Cloud |
+| `PROBALINE_LICENSE` | gateway (offline) | The license file's text, so a new install works before an admin enters it on the License page |
+| `LICENSE_SIGNING_KMS_KEY_ID` | gateway (Cloud) | The KMS key that signs license files issued from the Licenses page (`LICENSE_SIGNING_KEY`, a PEM, works in development only) |
 | `DATABASE_URL`, `PG_TABLE_PREFIX` | same | PostgreSQL connection (`?sslmode=require` for TLS) and optional table prefix |
 | `MCP_SERVERS_TABLE`, `MCP_APIS_TABLE`, `MCP_TOOLS_TABLE`, `MCP_VERSIONS_TABLE`, `MCP_APPROVALS_TABLE`, `MCP_OAUTH_TABLE`, `MCP_CONNECTORS_TABLE` | gateway | DynamoDB tables for MCP servers (set by CDK) |
 | `INTERNAL_SIGNING_KEY` | gateway, reporting agent | The private key internal requests are signed with, as JSON `{"iss","privateKey"}` (`scripts/internal-keys.mjs`; Secrets Manager in AWS) |

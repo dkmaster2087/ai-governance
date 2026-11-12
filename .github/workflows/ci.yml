@@ -203,7 +203,6 @@ jobs:
         include:
           # The product: one image (gateway with every check, plus reports), run by role. See services/Dockerfile.
           - { name: probaline, dockerfile: services/Dockerfile, context: ., kind: service, args: '' }
-          - { name: reporting-agent, dockerfile: services/Dockerfile, context: ., kind: service, args: '--build-arg TARGET=reporting-agent' }
           - { name: collector, dockerfile: collector/Dockerfile, context: ., kind: agent }
           - { name: connector, dockerfile: connector/Dockerfile, context: ., kind: agent }
     steps:

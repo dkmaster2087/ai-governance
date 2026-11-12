@@ -1,10 +1,12 @@
 import { FastifyInstance } from 'fastify';
 import { allPages, collection } from '@ai-governance/storage';
 import { createLogger } from '@ai-governance/utils';
-import { randomUUID } from 'crypto';
+import { createHash, randomUUID } from 'crypto';
 import { z } from 'zod';
 import { tenantSettings } from '../services/tenant-settings.service';
 import { userDirectory } from '../services/user-directory';
+import { LicenseClaims, LicenseFileError, licenseSignerFromEnv, signLicenseFile } from '../licensing/license-file';
+import { offlineLicense, offlineLicensing } from '../licensing/offline-license';
 import { ApiKeyRepository, generateApiKey, hashApiKey, LicenseInfo } from '../repositories/api-key.repository';
 import { GRACE_DAYS, LicenseKey, licenseState } from '../services/license-state';
 import { forgetApiKey } from '../middleware/auth.middleware';
@@ -171,10 +173,9 @@ export async function tenantRoutes(app: FastifyInstance) {
     plan: z.enum(['starter', 'professional', 'enterprise']).default('professional'),
     type: z.enum(['cloud', 'onprem']).default('cloud'),
     maxUsers: z.number().int().min(1).max(1_000_000).default(50),
-  });
-  const reportingSchema = z.object({
-    usageMetrics: z.boolean(), costData: z.boolean(), complianceStatus: z.boolean(), auditLogs: z.boolean(),
-  });
+    /** Customer-run (onprem) only: the gateway's hostname(s), e.g. ai-gateway.customer.com. One gateway; at most 3 names. */
+    addresses: z.array(z.string().trim().toLowerCase().regex(/^(?=.{1,253}$)([a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)(\.[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?)*$/, 'A hostname such as ai-gateway.customer.com')).min(1).max(3).optional(),
+  }).refine((b) => b.type !== 'onprem' || (b.addresses?.length ?? 0) > 0, { message: 'A customer-run license needs the gateway’s address', path: ['addresses'] });
   const revokeSchema = z.object({ graceDays: z.number().int().min(0).max(90).optional() });
   const activateSchema = z.object({ licenseKey: z.string().trim().min(10).max(200) });
 
@@ -201,8 +202,28 @@ export async function tenantRoutes(app: FastifyInstance) {
     plan: k.license?.plan ?? 'professional',
     type: k.license?.type ?? 'onprem',
     maxUsers: k.license?.maxUsers ?? 0,
-    reportingConfig: k.license?.reportingConfig ?? { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: false },
   });
+
+  /** A license file, as the License pages show it. */
+  const fileLicenseView = (c: LicenseClaims, activatedAt?: string) => ({
+    licenseId: c.id,
+    keyPrefix: c.id,
+    tenantId: c.tenantId,
+    tenantName: c.customer,
+    status: Date.parse(c.endsAt) <= Date.now() ? 'expired' as const : 'active' as const,
+    issuedAt: c.issuedAt,
+    expiresAt: c.endsAt,
+    ...(activatedAt ? { activatedAt } : {}),
+    plan: c.plan,
+    type: 'onprem' as const,
+    maxUsers: c.maxUsers,
+    addresses: c.addresses,
+  });
+
+  /** License files we issued for customer-run installs: our records only; they don't affect the company's Cloud license. */
+  const FILE_SCOPE = 'license:file';
+  const fileLicensesOf = async (tenantId: string) =>
+    (await licenseKeys.getForTenant(tenantId)).filter((k) => k.scopes?.includes(FILE_SCOPE)) as Array<LicenseKey & { addresses?: string[]; licenseFile?: string }>;
 
   const licensesOf = async (tenantId: string) =>
     (await licenseKeys.getForTenant(tenantId)).filter((k) => k.scopes?.includes('reporting:ingest')) as LicenseKey[];
@@ -211,7 +232,10 @@ export async function tenantRoutes(app: FastifyInstance) {
   /** Every license across tenants (platform admins). */
   app.get('/licenses', { preHandler: requireAccess(PLATFORM_ADMIN) }, async () => {
     const list = (await allTenants()) as Array<{ tenantId: string; name?: string }>;
-    const lists = await Promise.all(list.map(async (t) => (await licensesOf(t.tenantId)).map((k) => toView(k, t.name))));
+    const lists = await Promise.all(list.map(async (t) => [
+      ...(await licensesOf(t.tenantId)).map((k) => toView(k, t.name)),
+      ...(await fileLicensesOf(t.tenantId)).map((k) => ({ ...toView(k, t.name), addresses: k.addresses ?? [], file: true })),
+    ]));
     return lists.flat().sort((a, b) => b.issuedAt.localeCompare(a.issuedAt));
   });
 
@@ -245,6 +269,15 @@ export async function tenantRoutes(app: FastifyInstance) {
 
   /** The company's licenses (entered ones; issued keys not yet entered stay hidden) and where it stands. */
   app.get('/license/overview', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
+    if (offlineLicensing()) {
+      const current = await offlineLicense().current();
+      return {
+        status: (await licenseState().get(request.tenantId)) ?? { state: 'active' },
+        licenses: current ? [fileLicenseView(current.claims, current.installedAt)] : [],
+        users: await usersCounted(request, current?.claims.maxUsers ?? 0),
+        offline: true,
+      };
+    }
     const tenant = await tenants().get({ tenantId: request.tenantId });
     const all = (await licensesOf(request.tenantId)).filter((k) => k.activation !== 'pending').sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const current = all.find((k) => statusOf(k) === 'active');
@@ -266,6 +299,18 @@ export async function tenantRoutes(app: FastifyInstance) {
 
   /** A company admin enters the key their provider sent. It must be this company's, and still valid. */
   app.post('/license/activate', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
+    // A customer-run install: the license is a signed file, checked here and kept in this install's database.
+    if (offlineLicensing()) {
+      const text = String((request.body as { licenseKey?: unknown })?.licenseKey ?? '').trim();
+      if (!text || text.length > 8000) return reply.status(400).send({ error: 'Paste the license file Probaline sent', code: 'INVALID_LICENSE_KEY' });
+      try {
+        const installed = await offlineLicense().install(text, request.userId);
+        return { license: fileLicenseView(installed.claims, installed.installedAt), status: await licenseState().get(request.tenantId) };
+      } catch (err) {
+        if (err instanceof LicenseFileError) return reply.status(400).send({ error: err.message, code: `LICENSE_${err.code}` });
+        throw err;
+      }
+    }
     const parsed = activateSchema.safeParse(request.body);
     if (!parsed.success) return reply.status(400).send({ error: 'Enter the license key your provider sent', code: 'INVALID_LICENSE_KEY' });
     const found = (await licenseKeys.findByHash(hashApiKey(parsed.data.licenseKey))) as LicenseKey | null;
@@ -289,6 +334,7 @@ export async function tenantRoutes(app: FastifyInstance) {
 
   /** A company admin takes a license off their account. With no other license, the grace period starts. */
   app.post('/license/:licenseId/remove', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
+    if (offlineLicensing()) return reply.status(409).send({ error: 'Enter a new license file to replace this one', code: 'NOT_SUPPORTED' });
     const { licenseId } = request.params as { licenseId: string };
     const k = (await licensesOf(request.tenantId)).find((x) => x.keyId === licenseId);
     if (!k || k.activation === 'pending') return reply.status(404).send({ error: 'License not found', code: 'NOT_FOUND' });
@@ -297,17 +343,6 @@ export async function tenantRoutes(app: FastifyInstance) {
     changed(request.tenantId);
     logger.info('License removed by the company', { tenantId: request.tenantId, licenseId, by: request.userId });
     return { licenseId, status: 'removed', license: await licenseState().get(request.tenantId) };
-  });
-
-  /** Choose what the on-prem agent may report back (tenant admins). */
-  app.put('/license/reporting', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
-    const parsed = reportingSchema.safeParse(request.body);
-    if (!parsed.success) return reply.status(400).send({ error: 'Invalid reporting settings', code: 'INVALID_SETTINGS' });
-    const current = (await licensesOf(request.tenantId)).find((k) => statusOf(k) === 'active');
-    if (!current) return reply.status(404).send({ error: 'No active license', code: 'NOT_FOUND' });
-    const base = toView(current);
-    await licenseKeys.setLicenseInfo(request.tenantId, current.keyId, { plan: base.plan, type: base.type, maxUsers: base.maxUsers, reportingConfig: parsed.data });
-    return { reportingConfig: parsed.data };
   });
 
   app.get('/tenants/:tenantId/licenses', { preHandler: [requireAccess({ roles: ['tenant_admin', 'tenant_auditor'] }), requireTenantParam] }, async (request) => {
@@ -319,18 +354,38 @@ export async function tenantRoutes(app: FastifyInstance) {
   app.post('/tenants/:tenantId/licenses', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
     const { tenantId } = request.params as { tenantId: string };
     const parsed = issueLicenseSchema.safeParse(request.body ?? {});
-    if (!parsed.success) return reply.status(400).send({ error: 'Invalid license', code: 'INVALID_LICENSE' });
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid license', code: 'INVALID_LICENSE' });
     const body = parsed.data;
     const tenant = await tenants().get({ tenantId });
     if (!tenant) return reply.status(404).send({ error: 'Tenant not found' });
 
+    // Customer-run: a signed file the gateway checks by itself. We keep a copy for our records and re-download.
+    if (body.type === 'onprem') {
+      const signer = licenseSignerFromEnv();
+      if (!signer) return reply.status(503).send({ error: 'This deployment has no license-signing key, so it can’t issue license files', code: 'NO_SIGNING_KEY' });
+      const id = `lic_${randomUUID().replace(/-/g, '').slice(0, 16)}`;
+      const issuedAt = new Date().toISOString();
+      const endsAt = new Date(Date.now() + body.validityDays * 86400000).toISOString();
+      const licenseFile = await signLicenseFile({
+        id, customer: String(tenant.name ?? tenantId), tenantId, plan: body.plan, maxUsers: body.maxUsers, addresses: body.addresses!, issuedAt, endsAt,
+      }, signer);
+      const record = {
+        tenantId, keyId: id, keyHash: createHash('sha256').update(licenseFile).digest('hex'), keyPrefix: id, name: body.name,
+        scopes: [FILE_SCOPE], status: 'active', rateLimit: 0, createdAt: issuedAt, expiresAt: endsAt, createdBy: request.userId,
+        license: { plan: body.plan, type: 'onprem', maxUsers: body.maxUsers }, addresses: body.addresses, licenseFile, activation: 'active',
+      } as unknown as LicenseKey;
+      await licenseRecords().put(record);
+      logger.info('License file issued', { tenantId, licenseId: id, endsAt, addresses: body.addresses, by: request.userId });
+      return reply.status(201).send({
+        ...toView(record, tenant.name as string), addresses: body.addresses, file: true, licenseFile,
+        message: 'Send this file to the company. They enter it on their gateway’s License page, or set it in PROBALINE_LICENSE when installing. Their gateway checks it by itself and serves only the address it names.',
+      });
+    }
+
     const { raw, hash, prefix, keyId } = generateApiKey(tenantId);
     const now = new Date().toISOString();
     const expiresAt = new Date(Date.now() + body.validityDays * 86400000).toISOString();
-    const license: LicenseInfo = {
-      plan: body.plan, type: body.type, maxUsers: body.maxUsers,
-      reportingConfig: { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: false },
-    };
+    const license: LicenseInfo = { plan: body.plan, type: body.type, maxUsers: body.maxUsers };
     const record: LicenseKey = {
       tenantId, keyId, keyHash: hash, keyPrefix: prefix, name: body.name,
       scopes: ['reporting:ingest'], status: 'active', rateLimit: 60,
@@ -345,11 +400,21 @@ export async function tenantRoutes(app: FastifyInstance) {
     });
   });
 
+  /** Download a license file again (platform admins): it's signed, not secret, and only works at its address. */
+  app.get('/tenants/:tenantId/licenses/:licenseId/file', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
+    const { tenantId, licenseId } = request.params as { tenantId: string; licenseId: string };
+    const k = (await fileLicensesOf(tenantId)).find((x) => x.keyId === licenseId);
+    if (!k?.licenseFile) return reply.status(404).send({ error: 'License file not found', code: 'NOT_FOUND' });
+    return { licenseId, licenseFile: k.licenseFile };
+  });
+
   /** End a license. The company keeps working through a grace period (default 30 days; 0 stops it at once). */
   app.post('/tenants/:tenantId/licenses/:licenseId/revoke', { preHandler: requireAccess(PLATFORM_ADMIN) }, async (request, reply) => {
     const { tenantId, licenseId } = request.params as { tenantId: string; licenseId: string };
     const parsed = revokeSchema.safeParse(request.body ?? {});
     if (!parsed.success) return reply.status(400).send({ error: 'graceDays must be 0 to 90', code: 'INVALID_GRACE' });
+    const file = (await fileLicensesOf(tenantId)).find((k) => k.keyId === licenseId);
+    if (file) return reply.status(409).send({ error: `A license file can’t be revoked: the customer’s gateway never contacts us. It ends on ${file.expiresAt?.slice(0, 10)}.`, code: 'FILE_LICENSE' });
     if (!(await licensesOf(tenantId)).some((k) => k.keyId === licenseId)) return reply.status(404).send({ error: 'License not found', code: 'NOT_FOUND' });
     const now = new Date();
     const graceDays = parsed.data.graceDays ?? GRACE_DAYS();

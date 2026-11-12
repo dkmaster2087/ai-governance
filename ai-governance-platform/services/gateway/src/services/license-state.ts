@@ -141,5 +141,15 @@ export class LicenseStateService {
 }
 
 let shared: LicenseStateService | null = null;
-export const licenseState = () => (shared ??= new LicenseStateService());
+/**
+ * The license state the gateway enforces. Cloud: licenses we issued, per company. A customer-run install
+ * (LICENSING=offline): its one signed license file, checked locally (licensing/offline-license.ts).
+ */
+export const licenseState = (): Pick<LicenseStateService, 'get' | 'invalidate'> => {
+  if ((process.env.LICENSING ?? '').toLowerCase() === 'offline') {
+    // Loaded here, not at the top: that module builds on this one.
+    return (require('../licensing/offline-license') as typeof import('../licensing/offline-license')).offlineLicense();
+  }
+  return (shared ??= new LicenseStateService());
+};
 export const setLicenseState = (s: LicenseStateService | null) => { shared = s; };

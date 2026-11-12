@@ -338,3 +338,16 @@ the company's fail mode decides.
 Cleanup left for later: the old image repositories (gateway, policy-engine, data-protection, analytics) are still
 exported by the registry stack for stacks that haven't moved; the policy-engine and data-protection TLS secrets in
 Secrets Manager are unused. The reporting agent is retired in hybrid step 2.
+
+## Customer-run licensing (2026-11-12)
+
+Hybrid step 2. License files (`PBL1.…`) signed with a KMS key (dev: alias/ai-gov-license-signing-dev) and
+checked by the gateway with the public key compiled into the image; `LICENSING=offline` turns it on. Same
+timeline as Cloud (30 days of notice, 30 days of grace, then AI requests refused); an unlicensed install has 30
+days from first start. The gateway serves only the address the license names (421 otherwise). Platform admins
+issue files from the Licenses page ("On their own infrastructure" + gateway address), download them again, and
+can't revoke them. The reporting agent and its endpoints are removed: customer-run installs send nothing to us.
+
+Verified: unit tests (gateway 416, analytics 50, dashboard 107, infra 48); a license signed through the dev KMS
+key, run in the customer image offline: active, licensed address served, other address refused, health open.
+Not yet clicked: issuing a file from the Licenses page as a platform admin on dev.

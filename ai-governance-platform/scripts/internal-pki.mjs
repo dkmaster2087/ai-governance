@@ -2,7 +2,7 @@
 /**
  * Certificates for calls between Probaline's services (mutual TLS). Each install gets its own private
  * certificate authority; each service a certificate naming it (gateway,
- * analytics, reporting-agent), used both to serve and to call. Needs `openssl` (present on macOS, Linux and
+ * analytics), used both to serve and to call. Needs `openssl` (present on macOS, Linux and
  * CI runners).
  *
  *   node scripts/internal-pki.mjs local <dir>
@@ -21,7 +21,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 
-export const SERVICES = ['gateway', 'analytics', 'reporting-agent'];
+export const SERVICES = ['gateway', 'analytics'];
 
 const ssl = (args, opts = {}) => execFileSync('openssl', args, { stdio: ['ignore', 'pipe', 'pipe'], ...opts });
 

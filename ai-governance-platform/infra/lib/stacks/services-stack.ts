@@ -177,6 +177,17 @@ export class ServicesStack extends cdk.Stack {
       blockedOutputsMessaging: 'Blocked by Probaline.',
     });
 
+    // License files for customer-run installs are signed with this key; its private half never leaves KMS.
+    // Customer gateways check them against the public half, compiled into the image
+    // (services/gateway/src/licensing/trusted-keys.ts). Kept on delete: licenses it signed stay in use.
+    const licenseSigningKey = new kms.Key(this, 'LicenseSigningKey', {
+      description: `Probaline ${stage}: signs license files for customer-run installs`,
+      keySpec: kms.KeySpec.ECC_NIST_P256,
+      keyUsage: kms.KeyUsage.SIGN_VERIFY,
+      alias: `alias/${prefix}-license-signing-${stage}`,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+
     // --- Gateway Service (public-facing) ---
     this.gatewayService = this.createService({
       id: 'Gateway',
@@ -209,6 +220,7 @@ export class ServicesStack extends cdk.Stack {
           MCP_CONNECTORS_TABLE: props.mcpTables.connectors.tableName,
         } : {}),
         ...(emailFrom ? { EMAIL_FROM: emailFrom } : {}),
+        LICENSE_SIGNING_KMS_KEY_ID: licenseSigningKey.keyArn,
         // The working draft: it always has the filter as defined above.
         ...(attackGuardrail ? { PROMPT_ATTACK_GUARDRAIL_ID: attackGuardrail.attrGuardrailId, PROMPT_ATTACK_GUARDRAIL_VERSION: 'DRAFT' } : {}),
         ...(contactEmail ? { CONTACT_EMAIL_TO: contactEmail } : {}),
@@ -290,6 +302,12 @@ export class ServicesStack extends cdk.Stack {
         resources: ['*'],
       })
     );
+    // Only the gateway may sign license files (platform admins issue them from the Licenses page).
+    this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: ['kms:Sign', 'kms:GetPublicKey'],
+      resources: [licenseSigningKey.keyArn],
+    }));
+    new cdk.CfnOutput(this, 'LicenseSigningKeyArn', { value: licenseSigningKey.keyArn });
     if (attackGuardrail) {
       this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
         actions: ['bedrock:ApplyGuardrail'],

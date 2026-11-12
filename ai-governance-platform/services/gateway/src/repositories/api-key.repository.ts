@@ -17,7 +17,7 @@ export interface ApiKey {
   expiresAt?: string;
   lastUsedAt?: string;
   createdBy: string;
-  /** Present on on-prem license keys (scope 'reporting:ingest'). */
+  /** Present on Cloud license keys (scope 'reporting:ingest', a name kept from the retired reporting agent). */
   license?: LicenseInfo;
 }
 
@@ -26,7 +26,8 @@ export interface LicenseInfo {
   type: 'cloud' | 'onprem';
   maxUsers: number;
   /** What the on-prem agent is allowed to report back. */
-  reportingConfig: { usageMetrics: boolean; costData: boolean; complianceStatus: boolean; auditLogs: boolean };
+  /** From the retired reporting agent; ignored, kept so older records still read. */
+  reportingConfig?: { usageMetrics: boolean; costData: boolean; complianceStatus: boolean; auditLogs: boolean };
 }
 
 /** Generate a secure API key: pbl_<tenantShort>_<random32hex> */

@@ -3,7 +3,7 @@
  * Build Probaline, the connector or the collector for shipping: bundled, compiled to V8 bytecode, so no
  * readable source ships.
  *
- *   node scripts/build-service.mjs <probaline|gateway|analytics|reporting-agent|connector|collector> [--out build] [--compile]
+ *   node scripts/build-service.mjs <probaline|gateway|analytics|connector|collector> [--out build] [--compile]
  *
  * `probaline` is the product image: the gateway (with every check inside it) and reports (analytics), with a
  * loader that starts them by role. Writes <out>/probaline/:
@@ -26,7 +26,6 @@ const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const PROGRAMS = {
   gateway: 'services/gateway/src/index.ts',
   analytics: 'services/analytics/src/index.ts',
-  'reporting-agent': 'services/reporting-agent/src/index.ts',
   // Programs customers run in their own network.
   connector: 'connector/src/cli.ts',
   collector: 'collector/src/cli.ts',

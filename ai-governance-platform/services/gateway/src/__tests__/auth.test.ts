@@ -213,10 +213,10 @@ describe('gateway auth', () => {
     });
   });
 
-  describe('public and license routes', () => {
-    it('leaves health and license-authenticated routes to their handlers', async () => {
+  describe('public routes', () => {
+    it('leaves health to its handler, and the retired reporting routes need a key like everything else', async () => {
       expect((await app.inject({ method: 'GET', url: '/health' })).statusCode).toBe(200);
-      expect((await app.inject({ method: 'POST', url: '/v1/reporting/ingest', payload: {} })).json()).toEqual({ reachedHandler: true });
+      expect((await app.inject({ method: 'POST', url: '/v1/reporting/ingest', payload: {} })).statusCode).toBe(401);
     });
   });
 

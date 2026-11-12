@@ -135,17 +135,13 @@ describe('licenses', () => {
     expect((await admin.inject({ method: 'GET', url: '/v1/license/status' })).json().state).toBe('grace');
   });
 
-  it('only lets platform admins see every license, issue or revoke; tenant admins choose what is reported', async () => {
+  it('only lets platform admins see every license, issue or revoke', async () => {
     const tenantAdmin = await appAs('tenant_admin');
     expect((await tenantAdmin.inject({ method: 'GET', url: '/v1/licenses' })).statusCode).toBe(403);
     expect((await tenantAdmin.inject({ method: 'POST', url: '/v1/tenants/tenant_acme/licenses', payload: {} })).statusCode).toBe(403);
     const a = await issue();
     expect((await tenantAdmin.inject({ method: 'POST', url: `/v1/tenants/tenant_acme/licenses/${a.licenseId}/revoke`, payload: {} })).statusCode).toBe(403);
     expect((await (await platform()).inject({ method: 'GET', url: '/v1/licenses' })).json().map((l: any) => l.licenseId)).toEqual([a.licenseId]);
-    await tenantAdmin.inject({ method: 'POST', url: '/v1/license/activate', payload: { licenseKey: a.licenseKey } });
-    const body = { usageMetrics: true, costData: false, complianceStatus: true, auditLogs: false };
-    expect((await (await appAs('tenant_auditor')).inject({ method: 'PUT', url: '/v1/license/reporting', payload: body })).statusCode).toBe(403);
-    expect((await tenantAdmin.inject({ method: 'PUT', url: '/v1/license/reporting', payload: body })).json()).toEqual({ reportingConfig: body });
   });
 });
 
@@ -178,5 +174,66 @@ describe('when a license has lapsed', () => {
       const a = await app(s);
       expect((await a.inject({ method: 'POST', url: '/v1/chat/completions', headers: { authorization: `Bearer ${KEY}` }, payload: {} })).json()).toEqual({ answered: true });
     }
+  });
+});
+
+describe('license files for customer-run installs', () => {
+  const { generateKeyPairSync } = require('crypto');
+  const { trustLicenseKeysForTests } = require('../licensing/license-file');
+  const { OfflineLicenseState, setOfflineLicense } = require('../licensing/offline-license');
+  const { privateKey, publicKey } = generateKeyPairSync('ec', { namedCurve: 'P-256' });
+
+  beforeEach(async () => {
+    setRecords(new MemoryStore());
+    await collection('tenants').put({ tenantId: 'tenant_acme', name: 'Acme', createdAt: iso(-400) });
+    process.env.LICENSE_SIGNING_KEY = privateKey.export({ format: 'pem', type: 'pkcs8' });
+    trustLicenseKeysForTests([{ publicKey: publicKey.export({ format: 'pem', type: 'spki' }), label: 'test' }]);
+    setOfflineLicense(new OfflineLicenseState(0));
+    setAnalyticsClient({ optional: async () => null } as any);
+  });
+  afterEach(() => { delete process.env.LICENSE_SIGNING_KEY; delete process.env.LICENSING; trustLicenseKeysForTests(null); setOfflineLicense(null); setAnalyticsClient(null); });
+
+  async function appAs(role: string, home: string) {
+    const { tenantRoutes } = await import('../routes/tenant.routes');
+    const app = Fastify();
+    app.decorateRequest('principal', null);
+    app.addHook('preHandler', async (req: any) => { req.principal = { kind: 'user', homeTenantId: home, userId: 'u1', role }; req.tenantId = home; req.userId = 'u1'; });
+    await app.register(tenantRoutes, { prefix: '/v1' });
+    return app;
+  }
+
+  it('issues a signed file for the gateway’s address, kept for our records and re-download', async () => {
+    const platform = await appAs('platform_admin', 'tenant_platform');
+    const missing = await platform.inject({ method: 'POST', url: '/v1/tenants/tenant_acme/licenses', payload: { type: 'onprem', plan: 'enterprise' } });
+    expect(missing.statusCode).toBe(400);
+    expect(missing.json().error).toMatch(/gateway’s address/);
+    const res = await platform.inject({ method: 'POST', url: '/v1/tenants/tenant_acme/licenses', payload: { type: 'onprem', plan: 'enterprise', maxUsers: 100, validityDays: 365, addresses: ['AI-Gateway.Acme.com'] } });
+    expect(res.statusCode).toBe(201);
+    const issued = res.json();
+    expect(issued).toMatchObject({ file: true, addresses: ['ai-gateway.acme.com'], plan: 'enterprise' });
+    expect(issued.licenseFile).toMatch(/^PBL1\./);
+    expect((await platform.inject({ method: 'GET', url: `/v1/tenants/tenant_acme/licenses/${issued.licenseId}/file` })).json().licenseFile).toBe(issued.licenseFile);
+    const listed = (await platform.inject({ method: 'GET', url: '/v1/licenses' })).json();
+    expect(listed).toEqual([expect.objectContaining({ licenseId: issued.licenseId, file: true, addresses: ['ai-gateway.acme.com'] })]);
+    // It can't be revoked: the gateway never contacts us. Nor does it change the company's Cloud license.
+    expect((await platform.inject({ method: 'POST', url: `/v1/tenants/tenant_acme/licenses/${issued.licenseId}/revoke`, payload: {} })).statusCode).toBe(409);
+    expect((await (await appAs('tenant_admin', 'tenant_acme')).inject({ method: 'GET', url: '/v1/license/overview' })).json().licenses).toEqual([]);
+
+    // On the customer's install, an admin enters it, and it's in force.
+    process.env.LICENSING = 'offline';
+    const customer = await appAs('tenant_admin', 'tenant_acme');
+    const bad = await customer.inject({ method: 'POST', url: '/v1/license/activate', payload: { licenseKey: issued.licenseFile.slice(0, -4) + 'AAAA' } });
+    expect(bad.statusCode).toBe(400);
+    const ok = await customer.inject({ method: 'POST', url: '/v1/license/activate', payload: { licenseKey: issued.licenseFile } });
+    expect(ok.statusCode).toBe(200);
+    expect(ok.json()).toMatchObject({ license: { licenseId: issued.licenseId, addresses: ['ai-gateway.acme.com'] }, status: { state: 'active', plan: 'enterprise' } });
+    const overview = (await customer.inject({ method: 'GET', url: '/v1/license/overview' })).json();
+    expect(overview).toMatchObject({ offline: true, licenses: [{ licenseId: issued.licenseId, maxUsers: 100 }], users: { included: 100 } });
+  });
+
+  it('can’t issue files without a signing key', async () => {
+    delete process.env.LICENSE_SIGNING_KEY;
+    const res = await (await appAs('platform_admin', 'tenant_platform')).inject({ method: 'POST', url: '/v1/tenants/tenant_acme/licenses', payload: { type: 'onprem', addresses: ['gw.acme.com'] } });
+    expect(res.statusCode).toBe(503);
   });
 });

@@ -30,8 +30,6 @@ const PUBLIC_PREFIXES = ['/health', '/public/',
   '/connector/v1/'];
 /** MCP addresses accept a Probaline API key here, or a sign-in token the MCP route checks itself. */
 const MCP_PREFIX = '/mcp/';
-/** On-prem agent routes authenticate with the license key in the request body instead. */
-const LICENSE_AUTH_ROUTES = ['/v1/reporting/validate-license', '/v1/reporting/ingest'];
 const PROXY_PREFIX = '/v1/proxy/';
 
 /** Claims we read from a verified Cognito ID token. */
@@ -115,7 +113,6 @@ export function createAuthPlugin(deps: AuthDeps) {
     app.addHook('preHandler', async (request, reply) => {
       if (PUBLIC_PREFIXES.some((p) => request.url.startsWith(p))) return;
       const path = request.url.split('?')[0];
-      if (LICENSE_AUTH_ROUTES.includes(path)) return;
       // CORS preflight never carries credentials
       if (request.method === 'OPTIONS') return;
 

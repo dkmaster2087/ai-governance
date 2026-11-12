@@ -90,6 +90,17 @@ describe('ServicesStack', () => {
     expect(roles).toEqual({ GatewayContainer: 'gateway', AnalyticsContainer: 'reports' });
   });
 
+  it('signs license files with a KMS key only the gateway may use, and keeps it on delete', () => {
+    template.hasResourceProperties('AWS::KMS::Key', { KeySpec: 'ECC_NIST_P256', KeyUsage: 'SIGN_VERIFY' });
+    const key = Object.entries(template.findResources('AWS::KMS::Key')).find(([, r]: any) => r.Properties.KeyUsage === 'SIGN_VERIFY')!;
+    expect((key[1] as any).DeletionPolicy).toBe('Retain');
+    const policies = JSON.stringify([template.findResources('AWS::IAM::Policy'), template.findResources('AWS::IAM::ManagedPolicy')]);
+    expect(policies).toContain('kms:Sign');
+    const defs = Object.values(template.findResources('AWS::ECS::TaskDefinition')) as any[];
+    const withKey = defs.filter((d) => d.Properties.ContainerDefinitions[0].Environment.some((e: any) => e.Name === 'LICENSE_SIGNING_KMS_KEY_ID'));
+    expect(withKey.map((d) => d.Properties.ContainerDefinitions[0].Name)).toEqual(['GatewayContainer']);
+  });
+
   it('lets the gateway run the rules, compliance and personal-data checks it now holds', () => {
     const policies = [...Object.values(template.findResources('AWS::IAM::Policy')), ...Object.values(template.findResources('AWS::IAM::ManagedPolicy'))] as any[];
     const gateway = JSON.stringify(policies.filter((p) => JSON.stringify(p.Properties.Roles).includes('GatewayTaskDefTaskRole')));

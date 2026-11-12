@@ -38,7 +38,7 @@ const tenant = (over: Partial<platform.Tenant> = {}): platform.Tenant => ({
 const license = (over: Partial<License> = {}): License => ({
   licenseId: 'l1', keyPrefix: 'pbl_…', tenantId: 'tenant_acme', tenantName: 'Acme', status: 'active', issuedAt: '2026-01-01T00:00:00Z',
   expiresAt: '2099-01-01T00:00:00Z', plan: 'enterprise', type: 'cloud', maxUsers: 100,
-  reportingConfig: { usageMetrics: true, costData: true, complianceStatus: true, auditLogs: false }, ...over,
+  ...over,
 });
 const usage = (requests: number, stopped = 0): platform.PlatformUsage => ({
   from: '', to: '', totals: { requests, stopped, cleaned: 2, cost: 1.5 }, truncated: false,

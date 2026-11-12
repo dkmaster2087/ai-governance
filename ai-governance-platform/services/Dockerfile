@@ -1,6 +1,5 @@
-# The Probaline image, and the reporting agent's. Build from the repository's app folder (npm workspaces):
-#   docker build -f services/Dockerfile -t probaline .                                   the product
-#   docker build -f services/Dockerfile --build-arg TARGET=reporting-agent -t agent .     the reporting agent
+# The Probaline image. Build from the repository's app folder (npm workspaces):
+#   docker build -f services/Dockerfile -t probaline .
 #
 # The product image runs the gateway (every check inside it) and reports. PROBALINE_ROLE picks what a container
 # runs: all (default: both, for a customer's install), gateway, or reports (Cloud runs these apart). See
@@ -22,7 +21,6 @@ COPY shared/utils/package.json shared/utils/
 COPY shared/storage/package.json shared/storage/
 COPY services/gateway/package.json services/gateway/
 COPY services/analytics/package.json services/analytics/
-COPY services/reporting-agent/package.json services/reporting-agent/
 RUN if [ "$TARGET" = probaline ]; then W="-w services/gateway -w services/analytics"; else W="-w services/$TARGET"; fi \
   && npm ci --include-workspace-root -w shared/catalog -w shared/types -w shared/utils -w shared/storage $W
 COPY shared/catalog shared/catalog
@@ -31,7 +29,6 @@ COPY shared/utils shared/utils
 COPY shared/storage shared/storage
 COPY services/gateway services/gateway
 COPY services/analytics services/analytics
-COPY services/reporting-agent services/reporting-agent
 COPY scripts/build-service.mjs scripts/
 RUN npm run build -w shared/catalog -w shared/types -w shared/utils -w shared/storage \
   && node scripts/build-service.mjs ${TARGET} --out /out

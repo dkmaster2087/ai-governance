@@ -2,8 +2,6 @@ import { createApiClient } from './http';
 
 const gateway = createApiClient('/api');
 
-export interface ReportingConfig { usageMetrics: boolean; costData: boolean; complianceStatus: boolean; auditLogs: boolean }
-
 /** A license as the gateway returns it (the key itself is only returned once, when issued). */
 export interface License {
   licenseId: string;
@@ -22,15 +20,11 @@ export interface License {
   plan: string;
   type: 'cloud' | 'onprem';
   maxUsers: number;
-  reportingConfig: ReportingConfig;
+  /** A license file for a customer-run install: its gateway address(es). */
+  file?: boolean;
+  addresses?: string[];
 }
 
-export const REPORTING_LABELS: Record<keyof ReportingConfig, string> = {
-  usageMetrics: 'Usage numbers',
-  costData: 'Spend',
-  complianceStatus: 'Compliance status',
-  auditLogs: 'Audit records',
-};
 
 /** Where a company stands. grace: no valid license, but everything works until graceUntil. lapsed: AI requests stopped. */
 export interface LicenseStatus {
@@ -55,7 +49,7 @@ export interface LicenseUsers {
   over: boolean;
 }
 
-export const fetchLicenseOverview = async () => (await gateway.get<{ status: LicenseStatus; licenses: License[]; users?: LicenseUsers }>('/v1/license/overview')).data;
+export const fetchLicenseOverview = async () => (await gateway.get<{ status: LicenseStatus; licenses: License[]; users?: LicenseUsers; offline?: boolean }>('/v1/license/overview')).data;
 export const activateLicense = async (licenseKey: string) => (await gateway.post<{ license: License; status: LicenseStatus }>('/v1/license/activate', { licenseKey })).data;
 export const removeLicense = async (licenseId: string) => (await gateway.post(`/v1/license/${encodeURIComponent(licenseId)}/remove`, {})).data;
 
@@ -70,8 +64,19 @@ export const fetchMyLicense = async (): Promise<License | null> => {
 };
 export const fetchTenantLicenses = async (tenantId: string) =>
   (await gateway.get<License[]>(`/v1/tenants/${encodeURIComponent(tenantId)}/licenses`, { headers: { 'x-tenant-id': tenantId } })).data;
-export const issueLicense = async (tenantId: string, input: { plan: string; type: 'cloud' | 'onprem'; maxUsers: number; validityDays: number }) =>
-  (await gateway.post<License & { licenseKey: string }>(`/v1/tenants/${encodeURIComponent(tenantId)}/licenses`, input)).data;
+export const issueLicense = async (tenantId: string, input: { plan: string; type: 'cloud' | 'onprem'; maxUsers: number; validityDays: number; addresses?: string[] }) =>
+  (await gateway.post<License & { licenseKey?: string; licenseFile?: string }>(`/v1/tenants/${encodeURIComponent(tenantId)}/licenses`, input)).data;
+/** A customer-run license file again (platform admins): it's signed, not secret, and works only at its address. */
+export const fetchLicenseFile = async (tenantId: string, licenseId: string) =>
+  (await gateway.get<{ licenseFile: string }>(`/v1/tenants/${encodeURIComponent(tenantId)}/licenses/${encodeURIComponent(licenseId)}/file`)).data.licenseFile;
+
+/** Save a license file to the person's computer. */
+export function downloadLicenseFile(text: string, name: string) {
+  const url = URL.createObjectURL(new Blob([text + '\n'], { type: 'text/plain' }));
+  const a = Object.assign(document.createElement('a'), { href: url, download: `${name}.probaline-license` });
+  a.click();
+  URL.revokeObjectURL(url);
+}
 export const revokeLicense = async (tenantId: string, licenseId: string, graceDays?: number) =>
   (await gateway.post(`/v1/tenants/${encodeURIComponent(tenantId)}/licenses/${encodeURIComponent(licenseId)}/revoke`, graceDays === undefined ? {} : { graceDays })).data;
 
@@ -96,7 +101,6 @@ export function statusMessage(s: LicenseStatus, canEnterKey: boolean): { tone: '
   };
   return null;
 }
-export const setReporting = async (config: ReportingConfig) => (await gateway.put('/v1/license/reporting', config)).data;
 
 export const formatDate = (iso?: string) =>
   iso ? new Date(iso).toLocaleDateString([], { day: 'numeric', month: 'short', year: 'numeric' }) : '—';

@@ -44,9 +44,6 @@ declare module 'fastify' {
 }
 
 const READ_ROLES = new Set(['tenant_admin', 'tenant_auditor', 'platform_admin']);
-/** The on-prem reporting agent may read only its own summary. */
-const AGENT_ROLE = 'reporting_agent';
-const AGENT_PATH = '/internal/v1/reporting/summary';
 
 const rangeQuery = z.object({
   from: z.string().datetime({ offset: true }).optional(),
@@ -101,7 +98,7 @@ export async function buildApp(opts: { trusted: TrustedKey[]; tls?: InternalTls 
   app.addHook('onRequest', async (request, reply) => {
     if (request.url === '/health' || request.url === '/health/ready') return;
     const peer = opts.tls ? peerService(request.raw.socket) : null;
-    if (opts.tls && peer !== 'gateway' && peer !== 'reporting-agent') {
+    if (opts.tls && peer !== 'gateway') {
       logger.warn('Refused an internal request', { error: peer ? `Service ${peer} may not call analytics` : 'No valid service certificate', path: request.url.split('?')[0] });
       return bad(reply, 'UNAUTHENTICATED', 'Analytics only answers the gateway', 401);
     }
@@ -112,11 +109,6 @@ export async function buildApp(opts: { trusted: TrustedKey[]; tls?: InternalTls 
     } catch (err) {
       logger.warn('Refused an internal request', { error: (err as InternalAuthError).message, path: request.url.split('?')[0] });
       return bad(reply, 'UNAUTHENTICATED', 'Analytics only answers the gateway', 401);
-    }
-    if (peer === 'reporting-agent' && request.caller.role !== AGENT_ROLE) return bad(reply, 'FORBIDDEN', 'A reporting agent may act only as itself', 403);
-    if (request.caller.role === AGENT_ROLE) {
-      if (request.url.split('?')[0] !== AGENT_PATH) return bad(reply, 'FORBIDDEN', 'The reporting agent may read only its summary', 403);
-      return;
     }
     if (!READ_ROLES.has(request.caller.role)) return bad(reply, 'FORBIDDEN', 'This role cannot read reports', 403);
   });
@@ -232,37 +224,6 @@ export async function buildApp(opts: { trusted: TrustedKey[]; tls?: InternalTls 
     const r = range({}, 30)!;
     const { logs, truncated } = await queryAuditLogs(tenantOf(request), r.fromIso, r.toIso);
     return { from: r.fromIso, to: r.toIso, truncated, people: peopleIn(logs) };
-  });
-
-  // ── What an on-prem install reports back to the platform (only what the company allows) ───────
-
-  app.get(AGENT_PATH, async (request) => {
-    const to = new Date();
-    const from = new Date(to.getTime() - DAY);
-    const tenantId = tenantOf(request);
-    const { logs, truncated } = await queryAuditLogs(tenantId, from.toISOString(), to.toISOString());
-    const model = logs.filter(isModelTraffic);
-    const byModel = new Map<string, { requests: number; cost: number }>();
-    for (const l of model) {
-      const m = byModel.get(l.modelId) ?? { requests: 0, cost: 0 };
-      m.requests++; m.cost += l.estimatedCost || 0;
-      byModel.set(l.modelId, m);
-    }
-    const cost = costSummary(tenantId, model, from.toISOString(), to);
-    return {
-      periodStart: from.toISOString(), periodEnd: to.toISOString(), truncated,
-      usage: {
-        totalRequests: model.length,
-        blockedRequests: model.filter((l) => l.eventType === 'request_blocked').length,
-        activeUsers: new Set(model.map((l) => l.userId).filter(Boolean)).size,
-        modelBreakdown: [...byModel].map(([modelId, v]) => ({ modelId, requests: v.requests })),
-      },
-      cost: {
-        totalCost: cost.totalCost,
-        costByModel: [...byModel].map(([modelId, v]) => ({ modelId, cost: v.cost })),
-        costByUser: cost.costByUser.map((u) => ({ userId: u.userId, cost: u.cost })),
-      },
-    };
   });
 
   // ── The platform view (Probaline's own operators) ───────────────────────────────────────────
