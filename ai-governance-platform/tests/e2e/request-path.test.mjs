@@ -16,6 +16,8 @@ import https from 'node:https';
 const GATEWAY = process.env.GATEWAY_URL || 'http://localhost:3000';
 const MOCK = process.env.MOCK_LLM_URL || 'http://localhost:4010';
 const DEGRADED_PORT = 3100;
+// The reports service's own port, for the check that it refuses unsigned calls (scripts/dev-local.sh uses 3003).
+const ANALYTICS_PORT = Number(process.env.ANALYTICS_PORT || 3003);
 const DEGRADED = `http://localhost:${DEGRADED_PORT}`;
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '../..');
 const MODEL = 'gpt-4o-mini';
@@ -943,8 +945,8 @@ describe('when the rules can\'t be read', () => {
 
 describe('reports come from the analytics service', () => {
   test('analytics refuses anything but a request the gateway signed', async () => {
-    assert.equal(await internal(3003, 'GET', '/internal/v1/gateway/summary'), 401);
-    assert.equal(await internal(3003, 'GET', '/internal/v1/cost/summary', { headers: { 'x-probaline-internal': 'e30.e30.AAAA' } }), 401);
+    assert.equal(await internal(ANALYTICS_PORT, 'GET', '/internal/v1/gateway/summary'), 401);
+    assert.equal(await internal(ANALYTICS_PORT, 'GET', '/internal/v1/cost/summary', { headers: { 'x-probaline-internal': 'e30.e30.AAAA' } }), 401);
     // Through the gateway, the same report works.
     assert.equal((await call('GET', '/v1/gateway/summary', { headers: adminOf(A) })).status, 200);
   });
