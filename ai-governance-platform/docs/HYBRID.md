@@ -66,8 +66,13 @@ These are the answers to a CISO's review, and the constraints every customer-run
 - **Nothing is sent to us.** No traffic, counts, user IDs or heartbeats. We aren't a processor of their data.
 - **Their sign-in.** The dashboard uses the customer's SSO (OIDC: Okta, Entra), with local accounts for small
   installs. We have no access; support works from diagnostics the customer chooses to share.
-- **No connections to us at all,** inbound or outbound. Outbound traffic goes only to the AI providers and the
-  destinations the customer sets up (their SIEM, their email, their MCP APIs).
+- **One optional download from us, nothing sent.** Once an hour the gateway downloads the public, signed AI
+  service catalog (`CATALOG_URL`, by default `https://probaline.com/catalog/v1/latest.json`), the way antivirus
+  definitions are fetched. The request carries no license key, install or company name, counts or user data, only
+  a plain user agent and the last ETag. The customer can point it at their own mirror, upload the file by hand
+  instead (air-gapped sites), or switch it off (`CATALOG_UPDATES=off`). Nothing else connects to us, inbound or
+  outbound: other outbound traffic goes only to the AI providers and the destinations the customer sets up (their
+  SIEM, their email, their MCP APIs).
 - **Signed releases.**
   - Images are signed with cosign and published with an SBOM (`.github/workflows/deploy.yml` already does both)
     and with the vulnerability policy (SECURITY.md).

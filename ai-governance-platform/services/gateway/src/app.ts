@@ -41,6 +41,7 @@ import { logExportRoutes } from './routes/log-export.routes';
 import { enforcementRoutes } from './routes/enforcement.routes';
 import { feedRoutes } from './routes/feeds.routes';
 import { guardrailsRoutes } from './routes/guardrails.routes';
+import { catalogRoutes } from './routes/catalog.routes';
 import { isAiTraffic, loadShedding } from './middleware/load-shedding';
 import { archiveBatcher } from './services/archive-batcher';
 import { batchedCounter } from './services/batched-counter';
@@ -132,6 +133,7 @@ export async function buildApp() {
   await app.register(activityRoutes, { prefix: '/v1' });
   await app.register(logExportRoutes, { prefix: '/v1' });
   await app.register(enforcementRoutes, { prefix: '/v1' });
+  await app.register(catalogRoutes, { prefix: '/v1' });
   // MCP servers: admin API under /v1/mcp/…, and the address agents connect to at /mcp/<tenant>/<server>.
   await app.register(mcpRoutes);
   await app.register(mcpOauthRoutes);

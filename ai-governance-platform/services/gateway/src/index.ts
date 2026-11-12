@@ -8,6 +8,7 @@ import { secretBackend, usesDatabaseSecrets } from './services/secret-store';
 import { bootstrapInstall, installSignIn } from './install/sign-in';
 import { scheduleLicenseNotices } from './services/license-notices';
 import { mailer } from './services/email';
+import { catalogUpdater } from './catalog/catalog-updater';
 
 const logger = createLogger('gateway');
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -40,6 +41,8 @@ async function main() {
     scheduleRetention();
     scheduleKeyRotation();
     scheduleLicenseNotices();
+    // The AI service catalog: the last one stored, then hourly downloads of the published one (CATALOG_UPDATES=off stops them).
+    catalogUpdater().start();
     opsMetrics.start();
     // Sends companies' records to their log destinations. Off only for a gateway that mustn't send (LOG_EXPORT_WORKER=off).
     if (process.env.LOG_EXPORT_WORKER !== 'off') exporter().start();

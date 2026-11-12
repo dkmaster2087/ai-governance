@@ -1,5 +1,6 @@
 import { createLogger, internalTlsFromEnv, trustedKeysFromEnv } from '@ai-governance/utils';
 import { buildApp } from './app';
+import { syncCatalog } from './catalog-sync';
 
 const logger = createLogger('analytics');
 // In the single image's "all" role, reports run beside the gateway on a private address (see scripts/build-service.mjs).
@@ -15,6 +16,8 @@ async function main() {
   const app = await buildApp({ trusted: trustedKeysFromEnv(), tls: loopback ? null : tls });
   await app.listen({ port: PORT, host: HOST });
   logger.info('Analytics service started', { port: PORT, host: HOST });
+  // Tool names follow the catalog the gateway keeps current.
+  syncCatalog();
   for (const signal of ['SIGTERM', 'SIGINT'] as const) process.on(signal, () => { app.close().then(() => process.exit(0)); });
 }
 

@@ -90,6 +90,16 @@ describe('ServicesStack', () => {
     expect(roles).toEqual({ GatewayContainer: 'gateway', AnalyticsContainer: 'reports' });
   });
 
+  it('has a separate KMS key for the AI service catalog, kept on delete and used by no running service', () => {
+    const keys = Object.entries(template.findResources('AWS::KMS::Key')).filter(([, r]: any) => r.Properties.KeyUsage === 'SIGN_VERIFY');
+    expect(keys).toHaveLength(2);
+    const catalogKey = keys.find(([, r]: any) => /AI service catalog/.test(r.Properties.Description))!;
+    expect((catalogKey[1] as any).DeletionPolicy).toBe('Retain');
+    template.hasResourceProperties('AWS::KMS::Alias', { AliasName: 'alias/ai-gov-catalog-signing-test' });
+    const policies = JSON.stringify([template.findResources('AWS::IAM::Policy'), template.findResources('AWS::IAM::ManagedPolicy')]);
+    expect(policies).not.toContain(catalogKey[0]);
+  });
+
   it('signs license files with a KMS key only the gateway may use, and keeps it on delete', () => {
     template.hasResourceProperties('AWS::KMS::Key', { KeySpec: 'ECC_NIST_P256', KeyUsage: 'SIGN_VERIFY' });
     const key = Object.entries(template.findResources('AWS::KMS::Key')).find(([, r]: any) => r.Properties.KeyUsage === 'SIGN_VERIFY')!;

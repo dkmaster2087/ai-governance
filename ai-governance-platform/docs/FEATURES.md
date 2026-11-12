@@ -40,6 +40,17 @@ to let requests through instead; those are flagged in their evidence record.
   optional `identifyUsers`), records which AI tools are opened (domain only, once per tool per ten minutes),
   blocks the ones the tenant blocked, and shows a block page with the tenant's message and approved tools.
 
+## The AI service catalog
+
+The list of AI services Probaline recognises (Shadow AI, reports, the browser extension and the firewall AI-domain
+feeds) is built in and kept current: every hour the gateway downloads Probaline's signed catalog, checks the
+signature, and applies it if it's newer, so new services reach an install without upgrading it. Nothing about the
+install is sent with the download. **Settings → AI service catalog** shows the catalog in use, where it came from
+and the last check, with **Check now** and **Upload catalog file** (for sites without internet access); the
+platform admin manages it in Cloud, company admins on their own install. `CATALOG_UPDATES=off` stops downloads,
+`CATALOG_URL` points at a mirror. New services are watched, not blocked, unless the company blocks all unapproved
+tools.
+
 ## Dashboard
 
 | Page | Shows |

@@ -105,6 +105,31 @@ The catalog is versioned and shipped with the collector, so it works offline. Th
 the chat apps and model APIs from it (`services/gateway/src/services/ai-tools.ts`), so the browser extension
 watches the same domains the report names. The report and the Shadow AI page say which version they used.
 
+### Keeping the catalog current (built)
+
+New AI services appear every week, so the catalog is also published as signed data that every install applies
+without a new version of Probaline:
+
+- **Published:** `scripts/catalog-sign.mjs` signs the catalog (ECDSA P-256 / SHA-256, with the stage's KMS key
+  `alias/<prefix>-catalog-signing-<stage>`) as `{ format: "probaline.catalog/1", kid, payload, signature }`. The
+  Deploy workflow publishes it on the website at `/catalog/v1/latest.json`, with no caching. Its sequence is the
+  commit's time, so a re-deploy of the same commit changes nothing for installs.
+- **Applied:** each gateway downloads it every hour (`services/gateway/src/catalog`), verifies the signature
+  against keys compiled into the image (plus any in `CATALOG_TRUSTED_KEYS`, for a company's own mirror), and applies
+  it only if it's newer than the one in use: a replayed old file can't remove services. The last good one is kept
+  in the database for every copy and for reports; without one, the built-in list is used.
+- **Nothing is sent:** no license key, install or company name, counts or user data (see HYBRID.md). An admin can
+  check now or upload a catalog file on **Settings** (the platform admin in Cloud, company admins on their own
+  install); `CATALOG_UPDATES=off` stops downloads, `CATALOG_URL` points at a mirror.
+- **New services are watched, never blocked,** unless the company chose to block all unapproved tools or
+  subscribed its firewalls to that category's AI-domain feed. A catalog can also carry advisories about services
+  (a change in data terms, a breach), shown on Settings.
+
+Before a stage publishes, add the public half of its catalog key to
+`services/gateway/src/catalog/trusted-keys.ts` (`node scripts/catalog-sign.mjs --kms <key> --public-key`).
+Finding new services automatically (certificate logs, model and MCP registries, launch sites) and reviewing them
+before they're published is the next step.
+
 ## Sources, in build order
 
 | # | Source | What it shows | Where the collector runs |
@@ -185,7 +210,8 @@ assessment.
 ## Open questions
 
 - **Name and price.** A free time-boxed assessment, or a paid one credited against the first year?
-- **Catalog upkeep.** New AI services appear weekly. Who reviews additions, and how often do collectors update?
+- **Catalog upkeep.** Installs now update hourly from the signed catalog; finding and reviewing new services is the
+  open part. The standalone collector still uses the catalog it was built with.
 - **Mapping DNS to people.** DNS logs show device addresses. Mapping them to users needs DHCP or directory
   logs; offer it as an option, off by default.
 - **Air-gapped sites.** The local mode already works offline; catalog updates would be delivered as files.

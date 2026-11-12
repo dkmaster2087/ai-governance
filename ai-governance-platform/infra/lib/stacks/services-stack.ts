@@ -187,6 +187,17 @@ export class ServicesStack extends cdk.Stack {
       alias: `alias/${prefix}-license-signing-${stage}`,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
+    // Signs the AI service catalog every install downloads (scripts/catalog-sign.mjs, run by the deploy workflow).
+    // Installs check it against the public half compiled into the image (services/gateway/src/catalog/trusted-keys.ts).
+    // Nothing in AWS uses it at run time; kept on delete so catalogs it signed stay valid.
+    const catalogSigningKey = new kms.Key(this, 'CatalogSigningKey', {
+      description: `Probaline ${stage}: signs the AI service catalog installs download`,
+      keySpec: kms.KeySpec.ECC_NIST_P256,
+      keyUsage: kms.KeyUsage.SIGN_VERIFY,
+      alias: `alias/${prefix}-catalog-signing-${stage}`,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+    new cdk.CfnOutput(this, 'CatalogSigningKeyArn', { value: catalogSigningKey.keyArn });
 
     // --- Gateway Service (public-facing) ---
     this.gatewayService = this.createService({
