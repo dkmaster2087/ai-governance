@@ -136,9 +136,15 @@ describe('ServicesStack', () => {
     expect(JSON.stringify(template.findResources('AWS::IAM::Policy'))).toContain('ses:SendEmail');
   });
 
-  it('scales every service on CPU and memory, never drops capacity during a deploy, and has no shell access', () => {
+  it('scales every service on CPU and memory, the gateway also on requests, never drops capacity during a deploy, and has no shell access', () => {
     template.resourceCountIs('AWS::ApplicationAutoScaling::ScalableTarget', 2);
-    template.resourceCountIs('AWS::ApplicationAutoScaling::ScalingPolicy', 4);
+    template.resourceCountIs('AWS::ApplicationAutoScaling::ScalingPolicy', 5);
+    template.hasResourceProperties('AWS::ApplicationAutoScaling::ScalingPolicy', {
+      TargetTrackingScalingPolicyConfiguration: Match.objectLike({
+        PredefinedMetricSpecification: Match.objectLike({ PredefinedMetricType: 'ALBRequestCountPerTarget' }),
+        TargetValue: 6000,
+      }),
+    });
     for (const s of Object.values(template.findResources('AWS::ECS::Service')) as any[]) {
       expect(s.Properties.DeploymentConfiguration).toMatchObject({ MinimumHealthyPercent: 100, MaximumPercent: 200 });
       expect(s.Properties.EnableExecuteCommand).toBe(false);

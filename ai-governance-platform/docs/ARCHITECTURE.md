@@ -159,7 +159,7 @@ S3-compatible store) or a directory, chosen by `OBJECT_STORE`. Design and limits
 | Kind | Where | Kept | Who sees it |
 |---|---|---|---|
 | Service logs (JSON lines from `createLogger`) | stdout → CloudWatch log group `/ecs/<prefix>-<service>-<stage>` | 1 month | the operator |
-| Decisions | `audit_logs` + one file per record in the audit bucket | the tenant's retention setting* | tenant: Evidence, log export |
+| Decisions | `audit_logs` + batched gzipped JSON Lines files in the audit bucket (`logs/<tenant>/<date>/batch-….jsonl.gz`, written every 2 s) | the tenant's retention setting* | tenant: Evidence, log export |
 | Admin activity and sign-ins | `activity` + one file per record in the audit bucket (`activity/<tenant>/<date>/`) | 400 days (`ACTIVITY_RETENTION_DAYS`) | tenant: Activity, log export |
 | Dashboard password checks | Cognito → CloudTrail | per the account's trail | the operator |
 

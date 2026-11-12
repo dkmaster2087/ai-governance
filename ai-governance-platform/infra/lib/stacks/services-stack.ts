@@ -321,6 +321,7 @@ export class ServicesStack extends cdk.Stack {
     if (!certificateArn && stage === 'prod') {
       throw new Error('Production needs a TLS certificate: deploy with -c certificateArn=arn:aws:acm:...');
     }
+    let gatewayTargetGroup: elbv2.ApplicationTargetGroup;
     const gatewayTarget = {
       port: 3000,
       protocol: elbv2.ApplicationProtocol.HTTP,
@@ -334,14 +335,14 @@ export class ServicesStack extends cdk.Stack {
         certificates: [elbv2.ListenerCertificate.fromArn(certificateArn)],
         sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS,
       });
-      listener.addTargets('GatewayTarget', gatewayTarget);
+      gatewayTargetGroup = listener.addTargets('GatewayTarget', gatewayTarget);
       this.loadBalancer.addListener('HttpRedirect', {
         port: 80,
         defaultAction: elbv2.ListenerAction.redirect({ protocol: 'HTTPS', port: '443', permanent: true }),
       });
     } else {
       const listener = this.loadBalancer.addListener('HttpListener', { port: 80, open: true });
-      listener.addTargets('GatewayTarget', gatewayTarget);
+      gatewayTargetGroup = listener.addTargets('GatewayTarget', gatewayTarget);
     }
 
     // Every service scales with load. Production keeps at least two copies of each, in different zones.
@@ -353,6 +354,16 @@ export class ServicesStack extends cdk.Stack {
       const scaling = svc.autoScaleTaskCount({ minCapacity: prod ? 2 : 1, maxCapacity: max });
       scaling.scaleOnCpuUtilization(`${id}Cpu`, { targetUtilizationPercent: 60, scaleOutCooldown: cdk.Duration.seconds(60), scaleInCooldown: cdk.Duration.seconds(300) });
       scaling.scaleOnMemoryUtilization(`${id}Memory`, { targetUtilizationPercent: 75 });
+      // The gateway also scales on traffic: AI answers mostly wait on the provider, so CPU rises late.
+      // context gatewayRequestsPerTarget is requests a minute per copy (default 6000, about 100 a second).
+      if (id === 'Gateway') {
+        scaling.scaleOnRequestCount('GatewayRequests', {
+          targetGroup: gatewayTargetGroup!,
+          requestsPerTarget: Number(this.node.tryGetContext('gatewayRequestsPerTarget')) || 6000,
+          scaleOutCooldown: cdk.Duration.seconds(60),
+          scaleInCooldown: cdk.Duration.seconds(300),
+        });
+      }
     }
 
     new cdk.CfnOutput(this, 'LoadBalancerDns', { value: this.loadBalancer.loadBalancerDnsName });

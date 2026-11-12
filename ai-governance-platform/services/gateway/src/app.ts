@@ -41,6 +41,10 @@ import { logExportRoutes } from './routes/log-export.routes';
 import { enforcementRoutes } from './routes/enforcement.routes';
 import { feedRoutes } from './routes/feeds.routes';
 import { guardrailsRoutes } from './routes/guardrails.routes';
+import { isAiTraffic, loadShedding } from './middleware/load-shedding';
+import { archiveBatcher } from './services/archive-batcher';
+import { batchedCounter } from './services/batched-counter';
+import { rateCounter } from './services/rate-counter';
 
 export async function buildApp() {
   const securityConfig = getSecurityConfig();
@@ -77,10 +81,16 @@ export async function buildApp() {
   // Error handler: set before any routes so every plugin inherits it.
   app.setErrorHandler(errorHandler);
 
+  // An overloaded copy refuses new AI requests at once (503 BUSY, retry in a second) instead of slowing them all.
+  await app.register(loadShedding, {});
+  // Counters and archive copies are written in batches; write what's pending when this copy stops.
+  app.addHook('onClose', async () => {
+    await Promise.allSettled([archiveBatcher().flush(), rateCounter().flush(), batchedCounter().flush()]);
+  });
+
   // End-to-end time of AI requests and tool calls, for the latency alarm.
   app.addHook('onResponse', async (request, reply) => {
-    const path = request.url.split('?')[0];
-    if (request.method === 'POST' && (path === '/v1/chat/completions' || path.startsWith('/v1/proxy/') || path.startsWith('/v1/guardrails/') || path.startsWith('/mcp/'))) {
+    if (isAiTraffic(request.method, request.url.split('?')[0])) {
       opsMetrics.time(OPS.REQUEST_LATENCY, reply.elapsedTime);
     }
   });

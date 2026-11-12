@@ -2,6 +2,7 @@ import { allPages, collection } from '@ai-governance/storage';
 import { Policy } from '@ai-governance/types';
 import { createLogger } from '@ai-governance/utils';
 import { randomUUID } from 'crypto';
+import { forgetCachedPolicies } from '../policy-cache';
 
 const logger = createLogger('policy-engine:repository');
 
@@ -35,6 +36,7 @@ export class PolicyRepository {
       updatedAt: new Date().toISOString(),
     };
     await this.policies().put(policy as Policy & Record<string, unknown>);
+    forgetCachedPolicies(policy.tenantId);
     return policy;
   }
 
@@ -48,15 +50,18 @@ export class PolicyRepository {
       if (data[f] !== undefined) set[f] = data[f];
     }
     const updated = await this.policies().update({ tenantId, policyId }, { set });
+    forgetCachedPolicies(tenantId);
     return (updated ?? { ...data, policyId, updatedAt }) as Policy;
   }
 
   /** Enable or disable a policy without changing anything else */
   async setEnabled(policyId: string, tenantId: string, enabled: boolean): Promise<void> {
     await this.policies().update({ tenantId, policyId }, { set: { enabled, updatedAt: new Date().toISOString() }, ifExists: true });
+    forgetCachedPolicies(tenantId);
   }
 
   async deletePolicy(policyId: string, tenantId: string): Promise<void> {
     await this.policies().delete({ tenantId, policyId });
+    forgetCachedPolicies(tenantId);
   }
 }

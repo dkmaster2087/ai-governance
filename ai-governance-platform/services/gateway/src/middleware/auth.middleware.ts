@@ -35,6 +35,8 @@ const PUBLIC_PREFIXES = ['/health', '/public/',
 /** MCP addresses accept a Probaline API key here, or a sign-in token the MCP route checks itself. */
 const MCP_PREFIX = '/mcp/';
 const PROXY_PREFIX = '/v1/proxy/';
+/** How often a key's "last used" time is written. */
+const TOUCH_EVERY_MS = 60_000;
 /** Other gateways' guardrail hooks: LiteLLM sends its guardrail key as x-api-key. */
 const GUARDRAILS_PREFIX = '/v1/guardrails/';
 
@@ -102,6 +104,8 @@ export function forgetApiKey(keyId: string): void {
 export function createAuthPlugin(deps: AuthDeps) {
   const servesDashboard = installSignIn();
   const keyCache: KeyCache = new Map();
+  /** When each key's last-used time was last written by this copy. */
+  const lastTouched = new Map<string, number>();
   keyCaches.add(keyCache);
 
   async function resolveApiKey(token: string): Promise<ApiKey | null> {
@@ -228,7 +232,13 @@ export function createAuthPlugin(deps: AuthDeps) {
       request.userId = userId;
       request.appId = appId;
 
-      deps.keys.touchLastUsed(apiKey.tenantId, apiKey.keyId).catch(() => {});
+      // "Last used" is shown to the minute; one write per key per minute per copy instead of one per call.
+      const now = Date.now();
+      if (now - (lastTouched.get(apiKey.keyId) ?? 0) >= TOUCH_EVERY_MS) {
+        lastTouched.set(apiKey.keyId, now);
+        if (lastTouched.size > 50_000) lastTouched.delete(lastTouched.keys().next().value as string);
+        deps.keys.touchLastUsed(apiKey.tenantId, apiKey.keyId).catch(() => {});
+      }
     });
 
     // Suspended tenants lose access (platform admins keep it, so they can reactivate).

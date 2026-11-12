@@ -2,6 +2,7 @@ import { allPages, collection } from '@ai-governance/storage';
 import { ModelConfig } from '@ai-governance/types';
 import { createLogger } from '@ai-governance/utils';
 import { randomUUID } from 'crypto';
+import { forgetCachedModels, modelsForRequests } from './model-cache';
 
 const logger = createLogger('gateway:model-config-repo');
 
@@ -28,6 +29,11 @@ export class ModelConfigRepository {
     return all.find((c) => c.modelId === modelId) ?? null;
   }
 
+  /** The company's model settings for the request path, cached per gateway copy (errors are thrown, not hidden). */
+  async forRequests(tenantId: string): Promise<ModelConfig[]> {
+    return modelsForRequests.get(tenantId, () => allPages((after) => this.models().query({ partition: tenantId, after })));
+  }
+
   async getById(tenantId: string, modelConfigId: string): Promise<ModelConfig | null> {
     try {
       return await this.models().get({ tenantId, modelConfigId });
@@ -45,6 +51,7 @@ export class ModelConfigRepository {
       updatedAt: new Date().toISOString(),
     };
     await this.models().put(config as ModelConfig & Record<string, unknown>);
+    forgetCachedModels(config.tenantId);
     logger.info('Model config created', { modelConfigId: config.modelConfigId, tenantId: config.tenantId });
     return config;
   }
@@ -57,6 +64,7 @@ export class ModelConfigRepository {
       if (v !== undefined) set[f] = v;
     }
     const updated = await this.models().update({ tenantId, modelConfigId }, { set, ifExists: true });
+    forgetCachedModels(tenantId);
     if (!updated) throw notFound();
     return updated;
   }
@@ -71,6 +79,7 @@ export class ModelConfigRepository {
       remove: ['apiKeyStored'],
       ifExists: true,
     });
+    forgetCachedModels(tenantId);
     if (!updated) throw notFound();
   }
 
@@ -83,5 +92,6 @@ export class ModelConfigRepository {
 
   async delete(tenantId: string, modelConfigId: string): Promise<void> {
     await this.models().delete({ tenantId, modelConfigId });
+    forgetCachedModels(tenantId);
   }
 }

@@ -3,6 +3,7 @@ import { ProviderError } from '@ai-governance/utils';
 import { BedrockProvider } from '../providers/bedrock.provider';
 import { OpenAIProvider, StreamDelta } from '../providers/openai.provider';
 import { ModelConfigRepository } from '../repositories/model-config.repository';
+import { modelsForRequests } from '../repositories/model-cache';
 import { ModelConfigService } from './model-config.service';
 
 const MODEL_PROVIDER_MAP: Record<string, AIProvider> = {
@@ -28,7 +29,7 @@ export class ProviderRouter {
 
   /** Which provider serves this model for this tenant, and its key (held in Secrets Manager). */
   private async resolve(request: NormalizedAIRequest): Promise<{ provider: AIProvider; storedKey?: string }> {
-    const configs = await this.modelConfigRepo.getForTenant(request.tenantId);
+    const configs = await modelsForRequests.get(request.tenantId, () => this.modelConfigRepo.getForTenant(request.tenantId));
     const modelConfig = configs.find((c) => c.modelId === request.modelId);
     const storedKey = await this.modelConfigService.resolveProviderKey(modelConfig);
     // The admin's configuration wins; the name-based guess is only for models nobody configured.

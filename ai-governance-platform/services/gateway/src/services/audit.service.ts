@@ -1,8 +1,10 @@
 import { NormalizedAIRequest, NormalizedAIResponse, PolicyEvaluationResult, AuditLog } from '@ai-governance/types';
 import { alerting } from './alerting.service';
 import { hashContent, estimateCost, createLogger } from '@ai-governance/utils';
-import { collection, objects } from '@ai-governance/storage';
+import { collection } from '@ai-governance/storage';
+import { archiveBatcher } from './archive-batcher';
 import { ModelConfigRepository } from '../repositories/model-config.repository';
+import { modelsForRequests } from '../repositories/model-cache';
 import { redactSecrets } from './secret-detector';
 import { expiryOf, retentionOf } from './retention';
 import { OPS, opsMetrics } from './cloudwatch';
@@ -24,7 +26,6 @@ function stopMetadata(base: Record<string, string>, result: PolicyEvaluationResu
 }
 
 export class AuditService {
-  private bucket = process.env.AUDIT_LOG_BUCKET || 'ai-governance-audit-logs';
   private modelConfigRepo = new ModelConfigRepository();
 
   async log(
@@ -39,7 +40,7 @@ export class AuditService {
     let outputCostPer1k = 0.015;
 
     try {
-      const configs = await this.modelConfigRepo.getForTenant(request.tenantId);
+      const configs = await modelsForRequests.get(request.tenantId, () => this.modelConfigRepo.getForTenant(request.tenantId));
       const modelConfig = configs.find((c) => c.modelId === request.modelId);
       if (modelConfig) {
         inputCostPer1k = modelConfig.inputCostPer1kTokens;
@@ -93,10 +94,12 @@ export class AuditService {
     alerting().signal(() => alerting().fromAuditRecord(log));
   }
 
-  /** Archive copy, one file per record (S3 in AWS; a directory or S3-compatible store elsewhere). */
+  /**
+   * Archive copy, written in batches (one gzipped JSON Lines file per company, day and batch; see ArchiveBatcher).
+   * Resolves at once unless the archive has fallen behind.
+   */
   private async writeToS3(log: AuditLog, _requestId: string): Promise<void> {
-    const key = `logs/${log.tenantId}/${new Date().toISOString().slice(0, 10)}/${log.logId}.json`;
-    await objects(this.bucket, { kms: true }).put(key, JSON.stringify(log), 'application/json');
+    await archiveBatcher().add(log);
   }
 
   /** The queryable record. */
