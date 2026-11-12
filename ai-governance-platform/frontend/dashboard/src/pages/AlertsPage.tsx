@@ -3,7 +3,7 @@ import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
   AlertConfig, AlertEvent, AlertInput, AlertKind, AlertRule, alertDelivery, createAlert, Delivery, deleteAlert, KIND_LABEL, KINDS, listAlertEvents,
-  listAlerts, testAlert, updateAlert,
+  listAlerts, sendTestEmail, testAlert, updateAlert,
 } from '../lib/alerts-api';
 import { errorMessage } from '../lib/rules-api';
 import { Button, Note, Panel, SectionLabel, Segmented, Switch } from '../components/kit/primitives';
@@ -124,6 +124,26 @@ export function AlertForm({ rule, onDone, onSecret }: { rule?: AlertRule; onDone
   );
 }
 
+/** How alerts and license notices reach people by email, with a test send. */
+function EmailDelivery() {
+  const delivery = useQuery({ queryKey: ['alerts', 'delivery'], queryFn: alertDelivery, staleTime: 300_000 });
+  const test = useMutation({ mutationFn: sendTestEmail });
+  if (!delivery.data) return null;
+  const how = delivery.data.via === 'smtp' ? 'through your own mail server' : delivery.data.via === 'ses' ? 'through Amazon SES' : null;
+  return (
+    <Panel aria-label="Email" className="px-7 py-4 flex flex-wrap items-center gap-x-4 gap-y-2">
+      <p className="m-0 flex-1 min-w-[240px]">
+        {how
+          ? <>Email is sent {how}: alerts, and license notices to admins.</>
+          : <span className="text-stop-text font-semibold">Email isn’t set up on this Probaline install, so alerts and license notices can’t be emailed. Whoever runs Probaline can point it at your mail server (SMTP_HOST; see the install guide).</span>}
+      </p>
+      {how && <Button variant="secondary" disabled={test.isPending} onClick={() => test.mutate()}>{test.isPending ? 'Sending…' : 'Send me a test email'}</Button>}
+      {test.isSuccess && <p role="status" className="basis-full m-0 text-sm">Sent to {test.data.to}. If it doesn’t arrive, check spam, then your mail server’s log.</p>}
+      {test.isError && <p role="alert" className="basis-full m-0 text-sm text-stop-text font-semibold">{errorMessage(test.error)}</p>}
+    </Panel>
+  );
+}
+
 function AlertRow({ rule, onEdit }: { rule: AlertRule; onEdit: () => void }) {
   const qc = useQueryClient();
   const refresh = () => { qc.invalidateQueries({ queryKey: ['alerts'] }); qc.invalidateQueries({ queryKey: ['alert-events'] }); };
@@ -168,6 +188,7 @@ export function AlertsPage() {
         <p className="m-0 mt-1.5 text-ink-muted text-[15px]">Tell your team by email or webhook when requests are stopped, personal data shows up in AI answers, people use unapproved AI tools, or spend nears your budget.</p>
       </div>
 
+      <EmailDelivery />
       {secret && <NewSecret value={secret} onDone={() => setSecret(null)} />}
       {editing ? (
         <AlertForm rule={editing === 'new' ? undefined : editing} onDone={() => setEditing(null)} onSecret={setSecret} />

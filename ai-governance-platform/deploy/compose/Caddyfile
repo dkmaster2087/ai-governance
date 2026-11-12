@@ -1,0 +1,8 @@
+# HTTPS for the gateway with your own certificate (docker compose --profile https up -d).
+{$PROBALINE_ADDRESS} {
+	tls /certs/gateway.crt /certs/gateway.key
+	reverse_proxy probaline:3000 {
+		# The gateway serves only its licensed address, so pass the address callers used.
+		header_up Host {host}
+	}
+}

@@ -6,6 +6,7 @@ import { Email, Mailer, oneLine, SesMailer, setMailer } from '../services/email'
 const FORM = { firstName: 'Ana', lastName: 'Silva', email: 'ana@acme.example', company: 'Acme', role: 'CISO', deploymentInterest: 'onprem', message: 'Can we run it ourselves?' };
 
 class FakeMailer implements Mailer {
+  kind = 'ses' as const;
   sent: Email[] = [];
   fail = false;
   constructor(public enabled = true) {}

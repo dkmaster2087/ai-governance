@@ -12,7 +12,7 @@ export const ACTION_LABEL: Record<string, string> = {
   'gateway_settings.updated': 'Changed gateway settings', 'policy.created': 'Added a policy', 'policy.updated': 'Changed a policy', 'policy.deleted': 'Deleted a policy',
   'api_key.created': 'Created an API key', 'api_key.revoked': 'Revoked an API key', 'api_key.rotated': 'Replaced an API key', 'api_key.deleted': 'Deleted an API key',
   'model.added': 'Added a model', 'model.updated': 'Changed a model', 'model.deleted': 'Removed a model', 'model.tested': 'Tested a model',
-  'alert_rule.created': 'Added an alert', 'alert_rule.updated': 'Changed an alert', 'alert_rule.deleted': 'Deleted an alert', 'alert.tested': 'Sent a test alert',
+  'alert_rule.created': 'Added an alert', 'alert_rule.updated': 'Changed an alert', 'alert_rule.deleted': 'Deleted an alert', 'alert.tested': 'Sent a test alert', 'alert.email_tested': 'Sent a test email',
   'user.invited': 'Invited a person', 'user.changed': 'Changed a person’s role or access', 'user.removed': 'Removed a person', 'user.invite_resent': 'Resent an invitation',
   'legal_hold.changed': 'Changed the legal hold',
   // Names recorded before these actions had their own.

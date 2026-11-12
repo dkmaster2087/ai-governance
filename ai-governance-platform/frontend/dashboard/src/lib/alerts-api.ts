@@ -55,7 +55,10 @@ export const KIND_LABEL = Object.fromEntries(KINDS.map((k) => [k.value, k.label]
 
 export const listAlerts = async () => (await gateway.get<AlertRule[]>('/v1/alerts/rules')).data;
 /** Whether this install can send email (EMAIL_FROM set); webhooks always work. */
-export const alertDelivery = async () => (await gateway.get<{ email: boolean }>('/v1/alerts/delivery')).data;
+/** Whether email can be sent, and how: smtp (the company's own mail server) or ses (Amazon SES). */
+export const alertDelivery = async () => (await gateway.get<{ email: boolean; via?: 'smtp' | 'ses' | 'none' }>('/v1/alerts/delivery')).data;
+/** Send the signed-in admin a test email. */
+export const sendTestEmail = async () => (await gateway.post<{ sent: true; to: string }>('/v1/alerts/email-test', {})).data;
 export const listAlertEvents = async () => (await gateway.get<AlertEvent[]>('/v1/alerts/events')).data;
 export const createAlert = async (input: AlertInput) => (await gateway.post<AlertRule & { signingSecret?: string }>('/v1/alerts/rules', input)).data;
 export const updateAlert = async (ruleId: string, change: Partial<AlertInput>) =>

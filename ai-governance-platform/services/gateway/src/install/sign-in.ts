@@ -210,14 +210,14 @@ export class InstallSessionVerifier implements UserTokenVerifier {
 export async function bootstrapInstall(): Promise<void> {
   const tenantId = installTenantId();
   const tenants = collection('tenants');
-  if (!(await tenants.get({ tenantId }))) {
-    await tenants.put({ tenantId, name: process.env.PROBALINE_COMPANY_NAME || 'My company', status: 'active', plan: 'enterprise', deploymentMode: 'onprem', createdAt: new Date().toISOString(), settings: {} });
-    logger.info('Company created', { tenantId });
-  }
+  // Create-if-missing throughout: several copies starting together make one company and one admin password.
+  const made = await tenants.put({ tenantId, name: process.env.PROBALINE_COMPANY_NAME || 'My company', status: 'active', plan: 'enterprise', deploymentMode: 'onprem', createdAt: new Date().toISOString(), settings: {} }, { ifNotExists: true });
+  if (made) logger.info('Company created', { tenantId });
   const email = process.env.PROBALINE_ADMIN_EMAIL?.trim().toLowerCase();
-  if (!email || (await users().get({ tenantId, email }))) return;
+  if (!email) return;
   const now = new Date().toISOString();
-  await users().put({ tenantId, email, givenName: 'Admin', familyName: '', role: 'tenant_admin', status: 'invited', invitedAt: now, invitedBy: 'install' } as DashboardUser & Record<string, unknown>);
+  const added = await users().put({ tenantId, email, givenName: 'Admin', familyName: '', role: 'tenant_admin', status: 'invited', invitedAt: now, invitedBy: 'install' } as DashboardUser & Record<string, unknown>, { ifNotExists: true });
+  if (!added) return;
   const given = process.env.PROBALINE_ADMIN_PASSWORD;
   const temp = given || temporaryPassword();
   await accounts().put({ ...accountKey(email), passwordHash: await hashPassword(temp), mustChange: true, failures: 0 });

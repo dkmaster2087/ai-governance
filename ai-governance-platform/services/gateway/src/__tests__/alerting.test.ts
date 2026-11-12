@@ -7,6 +7,7 @@ import { verifySignature } from '../log-export/formats';
 import { setAnalyticsClient } from '../clients/analytics.client';
 
 class FakeMailer implements Mailer {
+  kind = 'ses' as const;
   enabled = true;
   sent: Email[] = [];
   async send(e: Email) { this.sent.push(e); }

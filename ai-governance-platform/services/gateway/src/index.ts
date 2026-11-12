@@ -6,6 +6,8 @@ import { opsMetrics } from './services/cloudwatch';
 import { exporter } from './log-export/exporter';
 import { secretBackend, usesDatabaseSecrets } from './services/secret-store';
 import { bootstrapInstall, installSignIn } from './install/sign-in';
+import { scheduleLicenseNotices } from './services/license-notices';
+import { mailer } from './services/email';
 
 const logger = createLogger('gateway');
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -26,12 +28,18 @@ async function main() {
       process.exit(1);
     }
   }
+  // A half-set email setting is a mistake to fix now, not at the first alert.
+  try { mailer(); } catch (err) {
+    logger.error('Not starting: email settings are incomplete', { error: (err as Error).message });
+    process.exit(1);
+  }
   const app = await buildApp();
   try {
     await app.listen({ port: PORT, host: HOST });
     logger.info('Gateway service started', { port: PORT });
     scheduleRetention();
     scheduleKeyRotation();
+    scheduleLicenseNotices();
     opsMetrics.start();
     // Sends companies' records to their log destinations. Off only for a gateway that mustn't send (LOG_EXPORT_WORKER=off).
     if (process.env.LOG_EXPORT_WORKER !== 'off') exporter().start();

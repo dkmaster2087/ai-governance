@@ -31,7 +31,9 @@ COPY services/gateway services/gateway
 COPY services/analytics services/analytics
 COPY scripts/build-service.mjs scripts/
 RUN npm run build -w shared/catalog -w shared/types -w shared/utils -w shared/storage \
-  && node scripts/build-service.mjs ${TARGET} --out /out
+  && node scripts/build-service.mjs ${TARGET} --out /out \
+  && mkdir -p /data/objects /certs \
+  && node -e "fetch('https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem').then(async (r) => { if (!r.ok) throw new Error(r.status); require('fs').writeFileSync('/certs/rds-global-bundle.pem', await r.text()); })"
 
 # The dashboard, built for a customer-run install: the gateway serving it signs people in (VITE_AUTH_MODE=install).
 # Cloud serves its own build from CloudFront; there, this copy is never used.
@@ -57,6 +59,11 @@ ARG TARGET=probaline
 LABEL org.opencontainers.image.title="${TARGET}" org.opencontainers.image.vendor="Probaline"
 COPY --from=compile /app/*.jsc /app/loader.js /app/
 COPY --from=dashboard /dashboard /app/dashboard
+# Where archive files go with OBJECT_STORE=file. Owned by the app's user, so a volume mounted here is writable.
+COPY --from=bundle --chown=65532:65532 /data /data
+# Amazon RDS's certificate authorities, so a database in RDS is checked, not just encrypted
+# (NODE_EXTRA_CA_CERTS=/app/certs/rds-global-bundle.pem with PGSSLMODE=verify-full; the AWS template sets both).
+COPY --from=bundle /certs /app/certs
 WORKDIR /app
 # The gateway listens on PORT; in the all role, reports listen on 127.0.0.1:3003 inside the container only.
 # DASHBOARD_DIR: served only when the install signs people in itself (install/dashboard.ts).

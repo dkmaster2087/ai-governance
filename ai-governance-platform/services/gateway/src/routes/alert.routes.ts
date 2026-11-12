@@ -1,3 +1,4 @@
+import { mailer } from '../services/email';
 import { FastifyInstance, FastifyReply } from 'fastify';
 import { z } from 'zod';
 import { requireAccess, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
@@ -44,7 +45,26 @@ export async function alertRoutes(app: FastifyInstance) {
     (await alerting().rules(request.tenantId)).map(ruleView));
 
   /** What this install can deliver, so the page can say when email isn't set up. */
-  app.get('/alerts/delivery', { preHandler: requireAccess(TENANT_READ) }, async () => ({ email: !!process.env.EMAIL_FROM?.trim() }));
+  /** Whether this deployment can send email, and how (smtp: the company's own mail server; ses: Amazon SES). */
+  app.get('/alerts/delivery', { preHandler: requireAccess(TENANT_READ) }, async () => ({ email: mailer().enabled, via: mailer().kind }));
+
+  /** A test email to the admin asking, so they can see their mail server takes it. */
+  app.post('/alerts/email-test', { preHandler: requireAccess(TENANT_ADMIN), config: { rateLimit: { max: 5, timeWindow: '1 minute' } } }, async (request, reply) => {
+    const to = request.principal?.kind === 'user' ? request.principal.email : undefined;
+    if (!to) return reply.status(400).send({ error: 'Your account has no email address to send to', code: 'NO_EMAIL' });
+    if (!mailer().enabled) return reply.status(409).send({ error: 'Email isn’t set up on this Probaline install', code: 'EMAIL_OFF' });
+    try {
+      await mailer().send({
+        to: [to],
+        subject: 'Probaline test email',
+        text: `This is a test from Probaline. If you're reading it, alerts and license notices can reach you by email.\n\nSent ${new Date().toISOString()} at ${to}'s request.`,
+      });
+      return { sent: true, to, via: mailer().kind };
+    } catch (err) {
+      // The mail server's answer helps the admin fix it (wrong port, login, a relay refusing the sender).
+      return reply.status(502).send({ error: `The mail server refused: ${(err as Error).message.slice(0, 300)}`, code: 'EMAIL_FAILED' });
+    }
+  });
 
   app.get('/alerts/events', { preHandler: requireAccess(TENANT_READ) }, async (request) => {
     const limit = Math.min(200, Math.max(1, Number((request.query as { limit?: string }).limit) || 50));

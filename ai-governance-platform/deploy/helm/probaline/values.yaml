@@ -1,0 +1,89 @@
+# Probaline on Kubernetes. Guide and every setting: docs/INSTALL.md.
+
+image:
+  repository: registry.example.com/probaline
+  tag: "1.0.0"
+  pullPolicy: IfNotPresent
+imagePullSecrets: []
+
+# Copies of the gateway; all share one database. Two or more keeps it up during upgrades and node loss.
+replicaCount: 2
+
+# The address people and apps use, with https://; it must match the license.
+publicUrl: https://ai-gateway.customer.com
+
+# Everything secret, in a Secret you make (recommended), with these keys:
+#   DATABASE_URL            postgres://user:password@host:5432/probaline?sslmode=require
+#   SECRETS_ENCRYPTION_KEY  openssl rand -base64 32 (keep a copy: without it, saved provider keys can't be read)
+#   PROBALINE_LICENSE       the license file's text (optional: it can be entered on the License page)
+#   PROBALINE_ADMIN_PASSWORD, PROBALINE_SSO_CLIENT_SECRET   (optional)
+#   AWS_ACCESS_KEY_ID, AWS_SECRET_ACCESS_KEY                (optional, for an S3-compatible archive)
+#   SMTP_USER, SMTP_PASSWORD, SMTP_CA                       (optional, for email through your mail server)
+existingSecret: ""
+# Or let the chart make one from these (they then sit in your values; prefer existingSecret).
+secret: {}
+
+# First start: the company and its first admin.
+company:
+  name: Customer Inc
+  adminEmail: security@customer.com
+
+# Company sign-in (OIDC). Redirect URI to register: <publicUrl>/v1/auth/sso/callback. Secret: PROBALINE_SSO_CLIENT_SECRET.
+sso:
+  name: ""
+  issuer: ""
+  clientId: ""
+
+# Email: alerts and license notices through your own mail server (empty host: no email). STARTTLS on 587 unless
+# tls: tls (465). Secret keys: SMTP_USER, SMTP_PASSWORD, and SMTP_CA for a certificate from your own CA.
+smtp:
+  host: ""
+  port: 587
+  tls: starttls
+  from: Probaline <probaline@customer.com>
+
+# Archive copies of audit records: none (the database has every record), s3 (S3-compatible), or file (needs a
+# volume every copy can write: persistence below, ReadWriteMany).
+objectStore:
+  kind: none
+  bucket: probaline-archive
+  s3Endpoint: ""
+persistence:
+  enabled: false
+  storageClass: ""
+  size: 20Gi
+
+# Proxies in front that add X-Forwarded-For (an ingress controller: 1). Their entry is the caller's address.
+trustedProxyHops: 1
+
+# Extra settings (name: value), e.g. LOG_EXPORT_ALLOW_PRIVATE_DESTINATIONS: "true" for a SIEM inside your network.
+extraEnv: {}
+
+service:
+  type: ClusterIP
+  port: 80
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  # TLS secret holding the certificate for publicUrl's host.
+  tlsSecretName: ""
+
+resources:
+  requests: { cpu: 250m, memory: 512Mi }
+  limits: { memory: 1Gi }
+
+autoscaling:
+  enabled: false
+  minReplicas: 2
+  maxReplicas: 10
+  targetCPUUtilizationPercentage: 60
+
+podDisruptionBudget:
+  enabled: true
+  minAvailable: 1
+
+nodeSelector: {}
+tolerations: []
+affinity: {}

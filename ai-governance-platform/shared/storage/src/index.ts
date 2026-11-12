@@ -68,15 +68,17 @@ let shared: RecordStore | null = null;
 /**
  * The record store chosen by STORAGE_BACKEND:
  *  - dynamodb (default): AWS_REGION, and AWS_ENDPOINT_URL for LocalStack
- *  - postgres: DATABASE_URL, optional PG_TABLE_PREFIX
+ *  - postgres: DATABASE_URL, or PostgreSQL's own PGHOST, PGPORT, PGDATABASE, PGUSER, PGPASSWORD and PGSSLMODE
+ *    (how AWS hands over an RDS password from Secrets Manager); optional PG_TABLE_PREFIX
  *  - memory: in this process only (tests)
  */
 export function storeFromEnv(): RecordStore {
   const backend = (process.env.STORAGE_BACKEND || 'dynamodb').toLowerCase();
   if (backend === 'dynamodb') return new DynamoStore();
   if (backend === 'postgres' || backend === 'postgresql') {
-    if (!process.env.DATABASE_URL) throw new StorageError('STORAGE_BACKEND=postgres needs DATABASE_URL');
-    return new PostgresStore({ connectionString: process.env.DATABASE_URL, tablePrefix: process.env.PG_TABLE_PREFIX || '' });
+    if (!process.env.DATABASE_URL && !process.env.PGHOST) throw new StorageError('STORAGE_BACKEND=postgres needs DATABASE_URL (or PGHOST and the other PG* settings)');
+    // Without a URL, the PostgreSQL client reads the PG* settings itself.
+    return new PostgresStore({ connectionString: process.env.DATABASE_URL || undefined, tablePrefix: process.env.PG_TABLE_PREFIX || '' });
   }
   if (backend === 'memory') return new MemoryStore();
   throw new StorageError(`Unknown STORAGE_BACKEND: ${backend} (use dynamodb, postgres or memory)`);
@@ -107,6 +109,11 @@ let objectsOverride: ObjectStore | null = null;
  *  - file: OBJECT_STORE_DIR/<bucket>/…
  *  - memory: in this process only (tests)
  */
+/** OBJECT_STORE=none: nothing is kept, nothing is found. */
+const NO_OBJECTS: ObjectStore = {
+  kind: 'memory', put: async () => {}, get: async () => null, list: async () => [], deletePrefix: async () => 0,
+};
+
 export function objects(bucket: string, options: { kms?: boolean } = {}): ObjectStore {
   if (objectsOverride) return objectsOverride;
   if (!sharedObjects) sharedObjects = new Map();
@@ -122,8 +129,10 @@ export function objects(bucket: string, options: { kms?: boolean } = {}): Object
       store = new FileObjectStore(`${process.env.OBJECT_STORE_DIR || './data/objects'}/${bucket}`);
     } else if (kind === 'memory') {
       store = new MemoryObjectStore();
+    } else if (kind === 'none') {
+      store = NO_OBJECTS;
     } else {
-      throw new StorageError(`Unknown OBJECT_STORE: ${kind} (use s3, file or memory)`);
+      throw new StorageError(`Unknown OBJECT_STORE: ${kind} (use s3, file, memory or none)`);
     }
     sharedObjects.set(id, store);
   }

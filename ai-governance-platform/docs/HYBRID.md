@@ -46,7 +46,7 @@ signature and the date itself; it never contacts us. This is the same timeline C
 
 | When | What happens |
 |---|---|
-| 30 days before the end | Notices: a banner on every dashboard page, email to the company's admins (through their own email settings), and a warning header on API responses |
+| 30 days before the end | Notices: a banner on every dashboard page, and email to the company's admins at 30, 14, 7 and 1 days, through their own mail server (SMTP; see INSTALL.md) |
 | End date | A 30-day grace period starts. Everything keeps working; the countdown is shown everywhere. |
 | After the grace period | **AI requests are refused** with a clear "license expired" error, never passed through unchecked. Admins can still sign in, enter a renewal and read evidence. |
 | Renewal | The customer enters the new signed license on the License page. Traffic resumes at once, with no restart. |
@@ -100,7 +100,7 @@ One image, `services/Dockerfile`, started by `PROBALINE_ROLE`:
 | 1 | One image, run by role; Cloud runs two roles of it | about 1 week | Built 2026-11-12 |
 | 2 | Signed license file: local checks of signature, end date and gateway address, with notices and grace; the platform issues licenses as files and tracks customers; remove the reporting agent | about 1 week | Built 2026-11-12 |
 | 3 | The image serves the dashboard; the customer's SSO (OIDC) and local accounts | about 1 week | Built 2026-11-12 |
-| 4 | Packaging: Helm chart, docker-compose, AWS template, install guide, test in a clean environment | about 1 week | |
+| 4 | Packaging: Helm chart, docker-compose, AWS template, install guide (docs/INSTALL.md), test in a clean environment | about 1 week | Built and tested 2026-11-12 (compose, Helm on kind, AWS in the dev account) |
 
 ## How the license works (step 2, built)
 

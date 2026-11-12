@@ -1,0 +1,69 @@
+# Probaline on one host: the gateway (with its dashboard and reports) and PostgreSQL.
+# Guide: docs/INSTALL.md. Settings: copy probaline.env.example to probaline.env and fill it in.
+#
+#   docker compose up -d                      gateway on http://localhost:3000 behind your own HTTPS proxy
+#   docker compose --profile https up -d      also Caddy, serving HTTPS with your certificate (certs/)
+#
+# One copy of the gateway. For more copies behind a load balancer, use the Helm chart or the AWS template.
+
+name: probaline
+
+services:
+  probaline:
+    image: ${PROBALINE_IMAGE:?Set PROBALINE_IMAGE in .env, e.g. registry.example.com/probaline:1.0.0}
+    restart: unless-stopped
+    env_file: probaline.env
+    environment:
+      LICENSING: offline
+      STORAGE_BACKEND: postgres
+      DATABASE_URL: postgres://probaline:${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}@postgres:5432/probaline
+      SECRET_STORE: database
+      # Archive copies of audit records, on this host's disk (see docs/INSTALL.md for S3 or none).
+      OBJECT_STORE: ${OBJECT_STORE:-file}
+      OBJECT_STORE_DIR: /data/objects
+      # One proxy in front (yours or Caddy below): its X-Forwarded-For entry is the caller's address.
+      TRUSTED_PROXY_HOPS: "1"
+    ports:
+      - "${PROBALINE_PORT:-3000}:3000"
+    volumes:
+      - objects:/data/objects
+    depends_on:
+      postgres:
+        condition: service_healthy
+    read_only: true
+    tmpfs: [/tmp]
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+
+  postgres:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: probaline
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: probaline
+    volumes:
+      - postgres:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD", "pg_isready", "-U", "probaline"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+
+  # Optional HTTPS in front of the gateway, with your own certificate: certs/gateway.crt and certs/gateway.key.
+  https:
+    profiles: [https]
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "443:443"
+    environment:
+      PROBALINE_ADDRESS: ${PROBALINE_ADDRESS:?Set PROBALINE_ADDRESS in .env, e.g. ai-gateway.customer.com}
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      - ./certs:/certs:ro
+    depends_on: [probaline]
+
+volumes:
+  postgres:
+  objects:

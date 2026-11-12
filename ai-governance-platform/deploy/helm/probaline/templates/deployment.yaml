@@ -1,0 +1,120 @@
+{{- if and (not .Values.existingSecret) (not .Values.secret) }}
+{{- fail "Set existingSecret (recommended) or secret: DATABASE_URL and SECRETS_ENCRYPTION_KEY are required. See docs/INSTALL.md." }}
+{{- end }}
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: {{ include "probaline.name" . }}
+  labels: {{- include "probaline.labels" . | nindent 4 }}
+spec:
+  {{- if not .Values.autoscaling.enabled }}
+  replicas: {{ .Values.replicaCount }}
+  {{- end }}
+  selector:
+    matchLabels: {{- include "probaline.selector" . | nindent 6 }}
+  strategy:
+    type: RollingUpdate
+    rollingUpdate: { maxUnavailable: 0, maxSurge: 1 }
+  template:
+    metadata:
+      labels: {{- include "probaline.selector" . | nindent 8 }}
+      annotations:
+        checksum/settings: {{ toJson .Values.secret | sha256sum }}
+    spec:
+      {{- with .Values.imagePullSecrets }}
+      imagePullSecrets: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      automountServiceAccountToken: false
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 65532
+        runAsGroup: 65532
+        fsGroup: 65532
+        seccompProfile: { type: RuntimeDefault }
+      containers:
+        - name: probaline
+          image: "{{ .Values.image.repository }}:{{ .Values.image.tag }}"
+          imagePullPolicy: {{ .Values.image.pullPolicy }}
+          ports:
+            - { name: http, containerPort: 3000 }
+          envFrom:
+            - secretRef:
+                name: {{ include "probaline.secretName" . }}
+          env:
+            - { name: PROBALINE_ROLE, value: all }
+            - { name: LICENSING, value: offline }
+            - { name: STORAGE_BACKEND, value: postgres }
+            - { name: SECRET_STORE, value: database }
+            - { name: PUBLIC_GATEWAY_URL, value: {{ .Values.publicUrl | quote }} }
+            - { name: PROBALINE_COMPANY_NAME, value: {{ .Values.company.name | quote }} }
+            - { name: PROBALINE_ADMIN_EMAIL, value: {{ .Values.company.adminEmail | quote }} }
+            - { name: TRUSTED_PROXY_HOPS, value: {{ .Values.trustedProxyHops | quote }} }
+            - { name: OBJECT_STORE, value: {{ .Values.objectStore.kind | quote }} }
+            {{- if eq .Values.objectStore.kind "s3" }}
+            - { name: AUDIT_LOG_BUCKET, value: {{ .Values.objectStore.bucket | quote }} }
+            {{- with .Values.objectStore.s3Endpoint }}
+            - { name: S3_ENDPOINT, value: {{ . | quote }} }
+            {{- end }}
+            {{- end }}
+            {{- if eq .Values.objectStore.kind "file" }}
+            - { name: OBJECT_STORE_DIR, value: /data/objects }
+            {{- end }}
+            {{- if .Values.sso.issuer }}
+            - { name: PROBALINE_SSO_NAME, value: {{ .Values.sso.name | quote }} }
+            - { name: PROBALINE_SSO_ISSUER, value: {{ .Values.sso.issuer | quote }} }
+            - { name: PROBALINE_SSO_CLIENT_ID, value: {{ .Values.sso.clientId | quote }} }
+            {{- end }}
+            {{- if .Values.smtp.host }}
+            - { name: SMTP_HOST, value: {{ .Values.smtp.host | quote }} }
+            - { name: SMTP_PORT, value: {{ .Values.smtp.port | quote }} }
+            - { name: SMTP_TLS, value: {{ .Values.smtp.tls | quote }} }
+            - { name: SMTP_FROM, value: {{ .Values.smtp.from | quote }} }
+            {{- end }}
+            {{- range $k, $v := .Values.extraEnv }}
+            - { name: {{ $k }}, value: {{ $v | quote }} }
+            {{- end }}
+          readinessProbe:
+            httpGet: { path: /health/ready, port: http }
+            periodSeconds: 10
+            failureThreshold: 3
+          livenessProbe:
+            httpGet: { path: /health, port: http }
+            initialDelaySeconds: 20
+            periodSeconds: 20
+            failureThreshold: 3
+          resources: {{- toYaml .Values.resources | nindent 12 }}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: { drop: [ALL] }
+          volumeMounts:
+            - { name: tmp, mountPath: /tmp }
+            {{- if eq .Values.objectStore.kind "file" }}
+            - { name: objects, mountPath: /data/objects }
+            {{- end }}
+      volumes:
+        - name: tmp
+          emptyDir: {}
+        {{- if eq .Values.objectStore.kind "file" }}
+        - name: objects
+          {{- if .Values.persistence.enabled }}
+          persistentVolumeClaim: { claimName: {{ include "probaline.name" . }}-objects }
+          {{- else }}
+          {{- fail "objectStore.kind=file needs persistence.enabled (a ReadWriteMany volume every copy can write)" }}
+          {{- end }}
+        {{- end }}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector:
+            matchLabels: {{- include "probaline.selector" . | nindent 14 }}
+      {{- with .Values.nodeSelector }}
+      nodeSelector: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.tolerations }}
+      tolerations: {{- toYaml . | nindent 8 }}
+      {{- end }}
+      {{- with .Values.affinity }}
+      affinity: {{- toYaml . | nindent 8 }}
+      {{- end }}

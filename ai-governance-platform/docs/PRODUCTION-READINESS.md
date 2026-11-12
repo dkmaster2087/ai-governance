@@ -361,3 +361,42 @@ end-to-end suite 54/54 (Cloud unaffected), and the image itself: first admin cre
 dashboard, the temporary password replaced, a person added with a temporary password shown once. Found and fixed:
 an inline script in the dashboard's page was blocked by the gateway's security policy (moved to a file).
 Not yet tried against a real identity provider (Entra ID, Okta).
+
+## Packaging (2026-11-12)
+
+Hybrid step 4: `deploy/compose` (gateway + PostgreSQL, optional Caddy for HTTPS), `deploy/helm/probaline`
+(non-root, read-only, spread across nodes, disruption budget, optional autoscaling, settings from a Secret),
+`deploy/aws/probaline.yaml` (ECS Fargate, RDS PostgreSQL with TLS verified against the RDS CAs baked into the
+image, internal HTTPS load balancer), and `docs/INSTALL.md`. Also: `OBJECT_STORE=none`, PostgreSQL settings as
+PG* variables (for RDS-managed passwords), first start safe when several copies start together.
+
+Verified:
+- **compose,** from a clean folder:
+  - the first admin was created and could sign in;
+  - the install started with 30 days of grace;
+  - a restart kept sessions and passwords;
+  - the archive volume was writable.
+- **Helm,** on kind (Kubernetes 1.37):
+  - 2 copies, non-root and read-only, passed their probes;
+  - starting together, they made one company and one admin;
+  - a sign-in on one copy worked on the other;
+  - the license was active, and other addresses were refused (421).
+- **AWS template,** deployed in the dev account:
+  - RDS PostgreSQL 16, with TLS checked against the RDS certificate authorities;
+  - 2 Fargate tasks, with one company and one admin between them;
+  - the first admin's temporary password was in CloudWatch, as documented;
+  - sign-in worked over HTTPS through the load balancer;
+  - the license was active, 10 of 10 requests succeeded across both tasks, and the dashboard loaded;
+  - the load balancer's own name was refused (421), and plain HTTP was closed.
+  - The test stack, its snapshot, the retained key secret, the test certificate and the test image were deleted
+    afterwards.
+
+## Email for customer-run installs (2026-11-12)
+
+SMTP through the customer's own mail server (`SMTP_*`), beside SES in AWS. Always encrypted (STARTTLS on 587 or
+TLS on 465) with the server's certificate checked (`SMTP_CA` for a private CA); nodemailer 10.5.0 (earlier versions
+have open high advisories). The Alerts page says how email is sent and has "Send me a test email". License notices
+now go by email to every admin at 30, 14, 7 and 1 days before the end, the same points through grace, and once if
+AI requests stop; each once whatever the number of gateway copies, retried if the mail server refuses.
+Verified: unit tests, and a real SMTP server (Mailpit, STARTTLS required): an untrusted certificate was refused,
+and with SMTP_CA the message arrived.

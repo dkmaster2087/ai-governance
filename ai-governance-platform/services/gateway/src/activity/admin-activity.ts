@@ -27,6 +27,7 @@ export const ADMIN_ACTIONS: Record<string, string> = {
   'POST /v1/models/config/:modelConfigId/test': 'model.tested',
   'POST /v1/alerts/rules': 'alert_rule.created',
   'POST /v1/alerts/test': 'alert.tested',
+  'POST /v1/alerts/email-test': 'alert.email_tested',
   'PATCH /v1/alerts/rules/:ruleId': 'alert_rule.updated',
   'DELETE /v1/alerts/rules/:ruleId': 'alert_rule.deleted',
   'POST /v1/alerts/rules/:ruleId/test': 'alert.tested',
