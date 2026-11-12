@@ -35,6 +35,8 @@ const PUBLIC_PREFIXES = ['/health', '/public/',
 /** MCP addresses accept a Probaline API key here, or a sign-in token the MCP route checks itself. */
 const MCP_PREFIX = '/mcp/';
 const PROXY_PREFIX = '/v1/proxy/';
+/** Other gateways' guardrail hooks: LiteLLM sends its guardrail key as x-api-key. */
+const GUARDRAILS_PREFIX = '/v1/guardrails/';
 
 /** Claims we read from a verified Cognito ID token. */
 export interface UserTokenClaims {
@@ -126,7 +128,9 @@ export function createAuthPlugin(deps: AuthDeps) {
       // In proxy mode the client's Authorization header carries its own provider key and is forwarded
       // untouched, so the Probaline credential travels in x-probaline-key (injected by the corporate proxy).
       const isProxyRoute = request.url.startsWith(PROXY_PREFIX);
-      const authHeader = isProxyRoute ? header(request, 'x-probaline-key') : header(request, 'authorization');
+      const authHeader = isProxyRoute
+        ? header(request, 'x-probaline-key')
+        : header(request, 'authorization') ?? (request.url.startsWith(GUARDRAILS_PREFIX) ? header(request, 'x-api-key') : undefined);
       const isMcpRoute = request.url.startsWith(MCP_PREFIX);
       // No credentials, or a token from Probaline's own sign-in: the MCP route answers (and says where to sign in).
       if (isMcpRoute && (!authHeader || looksLikeJwt(authHeader.replace(/^Bearer /, '').trim()))) return;

@@ -97,6 +97,17 @@ describe('PolicyEvaluator', () => {
     expect(result.allowed).toBe(false);
   });
 
+  it('skips model rules when another gateway did not say which model it calls', async () => {
+    MockRepo.prototype.getPoliciesForTenant.mockResolvedValue([
+      makePolicy([{
+        ruleId: 'rule_model', type: 'model_restriction', action: 'block', priority: 1, enabled: true,
+        config: { allowedModels: ['anthropic.claude-3-sonnet-20240229-v1:0'] }, description: 'Only allow Sonnet',
+      }]),
+    ]);
+    const result = await evaluator.evaluate({ ...makeRequest('Hello', 'unknown'), metadata: { modelUnknown: 'true' } });
+    expect(result.allowed).toBe(true);
+  });
+
   it('skips disabled rules', async () => {
     MockRepo.prototype.getPoliciesForTenant.mockResolvedValue([
       makePolicy([{

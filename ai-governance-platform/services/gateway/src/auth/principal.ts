@@ -10,10 +10,10 @@ export type UserRole = 'platform_admin' | 'tenant_admin' | 'tenant_auditor' | 't
 export const USER_ROLES: readonly UserRole[] = ['platform_admin', 'tenant_admin', 'tenant_auditor', 'tenant_user'];
 
 /** API key scopes. Keys created before scopes were enforced default to ['chat', 'models']. */
-export type ApiKeyScope = 'chat' | 'models' | 'shadow_ai:ingest' | 'reporting:ingest' | 'mcp';
+export type ApiKeyScope = 'chat' | 'models' | 'shadow_ai:ingest' | 'reporting:ingest' | 'mcp' | 'guardrails';
 
-/** `mcp`: connect an agent to the company's MCP servers. */
-export const API_KEY_SCOPES: readonly ApiKeyScope[] = ['chat', 'models', 'shadow_ai:ingest', 'reporting:ingest', 'mcp'];
+/** `mcp`: connect an agent to the company's MCP servers. `guardrails`: another AI gateway calls Probaline's checks. */
+export const API_KEY_SCOPES: readonly ApiKeyScope[] = ['chat', 'models', 'shadow_ai:ingest', 'reporting:ingest', 'mcp', 'guardrails'];
 
 export type Principal =
   | {

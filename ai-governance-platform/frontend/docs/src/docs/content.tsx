@@ -133,6 +133,73 @@ client = OpenAI(
     ),
   },
   {
+    slug: 'other-gateways',
+    title: 'Using another AI gateway',
+    summary: 'Keep LiteLLM, Portkey or Kong for routing; Probaline checks every request and keeps the evidence.',
+    body: (
+      <>
+        <P>If you already run an AI gateway for routing, keys and budgets, keep it. It calls Probaline as a guardrail before the model (the prompt) and after it (the answer). Probaline runs the same checks as on its own endpoint, in the same order, and writes the case file; your gateway still calls the model.</P>
+        <Table head={['Check', 'Prompt', 'Answer']} rows={[
+          ['Your rules', 'Yes. Model rules apply only when your gateway says which model it calls', 'No'],
+          ['Secrets', 'Stopped or removed, as you set on the Rules page', 'Stopped or removed'],
+          ['Personal data', 'Removed', 'Removed'],
+          ['Prompt attacks (beta)', 'Off, flag or stop, as you set', 'No'],
+        ]} />
+        <H2>1. Create a key</H2>
+        <P>In <strong>More → API keys</strong>, create a key with <strong>Checks for another gateway</strong>. Give it the name of the gateway; it appears as the app on case files unless the gateway names its own.</P>
+        <H2>2. Connect your gateway</H2>
+        <P><strong>LiteLLM</strong> (Generic Guardrail API). Add one guardrail for prompts and one for answers:</P>
+        <Code>{`litellm_settings:
+  guardrails:
+    - guardrail_name: probaline-prompt
+      litellm_params:
+        guardrail: generic_guardrail_api
+        mode: pre_call
+        api_base: https://gateway.example.com/v1/guardrails/litellm
+        api_key: os.environ/PROBALINE_KEY
+        unreachable_fallback: fail_closed
+    - guardrail_name: probaline-answer
+      litellm_params:
+        guardrail: generic_guardrail_api
+        mode: post_call
+        api_base: https://gateway.example.com/v1/guardrails/litellm
+        api_key: os.environ/PROBALINE_KEY`}</Code>
+        <P>LiteLLM’s key alias or team becomes the app on the case file, and its end user or key user becomes the person.</P>
+        <P><strong>Portkey</strong> (webhook guardrail). Create a guardrail with a Webhook check pointing at <C>https://gateway.example.com/v1/guardrails/portkey</C>, add the header <C>Authorization: Bearer &lt;key&gt;</C>, turn on <strong>Fail on error</strong>, and set the action to deny. Attach it as both an input and an output guardrail. Pass a person as <C>_user</C> in <C>x-portkey-metadata</C>.</P>
+        <P><strong>Kong</strong> (AI Custom Guardrail plugin, Kong Gateway 3.14 or later with an AI license):</P>
+        <Code>{`- name: ai-custom-guardrail
+  config:
+    guarding_mode: BOTH
+    text_source: concatenate_all_content
+    request:
+      url: https://gateway.example.com/v1/guardrails/kong
+      headers:
+        Authorization: "Bearer <key>"
+        Content-Type: application/json
+      body:
+        input: "$(content)"
+    response:
+      block: "$(resp.block)"
+      block_message: "$(resp.block_message)"`}</Code>
+        <Note>Kong can only allow or stop: it can’t send a cleaned prompt or answer. Anything Probaline would remove (personal data, or a secret when you chose to remove secrets) stops the call instead.</Note>
+        <P><strong>Anything else</strong> that can call an HTTP hook uses <C>POST /v1/guardrails/check</C>:</P>
+        <Code>{`POST /v1/guardrails/check
+Authorization: Bearer <key>
+{ "phase": "prompt", "model": "gpt-4o",
+  "messages": [{ "role": "user", "content": "My SSN is 123-45-6789" }] }
+
+→ { "requestId": "req_…", "action": "modify", "block": false,
+    "messages": [{ "role": "user", "content": "My SSN is [REDACTED]" }] }`}</Code>
+        <P><C>action</C> is <C>allow</C>, <C>modify</C> (use the texts returned) or <C>block</C> (with <C>reason</C> and <C>code</C>). Send <C>"phase": "answer"</C> for the model’s answer; you can send <C>text</C> or <C>texts</C> instead of <C>messages</C>.</P>
+        <H2>What is recorded</H2>
+        <P>Every prompt check writes a case file in Evidence, marked with the gateway it came from. An answer check writes one only when it removes or stops something, so a call isn’t counted twice. Your gateway reports token counts and cost, so they aren’t on these case files.</P>
+        <H2>When a check can’t run</H2>
+        <P>Your fail mode decides. Failing closed (the default), LiteLLM and Portkey get a block and Kong gets <C>block: true</C>, so the call stops even if the gateway is set to let failures through. <C>/v1/guardrails/check</C> answers <C>503</C>. A lapsed license answers <C>403 LICENSE_ENDED</C>.</P>
+        <Note>Calls that go through your own gateway count as going through Probaline only if the gateway calls these checks. Lock direct paths to the models (see <Link to="/docs/locking-ai-traffic" className="underline">Locking AI traffic</Link>) so the gateway is the only way out.</Note>
+      </>
+    ),
+  },
+  {
     slug: 'browser-extension',
     title: 'Browser extension and shadow AI',
     summary: 'See and control AI tools used outside the gateway.',
@@ -540,6 +607,8 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           [<C>POST /v1/chat/completions</C>, 'OpenAI-compatible chat completion'],
           [<C>GET /v1/models</C>, 'Models your company allows'],
           [<C>ANY /v1/proxy/:provider/*</C>, 'Proxy mode (needs X-Probaline-Key)'],
+          [<C>POST /v1/guardrails/check</C>, 'Probaline’s checks for another gateway: prompt or answer (key with the guardrails permission)'],
+          [<C>POST /v1/guardrails/litellm · /portkey · /kong</C>, 'The same checks in LiteLLM’s, Portkey’s and Kong’s guardrail formats'],
           [<C>POST /mcp/:company/:server</C>, 'An MCP server (Streamable HTTP, JSON-RPC); a signed-in person’s token or a key with the mcp permission'],
           [<C>/oauth/:company/…</C>, 'Sign-in for MCP clients: register, authorize, token, revoke (OAuth 2.1 with PKCE)'],
           [<C>GET /.well-known/jwks.json</C>, 'The key that checks X-Probaline-Identity and Probaline’s sign-in tokens'],

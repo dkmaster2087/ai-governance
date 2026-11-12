@@ -2,7 +2,7 @@ import { createApiClient } from './http';
 
 const gateway = createApiClient('/api');
 
-export type Scope = 'chat' | 'models' | 'shadow_ai:ingest' | 'mcp';
+export type Scope = 'chat' | 'models' | 'shadow_ai:ingest' | 'mcp' | 'guardrails';
 
 export interface ApiKeySummary {
   keyId: string;

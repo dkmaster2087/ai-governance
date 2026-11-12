@@ -5,6 +5,7 @@ import { DASHBOARD_URL } from '../../lib/config';
 
 const LINKS = [
   { label: 'How it works', to: '/how-it-works' },
+  { label: 'Compliance', to: '/compliance' },
   { label: 'Assessment', to: '/assessment' },
   { label: 'Gateway', to: '/gateway' },
   { label: 'Deployment', to: '/deployment' },
@@ -25,7 +26,7 @@ export function Logo() {
 }
 
 const linkClass = ({ isActive }: { isActive: boolean }) =>
-  clsx('flex items-center min-h-[44px] no-underline', isActive ? 'font-semibold text-ink shadow-[inset_0_-2px_0_#14213D]' : 'text-ink-muted hover:text-ink');
+  clsx('flex items-center min-h-[44px] no-underline whitespace-nowrap', isActive ? 'font-semibold text-ink shadow-[inset_0_-2px_0_#14213D]' : 'text-ink-muted hover:text-ink');
 
 /** Stays at the top while the page scrolls. */
 export function Navbar() {
@@ -37,14 +38,14 @@ export function Navbar() {
     <header className="sticky top-0 z-40 bg-white/95 backdrop-blur-sm border-b border-line">
       <div className="max-w-[1200px] mx-auto px-5 sm:px-10 min-h-[64px] flex items-center gap-8">
         <Logo />
-        <nav aria-label="Main" className="hidden lg:flex items-center gap-6 text-[15px]">
+        <nav aria-label="Main" className="hidden xl:flex items-center gap-6 text-[15px]">
           {LINKS.map((l) => <NavLink key={l.to} to={l.to} className={linkClass}>{l.label}</NavLink>)}
         </nav>
-        <div className="ml-auto hidden lg:flex items-center gap-3">
-          <a href={DASHBOARD_URL} className="min-h-[44px] flex items-center px-2 text-ink-muted hover:text-ink no-underline">Sign in</a>
-          <Link to="/contact" className="min-h-[40px] flex items-center px-4 rounded-lg bg-ink text-white font-semibold no-underline hover:bg-[#1E2F54]">Book an assessment</Link>
+        <div className="ml-auto hidden xl:flex items-center gap-3">
+          <a href={DASHBOARD_URL} className="min-h-[44px] flex items-center whitespace-nowrap px-2 text-ink-muted hover:text-ink no-underline">Sign in</a>
+          <Link to="/contact" className="min-h-[40px] flex items-center whitespace-nowrap px-4 rounded-lg bg-ink text-white font-semibold no-underline hover:bg-[#1E2F54]">Book an assessment</Link>
         </div>
-        <details ref={menu} className="lg:hidden ml-auto relative">
+        <details ref={menu} className="xl:hidden ml-auto relative">
           <summary className="list-none cursor-pointer min-h-[44px] min-w-[44px] flex items-center justify-center" aria-label="Menu">
             <svg width="22" height="22" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
           </summary>

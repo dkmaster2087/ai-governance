@@ -8,7 +8,7 @@ function removedWhat(removed: EvidenceListItem['removed']): string {
 }
 
 type Line = { verb: string; tone: 'stop' | 'ink' | 'muted'; text: string };
-type DecisionFields = Pick<EvidenceListItem, 'outcome' | 'app' | 'model' | 'reason' | 'mcp' | 'unanswered' | 'removed' | 'flagged'>;
+type DecisionFields = Pick<EvidenceListItem, 'outcome' | 'app' | 'model' | 'reason' | 'mcp' | 'unanswered' | 'removed' | 'flagged' | 'via'>;
 
 /** One line for a decision, the same on the Gateway and Evidence pages. */
 export function describeDecision(i: DecisionFields): Line {
@@ -20,7 +20,18 @@ export function describeDecision(i: DecisionFields): Line {
 }
 
 function baseLine(i: DecisionFields): Line {
-  const target = i.mcp ? `${i.mcp.tool} on ${i.mcp.server}` : i.model;
+  if (!i.via) return ownLine(i);
+  // Checked for another gateway, which called the model itself.
+  if (i.via.phase === 'answer') {
+    if (i.outcome === 'stopped') return { verb: 'Stopped', tone: 'stop', text: `an answer to a ${i.app} request through ${i.via.gateway}: ${i.reason ?? 'blocked by policy'}.` };
+    return { verb: 'Cleaned', tone: 'ink', text: `an answer to a ${i.app} request through ${i.via.gateway}; secrets or personal data removed.` };
+  }
+  const line = ownLine(i);
+  return { ...line, text: `${line.text.replace(/\.$/, '')}, through ${i.via.gateway}.` };
+}
+
+function ownLine(i: DecisionFields): Line {
+  const target = i.mcp ? `${i.mcp.tool} on ${i.mcp.server}` : i.model === 'unknown' ? 'a model' : i.model;
   if (i.outcome === 'stopped') {
     return { verb: 'Stopped', tone: 'stop', text: i.mcp ? `a call to ${target}: ${i.reason ?? 'blocked by policy'}.` : `a ${i.app} request to ${target}: ${i.reason ?? 'blocked by policy'}.` };
   }

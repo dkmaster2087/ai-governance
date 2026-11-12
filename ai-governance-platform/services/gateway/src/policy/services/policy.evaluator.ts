@@ -98,6 +98,8 @@ export class PolicyEvaluator {
       case 'model_restriction': {
         // Tool calls through MCP servers aren't model traffic: model rules don't apply to them.
         if (isToolCall) return null;
+        // Another gateway that didn't say which model it's calling can't be judged against a model list.
+        if (request.metadata?.modelUnknown === 'true') return null;
         if (rule.config.onlyConfiguredModels) {
           const models = await this.configuredModels(request.tenantId);
           // A company that hasn't added any model yet can't be judged against an empty list.

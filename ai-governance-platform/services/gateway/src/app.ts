@@ -40,6 +40,7 @@ import { activityRoutes } from './routes/activity.routes';
 import { logExportRoutes } from './routes/log-export.routes';
 import { enforcementRoutes } from './routes/enforcement.routes';
 import { feedRoutes } from './routes/feeds.routes';
+import { guardrailsRoutes } from './routes/guardrails.routes';
 
 export async function buildApp() {
   const securityConfig = getSecurityConfig();
@@ -79,7 +80,7 @@ export async function buildApp() {
   // End-to-end time of AI requests and tool calls, for the latency alarm.
   app.addHook('onResponse', async (request, reply) => {
     const path = request.url.split('?')[0];
-    if (request.method === 'POST' && (path === '/v1/chat/completions' || path.startsWith('/v1/proxy/') || path.startsWith('/mcp/'))) {
+    if (request.method === 'POST' && (path === '/v1/chat/completions' || path.startsWith('/v1/proxy/') || path.startsWith('/v1/guardrails/') || path.startsWith('/mcp/'))) {
       opsMetrics.time(OPS.REQUEST_LATENCY, reply.elapsedTime);
     }
   });
@@ -108,6 +109,8 @@ export async function buildApp() {
   await app.register(shadowAIRoutes, { prefix: '/v1' });
   await app.register(costRoutes, { prefix: '/v1' });
   await app.register(proxyRoutes, { prefix: '/v1' });
+  // Probaline's checks called by another AI gateway (LiteLLM, Portkey, Kong, any HTTP guardrail hook).
+  await app.register(guardrailsRoutes, { prefix: '/v1' });
   await app.register(apiKeyRoutes, { prefix: '/v1' });
   await app.register(alertRoutes, { prefix: '/v1' });
   await app.register(gatewayRoutes, { prefix: '/v1' });

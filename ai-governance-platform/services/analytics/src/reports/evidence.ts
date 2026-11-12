@@ -55,9 +55,14 @@ export interface EvidenceListItem {
   unanswered?: true;
   /** What was removed before sending, for cleaned requests. */
   removed?: { secrets?: true; personalData?: true };
+  /** Checked for another AI gateway that called the model itself (LiteLLM, Portkey, Kong, or any guardrail hook). */
+  via?: { gateway: string; phase: 'prompt' | 'answer' };
   /** Sent, but flagged as a possible prompt attack (Beta). */
   flagged?: true;
 }
+
+/** The other AI gateways that call Probaline's checks, as people write them. */
+const GATEWAY_NAMES: Record<string, string> = { litellm: 'LiteLLM', portkey: 'Portkey', kong: 'Kong', api: 'another gateway' };
 
 /** True for an agent's MCP tool call rather than a prompt to a model. */
 export const isMcpCall = (l: AuditLog) => l.metadata?.kind === 'mcp_tool_call';
@@ -82,6 +87,7 @@ function toItem(l: AuditLog): EvidenceListItem {
     ...(unanswered(l) ? { unanswered: true as const } : {}),
     ...(outcomeOf(l) === 'cleaned' ? { removed: { ...(secretsRedacted(l) ? { secrets: true as const } : {}), ...(l.piiDetected ? { personalData: true as const } : {}) } } : {}),
     ...(promptAttackFlagged(l) ? { flagged: true as const } : {}),
+    ...(l.metadata?.guardrail ? { via: { gateway: GATEWAY_NAMES[l.metadata.guardrail] ?? 'another gateway', phase: l.metadata.guardrailPhase === 'answer' ? 'answer' as const : 'prompt' as const } } : {}),
   };
 }
 

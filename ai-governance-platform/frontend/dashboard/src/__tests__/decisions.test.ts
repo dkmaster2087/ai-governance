@@ -25,4 +25,13 @@ describe('one line per decision', () => {
     expect(describeDecision({ ...base, outcome: 'delivered', flagged: true })).toEqual({ verb: 'Flagged', tone: 'ink', text: 'a billing-api request to gpt-4o as a possible prompt attack; it was sent.' });
     expect(describeDecision({ ...base, outcome: 'cleaned', flagged: true, removed: { personalData: true } }).text).toBe('personal data from a billing-api prompt, then sent it to gpt-4o. Flagged as a possible prompt attack.');
   });
+
+  it('names the other gateway a request was checked for', () => {
+    expect(describeDecision({ ...base, outcome: 'cleaned', removed: { personalData: true }, via: { gateway: 'LiteLLM', phase: 'prompt' } }).text)
+      .toBe('personal data from a billing-api prompt, then sent it to gpt-4o, through LiteLLM.');
+    expect(describeDecision({ ...base, model: 'unknown', outcome: 'delivered', via: { gateway: 'Kong', phase: 'prompt' } }).text)
+      .toBe('a billing-api request to a model with no findings, through Kong.');
+    expect(describeDecision({ ...base, outcome: 'delivered', via: { gateway: 'Portkey', phase: 'answer' } }))
+      .toEqual({ verb: 'Cleaned', tone: 'ink', text: 'an answer to a billing-api request through Portkey; secrets or personal data removed.' });
+  });
 });

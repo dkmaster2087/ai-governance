@@ -11,6 +11,7 @@ import { DeploymentPage } from './pages/DeploymentPage';
 import { SecurityPage } from './pages/SecurityPage';
 import { AboutPage } from './pages/AboutPage';
 import { ContactPage } from './pages/ContactPage';
+import { CompliancePage } from './pages/CompliancePage';
 
 export default function App() {
   const { pathname } = useLocation();
@@ -26,6 +27,7 @@ export default function App() {
           <Route path="/" element={<HomePage />} />
           <Route path="/how-it-works" element={<HowItWorksPage />} />
           <Route path="/assessment" element={<AssessmentPage />} />
+          <Route path="/compliance" element={<CompliancePage />} />
           <Route path="/gateway" element={<GatewayPage />} />
           <Route path="/product" element={<Navigate to="/gateway" replace />} />
           <Route path="/pricing" element={<PricingPage />} />
