@@ -10,7 +10,8 @@ import {
   DEFAULT_FEED_CATEGORIES, FEED_CATEGORIES, FEED_FORMATS, FeedFormat, feedEntries, formatGuide, renderFeed,
 } from '../enforcement/feed-formats';
 import { Feed, feedStore, MAX_FEEDS, newFeedId, newToken } from '../enforcement/feed-store';
-import { AwsLockInput, awsLockPreview, feedPreview, FindingsLike, generateAwsLock, LockInputError } from '../enforcement/aws-lock';
+import { offlineLicensing } from '../licensing/offline-license';
+import { AwsLockInput, AwsLockMode, awsLockPreview, checkInput, feedPreview, FindingsLike, generateAwsLock, LockInputError } from '../enforcement/aws-lock';
 import {
   findingsStore, FindingsError, PATH_STATES, PathId, PATHS, PathState, PathStateRecord, pathStatus, StoredFindings, trimFindings,
 } from '../enforcement/paths';
@@ -33,7 +34,8 @@ const findings = z.object({
   paths: z.array(z.object({ id: z.string().max(20), stillDirect: z.array(z.object({ who: z.string().max(220), services: z.array(z.string().max(120)).max(50), count: z.number() })).max(1000) })).max(10).optional(),
 }).passthrough();
 const awsBody = z.object({
-  gatewayRoleArn: z.string().trim().max(600),
+  mode: z.enum(['gateway', 'hosted']).optional(),
+  gatewayRoleArn: z.string().trim().max(600).optional(),
   breakGlassRoleArn: z.string().trim().max(600).optional().or(z.literal('').transform(() => undefined)),
   targetIds: z.array(z.string().trim().max(80)).max(20).optional(),
   sagemaker: z.boolean().optional(),
@@ -44,6 +46,20 @@ const firstIssue = (e: z.ZodError) => {
   return i ? (i.path.length ? `${i.path.join('.')}: ${i.message}` : i.message) : 'Invalid request';
 };
 const bad = (message: string, code = 'INVALID_REQUEST') => ({ error: message, code });
+
+/**
+ * The AWS lock settings to show. A customer-run install's gateway runs in the customer's AWS, so its role is the
+ * exception; on Probaline's cloud the gateway is in our account, so the customer's lock exempts no gateway, and our
+ * role is never shown to them.
+ */
+export function awsView(saved: AwsSettings | null | undefined): AwsSettings & { mode: AwsLockMode } {
+  const fallback: AwsLockMode = offlineLicensing() ? 'gateway' : 'hosted';
+  const mode = saved?.mode ?? (saved?.gatewayRoleArn ? 'gateway' : fallback);
+  const { gatewayRoleArn, ...rest } = saved ?? {};
+  return mode === 'gateway'
+    ? { ...rest, mode, gatewayRoleArn: gatewayRoleArn || process.env.GATEWAY_ROLE_ARN || '' }
+    : { ...rest, mode };
+}
 
 export const feedUrls = (base: string, tenantId: string, token: string) =>
   Object.fromEntries(FEED_FORMATS.map((f) => [f, `${base}/public/feeds/${tenantId}/${token}/${f}`])) as Record<FeedFormat, string>;
@@ -110,7 +126,7 @@ export async function lockKitApis(tenantId: string, issuer: string) {
   };
 }
 
-interface AwsSettings { gatewayRoleArn?: string; breakGlassRoleArn?: string; targetIds?: string[]; sagemaker?: boolean }
+interface AwsSettings { mode?: AwsLockMode; gatewayRoleArn?: string; breakGlassRoleArn?: string; targetIds?: string[]; sagemaker?: boolean }
 
 export async function enforcementRoutes(app: FastifyInstance) {
   const store = () => feedStore();
@@ -130,7 +146,7 @@ export async function enforcementRoutes(app: FastifyInstance) {
       feeds: feeds.map((f) => feedView(f, approved)),
       maxFeeds: MAX_FEEDS,
       approvedTools: approved,
-      aws: { ...(aws ?? {}), gatewayRoleArn: aws?.gatewayRoleArn || process.env.GATEWAY_ROLE_ARN || '' },
+      aws: awsView(aws),
       paths: pathStatus(states ?? {}, findings),
       findings: findings.map(findingsView),
     };
@@ -276,8 +292,9 @@ export async function enforcementRoutes(app: FastifyInstance) {
       if (err instanceof LockInputError) return reply.status(400).send(bad(err.message, 'INVALID_LOCK'));
       throw err;
     }
-    await store().saveSettings(request.tenantId, 'aws', parsed.data, request.userId);
-    return { aws: parsed.data };
+    const saved = checkInput(parsed.data as AwsLockInput);
+    await store().saveSettings(request.tenantId, 'aws', saved, request.userId);
+    return { aws: saved };
   });
 
   /** The policies, and who they would refuse according to a findings file. Recorded as admin activity. */

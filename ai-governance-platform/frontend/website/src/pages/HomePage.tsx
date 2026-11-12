@@ -50,7 +50,7 @@ export function HomePage() {
       </Section>
 
       <Section id="where" tone="canvas" eyebrow="Where it runs" title="Your environment, your choice of who operates it.">
-        <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
+        <div className="grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(260px, 100%), 1fr))' }}>
           {MODELS.map((m) => (
             <Panel key={m.name} className="p-5 flex flex-col gap-3">
               <div className="flex items-center justify-between gap-3"><span className="text-xl font-bold">{m.name}</span><span className="text-xs text-ink-muted">{m.status}</span></div>

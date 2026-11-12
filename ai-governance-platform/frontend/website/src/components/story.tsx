@@ -32,13 +32,13 @@ export const PHASES = [
     points: ['Rules start in report-only mode', 'Every path still open, with its fix', 'A trend from day one'],
     to: '/how-it-works#enforce',
     link: 'How enforcement works',
-    status: 'Coming' as const,
+    status: 'Beta' as const,
   },
 ];
 
 export function PhaseCards({ compact = false }: { compact?: boolean }) {
   return (
-    <ol className="m-0 p-0 list-none grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+    <ol className="m-0 p-0 list-none grid gap-5" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))' }}>
       {PHASES.map((p) => (
         <li key={p.n}>
           <Panel className="h-full p-6 flex flex-col gap-3">
@@ -72,7 +72,7 @@ export function SampleReport({ className }: { className?: string }) {
         <p className="m-0 text-xs text-ink-muted">AI usage assessment · Example Corp · 21 days</p>
         <p className="m-0 mt-2 text-[24px] sm:text-[28px] leading-[1.15] font-bold tracking-[-0.02em]">13 AI services used from 47 servers and devices and 212 people.</p>
         <p className="m-0 mt-2"><span className="text-stop font-semibold">4 services have no business data terms on record.</span> 6 servers call model APIs directly, with no policy in the way.</p>
-        <div className="mt-5 grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(120px, 1fr))' }}>
+        <div className="mt-5 grid gap-3" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(120px, 100%), 1fr))' }}>
           {stats.map(([v, l]) => (
             <div key={l} className="bg-white border border-line rounded-xl px-4 py-3"><div className="text-[22px] font-bold">{v}</div><div className="text-xs text-ink-muted">{l}</div></div>
           ))}

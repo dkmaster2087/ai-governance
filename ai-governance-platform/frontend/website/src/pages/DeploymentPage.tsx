@@ -4,7 +4,7 @@ import { DeploymentPicture } from '../components/visuals';
 
 export const MODELS: Array<{ name: string; status: 'Available' | 'Coming'; line: string; ours: string[]; theirs: string[]; note?: string }> = [
   { name: 'Cloud', status: 'Available', line: 'We run everything.', ours: ['Gateway', 'Dashboard', 'Evidence'], theirs: [] },
-  { name: 'Your infrastructure', status: 'Available', line: 'Everything on your servers. Nothing is sent to us.', ours: [], theirs: ['Gateway', 'Dashboard', 'Evidence'], note: 'One container image with your PostgreSQL: docker compose, Kubernetes (Helm) or AWS (CloudFormation). It checks its license file itself.' },
+  { name: 'On-premises', status: 'Available', line: 'On your servers or in your cloud account. Nothing is sent to us.', ours: [], theirs: ['Gateway', 'Dashboard', 'Evidence'], note: 'One container image with your PostgreSQL: docker compose, Kubernetes (Helm) or AWS (CloudFormation). It checks its license file itself.' },
 ];
 
 export function DeploymentPage() {
@@ -14,7 +14,7 @@ export function DeploymentPage() {
         <PageHeader eyebrow="Deployment" title="Run it where your data is allowed to be.">
           The same image in both. Choose who runs it.
         </PageHeader>
-        <div className="grid gap-5 pb-16" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
+        <div className="grid gap-5 pb-16" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(280px, 100%), 1fr))' }}>
           {MODELS.map((m) => (
             <Panel key={m.name} className="p-6 flex flex-col gap-4">
               <Status value={m.status} />

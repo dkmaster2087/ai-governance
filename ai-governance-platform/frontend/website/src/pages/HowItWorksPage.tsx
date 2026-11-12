@@ -10,15 +10,15 @@ export const JOURNEY: Array<{ when: string; title: string; status: 'Available' |
   { when: 'Weeks 1–4', title: 'Collect', status: 'Available' },
   { when: 'Week 4', title: 'Read the report together', status: 'Available' },
   { when: 'Weeks 4–8', title: 'Route apps, IDEs and browsers through Probaline', status: 'Available' },
-  { when: 'From week 8', title: 'Lock the other paths, report-only first', status: 'Coming' },
-  { when: 'Ongoing', title: 'Measure the share through Probaline', status: 'Coming' },
+  { when: 'From week 8', title: 'Lock the other paths, report-only first', status: 'Beta' },
+  { when: 'Ongoing', title: 'Measure the share through Probaline', status: 'Beta' },
 ];
 
 const LOCKS: Array<{ icon: 'cloud' | 'firewall' | 'browser' | 'report'; title: string; sub: string; status: 'Beta' | 'Coming' }> = [
-  { icon: 'cloud', title: 'Cloud policies', sub: 'Model calls only from the gateway', status: 'Coming' },
-  { icon: 'firewall', title: 'Firewall feed', sub: 'AI domains blocked except via Probaline', status: 'Coming' },
+  { icon: 'cloud', title: 'Cloud policies', sub: 'No direct model calls in AWS', status: 'Beta' },
+  { icon: 'firewall', title: 'Firewall feed', sub: 'AI domains blocked except via Probaline', status: 'Beta' },
   { icon: 'browser', title: 'Browser extension', sub: 'Unapproved tools blocked', status: 'Beta' },
-  { icon: 'report', title: 'Proof', sub: 'Share of AI traffic through Probaline', status: 'Coming' },
+  { icon: 'report', title: 'Proof', sub: 'Share of AI traffic through Probaline', status: 'Beta' },
 ];
 
 export function HowItWorksPage() {
@@ -37,7 +37,7 @@ export function HowItWorksPage() {
       </Section>
 
       <Section id="enforce" eyebrow="Phase 3 · Enforce and prove" title="Route, lock, verify.">
-        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+        <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(220px, 100%), 1fr))' }}>
           {LOCKS.map((x) => (
             <Panel key={x.title} className={clsx('p-5 flex flex-col gap-3', x.status === 'Coming' && 'border-dashed')}>
               <div className="flex items-start justify-between gap-3">

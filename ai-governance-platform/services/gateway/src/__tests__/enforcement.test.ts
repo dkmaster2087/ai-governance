@@ -113,7 +113,7 @@ describe('AWS lock generator', () => {
 
   it('never lets a policy deny the gateway', () => {
     const scp = serviceControlPolicy({ gatewayRoleArn: GW });
-    scp.Statement[0].Condition.ArnNotLike['aws:PrincipalArn'] = [BREAK];
+    scp.Statement[0].Condition!.ArnNotLike['aws:PrincipalArn'] = [BREAK];
     expect(checkPolicy(scp, { gatewayRoleArn: GW })).toContain('The gateway role would be denied.');
   });
 
@@ -125,8 +125,27 @@ describe('AWS lock generator', () => {
     expect(cfn.Parameters.TargetIds.Default).toBe('ou-ab12-cdef3456');
   });
 
+  it('on Probaline’s cloud, refuses everyone but the emergency role, and never names a gateway', () => {
+    const hosted = generateAwsLock({ mode: 'hosted', gatewayRoleArn: GW, breakGlassRoleArn: BREAK });
+    const st = (hosted.serviceControlPolicy as any).Statement[0];
+    expect(st).toMatchObject({ Sid: 'ProbalineNoDirectModelCalls', Effect: 'Deny', Condition: { ArnNotLike: { 'aws:PrincipalArn': [BREAK] } } });
+    expect(JSON.stringify(hosted)).not.toContain(GW);
+    expect(hosted.problems).toEqual([]);
+    expect(hosted.notes[0]).toMatch(/Probaline’s own AWS account/);
+    expect((hosted.vpcEndpointPolicy as any).Statement[0].Condition.ArnLike['aws:PrincipalArn']).toEqual([BREAK]);
+    // No gateway role given: hosted. No emergency role either: deny with no exceptions at all.
+    const bare = generateAwsLock({});
+    expect((bare.serviceControlPolicy as any).Statement[0].Condition).toBeUndefined();
+    expect((bare.vpcEndpointPolicy as any).Statement[0]).toMatchObject({ Effect: 'Deny', Principal: { AWS: '*' } });
+    expect(bare.notes.join(' ')).toMatch(/even if Probaline is unreachable/);
+    const scp = serviceControlPolicy({ mode: 'hosted', breakGlassRoleArn: BREAK });
+    scp.Statement[0].Condition!.ArnNotLike['aws:PrincipalArn'] = [BREAK, GW];
+    expect(checkPolicy(scp, { mode: 'hosted', breakGlassRoleArn: BREAK })).toContain('A role other than the emergency role is exempt.');
+  });
+
   it('rejects input that isn’t a role ARN or an OU', () => {
     expect(() => generateAwsLock({ gatewayRoleArn: 'arn:aws:iam::111122223333:user/bob' })).toThrow(LockInputError);
+    expect(() => generateAwsLock({ mode: 'gateway' })).toThrow(/gateway role/);
     expect(() => generateAwsLock({ gatewayRoleArn: GW, breakGlassRoleArn: GW })).toThrow(/different role/);
     expect(() => generateAwsLock({ gatewayRoleArn: GW, targetIds: ['ou-x"}'] })).toThrow(/Not an OU/);
     expect(generateAwsLock({ gatewayRoleArn: 'arn:aws-us-gov:iam::111122223333:role/path/to/gw' }).problems).toEqual([]);
@@ -268,6 +287,22 @@ describe('enforcement API and the public feed', () => {
     expect(res.findingsTo).toBe('2026-11-07');
     expect(res.wouldBeBlocked.services.map((s: any) => s.id)).toEqual(['openai-api', 'chatgpt']);
     expect((await app.inject({ method: 'GET', url: '/v1/activity?category=admin' })).json().items).toEqual([]);
+  });
+
+  it('shows the hosted lock on Probaline’s cloud without our gateway role, and the gateway lock on a customer-run install', async () => {
+    const before = { role: process.env.GATEWAY_ROLE_ARN, lic: process.env.LICENSING };
+    process.env.GATEWAY_ROLE_ARN = GW;
+    try {
+      const { awsView } = await import('../routes/enforcement.routes');
+      delete process.env.LICENSING;
+      expect(awsView(null)).toEqual({ mode: 'hosted' });
+      process.env.LICENSING = 'offline';
+      expect(awsView(null)).toEqual({ mode: 'gateway', gatewayRoleArn: GW });
+      expect(awsView({ mode: 'hosted', breakGlassRoleArn: BREAK })).toEqual({ mode: 'hosted', breakGlassRoleArn: BREAK });
+    } finally {
+      if (before.role === undefined) delete process.env.GATEWAY_ROLE_ARN; else process.env.GATEWAY_ROLE_ARN = before.role;
+      if (before.lic === undefined) delete process.env.LICENSING; else process.env.LICENSING = before.lic;
+    }
   });
 
   it('saves AWS settings, generates the lock with a preview, and records it', async () => {

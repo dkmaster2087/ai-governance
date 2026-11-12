@@ -421,6 +421,7 @@ node collector/dist/cli.js report --out ./results --company "Acme"
         <P>The address contains a long random token and is shown once. Anyone with it can read the list (public domain names only). Each feed shows when it was last fetched and from which address. <strong>New address</strong> stops the old one at once; <strong>Revoke</strong> deletes the feed.</P>
         <H2>AWS: only the gateway calls Bedrock and SageMaker</H2>
         <P>Enter the gateway’s IAM role and an emergency role. Probaline writes a service control policy that refuses <C>bedrock:InvokeModel*</C>, batch inference and <C>sagemaker:InvokeEndpoint*</C> to every other role, a matching VPC endpoint policy, and a CloudFormation template for your management account. AWS has no warn-only mode for these, so the page lists who would be refused, from your findings, first.</P>
+        <P>On Probaline Cloud, the gateway runs in Probaline’s AWS account, so nothing in yours needs to call models. The page then asks only for the emergency role, and the policy refuses direct model calls from every other role.</P>
         <P>Attach to one OU first. SCPs don’t apply to the management account or service-linked roles, and Bedrock agents and knowledge bases call models with their own roles: add those to the exceptions if you use them.</P>
         <H2>MCP servers on laptops</H2>
         <P>People add MCP servers to Claude Desktop, Claude Code, Cursor, VS Code and Windsurf with their own credentials, so those calls skip every company rule. The Enforcement page offers a read-only scan for device management (<C>mcp-scan.sh</C> for macOS, tested; <C>mcp-scan.ps1</C> for Windows, not yet tested). It prints the app, the server’s name, the package or the URL’s host, and whether it has credentials of its own, never their values. Give the output to the collector; the report lists the servers and which reach your own systems, and the Enforcement page shows how many laptops still have them.</P>
@@ -563,7 +564,7 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           [<C>GET /v1/enforcement/apis</C>, 'APIs behind your MCP servers, with the issuer, keys address and audience their check needs'],
           [<C>GET /v1/enforcement/apis/export</C>, 'The same as a file for the collector: hosts, base paths and the gateway’s outbound addresses'],
           [<C>POST /v1/enforcement/findings</C>, 'Upload a collector findings file (kept trimmed, 400 days); DELETE …/:id removes one'],
-          [<C>PUT /v1/enforcement/aws</C>, 'Save the gateway role, emergency role and targets'],
+          [<C>PUT /v1/enforcement/aws</C>, 'Save the mode (gateway or hosted), the gateway role, emergency role and targets'],
           [<C>POST /v1/enforcement/aws/generate</C>, 'The SCP, VPC endpoint policy and CloudFormation template, and who they’d refuse'],
           [<C>GET /public/feeds/:tenant/:token/:format</C>, 'The feed, for firewalls: no sign-in, the token is the credential; domains, zscaler, netskope, rpz, hosts'],
         ]} />

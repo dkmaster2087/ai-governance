@@ -132,6 +132,17 @@ describe('Enforcement page', () => {
     await waitFor(() => expect(generateAws).toHaveBeenCalledWith(expect.objectContaining({ gatewayRoleArn: GW, sagemaker: true })));
   });
 
+  it('on Probaline’s cloud, asks for no gateway role and writes the hosted lock', async () => {
+    const { getEnforcement } = await import('../lib/enforcement-api');
+    vi.mocked(getEnforcement).mockResolvedValueOnce({ ...data, aws: { mode: 'hosted' } } as never);
+    renderPage();
+    expect(await screen.findByRole('heading', { name: 'AWS: no direct Bedrock or SageMaker calls' })).toBeInTheDocument();
+    expect(screen.queryByText('Gateway role ARN')).toBeNull();
+    fireEvent.click(screen.getByRole('button', { name: 'Write the policies' }));
+    await waitFor(() => expect(generateAws).toHaveBeenLastCalledWith(expect.objectContaining({ mode: 'hosted' })));
+    expect(generateAws.mock.lastCall?.[0]).not.toHaveProperty('gatewayRoleArn');
+  });
+
   it('refuses files that aren’t findings', () => {
     expect(() => slimFindings({ hello: 1 })).toThrow(/findings file/);
     expect(() => slimFindings([])).toThrow();

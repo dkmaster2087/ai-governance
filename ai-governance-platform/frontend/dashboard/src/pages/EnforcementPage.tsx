@@ -380,8 +380,10 @@ function AwsLockPanel({ data, latestTo }: { data: Enforcement; latestTo?: string
   const [targets, setTargets] = useState((data.aws.targetIds ?? []).join(', '));
   const [result, setResult] = useState<AwsLock | null>(null);
   useEffect(() => { setResult(null); }, [latestTo]);
+  const hosted = s.mode === 'hosted';
+  const ready = hosted || !!s.gatewayRoleArn?.trim();
   const settings = (): AwsSettings => ({
-    gatewayRoleArn: s.gatewayRoleArn.trim(),
+    ...(hosted ? { mode: 'hosted' as const } : { mode: 'gateway' as const, gatewayRoleArn: (s.gatewayRoleArn ?? '').trim() }),
     ...(s.breakGlassRoleArn?.trim() ? { breakGlassRoleArn: s.breakGlassRoleArn.trim() } : {}),
     targetIds: targets.split(/[\s,]+/).filter(Boolean),
     sagemaker: s.sagemaker !== false,
@@ -396,13 +398,17 @@ function AwsLockPanel({ data, latestTo }: { data: Enforcement; latestTo?: string
   return (
     <Panel aria-label="AWS lock" className="px-6 py-5 flex flex-col gap-4 scroll-mt-24">
       <div>
-        <div className="flex items-center gap-3"><h2 className="m-0 text-xl font-semibold">AWS: only the gateway calls Bedrock and SageMaker</h2><Beta /></div>
-        <p className="m-0 mt-1 text-sm text-ink-muted max-w-[760px]">A service control policy for your AWS organization that refuses direct model calls from every role except the gateway’s and an emergency role. AWS has no warn-only mode for these, so check who it would stop first.</p>
+        <div className="flex items-center gap-3"><h2 className="m-0 text-xl font-semibold">{hosted ? 'AWS: no direct Bedrock or SageMaker calls' : 'AWS: only the gateway calls Bedrock and SageMaker'}</h2><Beta /></div>
+        <p className="m-0 mt-1 text-sm text-ink-muted max-w-[760px]">
+          {hosted
+            ? 'A service control policy for your AWS organization that refuses direct model calls from every role except an emergency role. Your AI requests go through Probaline’s cloud, which calls models from its own AWS account, so nothing in yours needs to. AWS has no warn-only mode for these, so check who it would stop first.'
+            : 'A service control policy for your AWS organization that refuses direct model calls from every role except the gateway’s and an emergency role. AWS has no warn-only mode for these, so check who it would stop first.'}
+        </p>
       </div>
       <div className="grid gap-4 md:grid-cols-2">
-        <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Gateway role ARN</span>
-          <input className={`${input} font-mono text-[13px]`} value={s.gatewayRoleArn} placeholder="arn:aws:iam::123456789012:role/probaline-gateway-task" onChange={(e) => setS({ ...s, gatewayRoleArn: e.target.value })} />
-        </label>
+        {!hosted && <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Gateway role ARN</span>
+          <input className={`${input} font-mono text-[13px]`} value={s.gatewayRoleArn ?? ''} placeholder="arn:aws:iam::123456789012:role/probaline-gateway-task" onChange={(e) => setS({ ...s, gatewayRoleArn: e.target.value })} />
+        </label>}
         <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Emergency role ARN <span className="font-normal text-ink-muted">(recommended)</span></span>
           <input className={`${input} font-mono text-[13px]`} value={s.breakGlassRoleArn ?? ''} placeholder="arn:aws:iam::123456789012:role/ai-break-glass" onChange={(e) => setS({ ...s, breakGlassRoleArn: e.target.value })} />
         </label>
@@ -413,8 +419,8 @@ function AwsLockPanel({ data, latestTo }: { data: Enforcement; latestTo?: string
       </div>
       {(save.isError || gen.isError) && <p role="alert" className="m-0 text-sm text-stop">{errorMessage(save.error ?? gen.error)}</p>}
       <div className="flex gap-2 flex-wrap items-center">
-        <Button disabled={!s.gatewayRoleArn.trim() || gen.isPending} onClick={() => gen.mutate()}>{gen.isPending ? 'Writing…' : 'Write the policies'}</Button>
-        <Button variant="secondary" disabled={!s.gatewayRoleArn.trim() || save.isPending} onClick={() => save.mutate()}>Save settings</Button>
+        <Button disabled={!ready || gen.isPending} onClick={() => gen.mutate()}>{gen.isPending ? 'Writing…' : 'Write the policies'}</Button>
+        <Button variant="secondary" disabled={!ready || save.isPending} onClick={() => save.mutate()}>Save settings</Button>
         {save.isSuccess && <span className="text-sm text-ink-muted">Saved.</span>}
       </div>
       {result && (

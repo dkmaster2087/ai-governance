@@ -23,7 +23,8 @@ export interface Feed {
 
 export interface FormatGuide { id: FeedFormat; label: string; products: string; rule: string }
 
-export interface AwsSettings { gatewayRoleArn: string; breakGlassRoleArn?: string; targetIds?: string[]; sagemaker?: boolean }
+/** `hosted`: the customer is on Probaline's cloud, so no gateway runs in their AWS and none is exempt. */
+export interface AwsSettings { mode?: 'gateway' | 'hosted'; gatewayRoleArn?: string; breakGlassRoleArn?: string; targetIds?: string[]; sagemaker?: boolean }
 
 export type PathState = 'open' | 'previewing' | 'locked';
 export interface Caller { who: string; services: string[]; count: number; fix?: string }

@@ -1,26 +1,21 @@
 import { Container, CtaLink, PageHeader, Panel, Status } from '../components/ui';
 
-const PLANS = [
-  {
-    name: 'Starter', price: '$499', period: '/month', description: 'For a first team putting AI behind a gateway.',
-    features: ['Up to 100,000 requests a month', 'Policy rules and personal-data cleaning', 'Evidence kept for 30 days', 'Email support'],
-  },
-  {
-    name: 'Professional', price: '$1,499', period: '/month', description: 'For security teams governing AI across the company.',
-    features: ['Up to 1 million requests a month', 'Shadow AI with the browser extension', 'IDE traffic through your corporate proxy', 'SOC 2, HIPAA and EU AI Act controls', 'Evidence kept for 1 year', 'Priority support'],
-    featured: true,
-  },
-  {
-    name: 'Enterprise', price: 'Custom', period: '', description: 'For large or regulated organizations.',
-    features: ['Unlimited requests', 'Deploy in your own AWS account', 'Custom evidence retention', 'Dedicated support contact'],
-  },
+const INCLUDED = [
+  'Unlimited requests and people',
+  'Every check: rules, secrets, personal data, prompt attacks',
+  'Apps, IDEs, browsers and AI agents (MCP)',
+  'SOC 2, HIPAA and EU AI Act controls',
+  'Evidence kept as long as you choose',
+  'Log export to your SIEM',
+  'Cloud or on-premises, same price',
+  'Email support and every update',
 ];
 
 export function PricingPage() {
   return (
     <Container>
-      <PageHeader eyebrow="Pricing" title="Priced by how much AI traffic you govern.">
-        Start with the assessment. Every gateway plan includes the dashboard and the evidence log.
+      <PageHeader eyebrow="Pricing" title="One price. Everything included.">
+        No tiers and no usage limits. Start with the assessment.
       </PageHeader>
       <Panel className="p-6 sm:p-8 mb-8 border-2 border-ink grid gap-6 items-center" >
         <div className="flex flex-wrap items-start justify-between gap-6">
@@ -32,18 +27,17 @@ export function PricingPage() {
           <CtaLink to="/contact">Book an assessment</CtaLink>
         </div>
       </Panel>
-      <div className="grid gap-5 pb-16 items-start" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
-        {PLANS.map((p) => (
-          <Panel key={p.name} className={p.featured ? 'p-6 border-2 border-ink flex flex-col gap-4' : 'p-6 flex flex-col gap-4'}>
-            <div>
-              <h2 className="m-0 text-xl font-bold">{p.name}</h2>
-              <p className="m-0 mt-1 text-ink-muted">{p.description}</p>
-            </div>
-            <p className="m-0"><span className="text-[40px] font-extrabold tracking-[-0.03em]">{p.price}</span><span className="text-ink-muted">{p.period}</span></p>
-            <ul className="m-0 pl-5 flex flex-col gap-1.5">{p.features.map((f) => <li key={f}>{f}</li>)}</ul>
-            <CtaLink to="/contact" variant={p.featured ? 'primary' : 'secondary'} className="mt-2">{p.price === 'Custom' ? 'Contact sales' : 'Talk to us'}</CtaLink>
-          </Panel>
-        ))}
+      <div className="pb-16">
+        <Panel className="p-6 sm:p-8 grid gap-6 md:grid-cols-[minmax(0,1fr)_minmax(0,1.4fr)] items-start">
+          <div className="flex flex-col gap-3">
+            <h2 className="m-0 text-xl font-bold">Probaline</h2>
+            <p className="m-0 text-ink-muted">The gateway, the dashboard and the evidence log, for your whole company.</p>
+            <p className="m-0"><span className="text-[40px] font-extrabold tracking-[-0.03em]">$2,000</span><span className="text-ink-muted">/month</span></p>
+            <p className="m-0 text-sm text-ink-muted">One license: one gateway address, run as many copies as you need behind your load balancer.</p>
+            <CtaLink to="/contact" className="mt-2 self-start">Talk to us</CtaLink>
+          </div>
+          <ul className="m-0 pl-5 grid gap-x-6 gap-y-1.5 sm:grid-cols-2">{INCLUDED.map((f) => <li key={f}>{f}</li>)}</ul>
+        </Panel>
       </div>
     </Container>
   );

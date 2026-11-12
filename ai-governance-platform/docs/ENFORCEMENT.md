@@ -147,6 +147,10 @@ extension governs them). `stillDirect` is per path; the fix names apps and peopl
 - Tests: share maths on fixtures, gateway identities by role, IP and host; trend across three findings files.
 
 ### 4. AWS lock generator (3 days) — built, beta
+Two modes (2026-11-12): `gateway` for a customer-run install (the gateway's role is exempt) and `hosted` for
+Probaline Cloud, where the gateway calls models from Probaline's own account. Hosted denies everyone in the
+customer's organization but the emergency role, and our gateway role is never shown to the customer. The dashboard
+picks the mode from the deployment (`LICENSING=offline` means customer-run).
 Built with one correction: an SCP can't be deployed by a StackSet, so the template is an
 `AWS::Organizations::Policy` for the management account (or the delegated administrator). `Converse` and
 `ConverseStream` are covered by `bedrock:InvokeModel*`. Validation is our structural checks; the Access

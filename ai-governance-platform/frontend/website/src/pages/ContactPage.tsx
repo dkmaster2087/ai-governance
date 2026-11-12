@@ -43,20 +43,20 @@ export function ContactPage() {
           <form onSubmit={submit} className="flex flex-col gap-4">
             {/* Left empty by people; bots that fill every field are ignored. */}
             <input name="website" value={form.website} onChange={set} tabIndex={-1} autoComplete="off" aria-hidden="true" className="absolute -left-[9999px] h-px w-px opacity-0" />
-            <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+            <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(220px, 100%), 1fr))' }}>
               <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">First name</span><input name="firstName" required value={form.firstName} onChange={set} className={field} autoComplete="given-name" /></label>
               <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Last name</span><input name="lastName" required value={form.lastName} onChange={set} className={field} autoComplete="family-name" /></label>
             </div>
             <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Work email</span><input name="email" type="email" required value={form.email} onChange={set} className={field} autoComplete="email" /></label>
-            <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))' }}>
+            <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(220px, 100%), 1fr))' }}>
               <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Company</span><input name="company" required value={form.company} onChange={set} className={field} autoComplete="organization" /></label>
               <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Your role <span className="font-normal text-ink-muted">(optional)</span></span><input name="role" value={form.role} onChange={set} className={field} autoComplete="organization-title" /></label>
             </div>
             <label className="flex flex-col gap-1.5">
               <span className="text-sm font-semibold">Where would you run it?</span>
               <select name="deploymentInterest" value={form.deploymentInterest} onChange={set} className={field}>
-                <option value="saas">Hosted by you</option>
-                <option value="onprem">In our own AWS account</option>
+                <option value="saas">Probaline Cloud (hosted by you)</option>
+                <option value="onprem">On-premises (our servers or cloud account)</option>
                 <option value="both">Not sure yet</option>
               </select>
             </label>

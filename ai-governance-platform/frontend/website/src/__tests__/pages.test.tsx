@@ -53,10 +53,11 @@ describe('website', () => {
     expect(screen.getByRole('heading', { name: /A pasted key is stopped/ })).toBeInTheDocument();
   });
 
-  it('marks enforcement as coming, not available', () => {
+  it('marks enforcement as beta, not available', () => {
     render(<MemoryRouter><HowItWorksPage /></MemoryRouter>);
     const lock = screen.getByText('Lock the other paths, report-only first').closest('li')!;
-    expect(within(lock).getByText('Coming')).toBeInTheDocument();
+    expect(within(lock).getByText('Beta')).toBeInTheDocument();
+    expect(screen.queryByText('Coming')).toBeNull();
   });
 
   it('shows every assessment source with whether it exists today', () => {
@@ -71,16 +72,21 @@ describe('website', () => {
     expect(screen.getByRole('img', { name: /Nothing goes to Probaline unless you share it/ })).toBeInTheDocument();
   });
 
-  it('only advertises the three compliance packs that exist', () => {
+  it('has one plan at $2,000 a month, with the three compliance packs that exist', () => {
     render(<MemoryRouter><PricingPage /></MemoryRouter>);
+    expect(screen.getByText('$2,000')).toBeInTheDocument();
+    expect(screen.queryByText('Starter')).toBeNull();
+    expect(screen.queryByText('Custom')).toBeNull();
     expect(screen.getByText('SOC 2, HIPAA and EU AI Act controls')).toBeInTheDocument();
     expect(screen.queryByText(/6 compliance frameworks/i)).toBeNull();
     expect(screen.getByRole('heading', { name: 'AI usage assessment' })).toBeInTheDocument();
   });
 
-  it('offers cloud and your own infrastructure, both available', () => {
+  it('offers cloud and on-premises only, both available', () => {
     render(<MemoryRouter><DeploymentPage /></MemoryRouter>);
-    expect(screen.getByRole('heading', { name: 'Your infrastructure' }).closest('[class*="p-6"]')).toHaveTextContent('Available');
+    expect(screen.getAllByRole('heading', { level: 2 }).map((h) => h.textContent)).toEqual(expect.arrayContaining(['Cloud', 'On-premises']));
+    expect(screen.queryByRole('heading', { name: 'Self-hosted' })).toBeNull();
+    expect(screen.getByRole('heading', { name: 'On-premises' }).closest('[class*="p-6"]')).toHaveTextContent('Available');
     expect(screen.getByText(/docker compose, Kubernetes \(Helm\) or AWS/)).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: 'Hybrid' })).toBeNull();
   });

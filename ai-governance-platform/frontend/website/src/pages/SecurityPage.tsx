@@ -18,7 +18,7 @@ export function SecurityPage() {
       <PageHeader eyebrow="Security" title="A security product should be boring to attack.">
         How Probaline protects the prompts that pass through it and the people who use it.
       </PageHeader>
-      <div className="grid gap-x-12 gap-y-10 pb-16" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(300px, 1fr))' }}>
+      <div className="grid gap-x-12 gap-y-10 pb-16" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(300px, 100%), 1fr))' }}>
         {ITEMS.map((i) => (
           <section key={i.title} className="border-t-2 border-ink pt-4">
             <h2 className="m-0 text-xl font-bold">{i.title}</h2>

@@ -5,7 +5,7 @@ import { GatewayFlow, McpFlow } from '../components/flows';
 
 function Feature({ eyebrow, title, children, sample }: { eyebrow: string; title: ReactNode; children: ReactNode; sample: ReactNode }) {
   return (
-    <section className="py-16 border-t border-line grid gap-10 items-start" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(320px, 1fr))' }}>
+    <section className="py-16 border-t border-line grid gap-10 items-start" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(320px, 100%), 1fr))' }}>
       <div>
         <Eyebrow className="mb-3">{eyebrow}</Eyebrow>
         <h2 className="m-0 text-[32px] leading-[1.12] font-bold tracking-[-0.02em]">{title}</h2>
@@ -55,7 +55,7 @@ export function GatewayPage() {
       <section aria-labelledby="ways-in" className="py-16 border-t border-line">
         <Eyebrow className="mb-3">Ways in</Eyebrow>
         <h2 id="ways-in" className="m-0 text-[32px] leading-[1.12] font-bold tracking-[-0.02em] max-w-[760px]">Four ways in. Nobody works differently.</h2>
-        <div className="grid gap-5 mt-10" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(270px, 1fr))' }}>
+        <div className="grid gap-5 mt-10" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(270px, 100%), 1fr))' }}>
           {WAYS_IN.map((w) => (
             <Panel key={w.title} className="p-6 flex flex-col gap-3">
               <Status value={w.status} />
@@ -182,7 +182,7 @@ export function GatewayPage() {
       <section aria-labelledby="lock" className="py-16 border-t border-line">
         <Eyebrow className="mb-3">Phase 3 · Enforce</Eyebrow>
         <h2 id="lock" className="m-0 text-[32px] leading-[1.12] font-bold tracking-[-0.02em] max-w-[760px]">Then close the paths around it.</h2>
-        <div className="mt-4 flex items-center gap-3"><Status value="Coming" /><Link to="/how-it-works#enforce" className="font-semibold text-ink hover:text-stop no-underline">How enforcement works →</Link></div>
+        <div className="mt-4 flex items-center gap-3"><Status value="Beta" /><Link to="/how-it-works#enforce" className="font-semibold text-ink hover:text-stop no-underline">How enforcement works →</Link></div>
       </section>
     </Container>
     <ClosingCta />

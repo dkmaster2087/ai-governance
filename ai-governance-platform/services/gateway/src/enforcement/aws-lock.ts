@@ -1,13 +1,24 @@
 import { Category, serviceById } from '@ai-governance/catalog';
 
 /**
- * The AWS lock: an organization service control policy (SCP) that denies direct model calls to everyone except
- * the gateway's role and a named emergency role, a matching VPC endpoint policy, and a CloudFormation template
- * that creates the SCP in the management account. Probaline writes them; the customer reviews and applies them.
+ * The AWS lock: an organization service control policy (SCP) that denies direct model calls, a matching VPC
+ * endpoint policy, and a CloudFormation template that creates the SCP in the management account. Probaline writes
+ * them; the customer reviews and applies them.
+ *
+ * Two modes:
+ * - `gateway`: the gateway runs in the customer's AWS (a customer-run install). Everyone is denied except the
+ *   gateway's role and the emergency role.
+ * - `hosted`: the customer uses Probaline's cloud, whose gateway calls models from Probaline's own AWS account.
+ *   Nothing in the customer's accounts needs to call models, so everyone is denied except the emergency role.
  */
 
+export type AwsLockMode = 'gateway' | 'hosted';
+
 export interface AwsLockInput {
-  gatewayRoleArn: string;
+  /** Defaults to `gateway` when a gateway role is given, `hosted` otherwise. */
+  mode?: AwsLockMode;
+  /** The gateway's role, for `gateway` mode; ignored in `hosted` mode. */
+  gatewayRoleArn?: string;
   /** An emergency role that keeps direct access if the gateway is down. Strongly recommended. */
   breakGlassRoleArn?: string;
   /** OUs (ou-…), the root (r-…) or accounts to attach the SCP to. Start with one OU. */
@@ -26,8 +37,14 @@ export const SAGEMAKER_ACTIONS = ['sagemaker:InvokeEndpoint', 'sagemaker:InvokeE
 
 export class LockInputError extends Error {}
 
+export const modeOf = (i: AwsLockInput): AwsLockMode => i.mode ?? (i.gatewayRoleArn ? 'gateway' : 'hosted');
+
 export function checkInput(input: AwsLockInput): AwsLockInput {
-  if (!ROLE_ARN.test(input.gatewayRoleArn ?? '')) throw new LockInputError('The gateway role must be an IAM role ARN, like arn:aws:iam::123456789012:role/probaline-gateway-task');
+  const mode = modeOf(input);
+  // In hosted mode there is no gateway in the customer's account to exempt.
+  if (mode === 'hosted') { const { gatewayRoleArn: _drop, ...rest } = input; input = { ...rest, mode }; }
+  else input = { ...input, mode };
+  if (mode === 'gateway' && !ROLE_ARN.test(input.gatewayRoleArn ?? '')) throw new LockInputError('The gateway role must be an IAM role ARN, like arn:aws:iam::123456789012:role/probaline-gateway-task');
   if (input.breakGlassRoleArn && !ROLE_ARN.test(input.breakGlassRoleArn)) throw new LockInputError('The emergency role must be an IAM role ARN');
   if (input.breakGlassRoleArn && input.breakGlassRoleArn === input.gatewayRoleArn) throw new LockInputError('The emergency role must be a different role from the gateway’s');
   const bad = (input.targetIds ?? []).find((t) => !TARGET_ID.test(t));
@@ -35,20 +52,21 @@ export function checkInput(input: AwsLockInput): AwsLockInput {
   return input;
 }
 
-const allowed = (i: AwsLockInput) => [i.gatewayRoleArn, ...(i.breakGlassRoleArn ? [i.breakGlassRoleArn] : [])];
+const allowed = (i: AwsLockInput) => [...(modeOf(i) === 'gateway' && i.gatewayRoleArn ? [i.gatewayRoleArn] : []), ...(i.breakGlassRoleArn ? [i.breakGlassRoleArn] : [])];
 const actions = (i: AwsLockInput) => [...BEDROCK_ACTIONS, ...(i.sagemaker === false ? [] : SAGEMAKER_ACTIONS)];
 
 export function serviceControlPolicy(input: AwsLockInput) {
   const i = checkInput(input);
+  const exempt = allowed(i);
   return {
     Version: '2012-10-17',
     Statement: [{
-      Sid: 'ProbalineModelCallsOnlyThroughGateway',
-      Effect: 'Deny',
+      Sid: modeOf(i) === 'gateway' ? 'ProbalineModelCallsOnlyThroughGateway' : 'ProbalineNoDirectModelCalls',
+      Effect: 'Deny' as const,
       Action: actions(i),
       Resource: '*',
       // aws:PrincipalArn is the role ARN for every session of the role, so sessions can't slip through.
-      Condition: { ArnNotLike: { 'aws:PrincipalArn': allowed(i) } },
+      ...(exempt.length ? { Condition: { ArnNotLike: { 'aws:PrincipalArn': exempt } } } : {}),
     }],
   };
 }
@@ -56,15 +74,18 @@ export function serviceControlPolicy(input: AwsLockInput) {
 /** For bedrock-runtime and sagemaker.runtime interface endpoints, so calls inside the VPC are held to the same rule. */
 export function vpcEndpointPolicy(input: AwsLockInput) {
   const i = checkInput(input);
+  const exempt = allowed(i);
+  // Hosted with no emergency role: nothing may call models through the endpoint (better: remove the endpoints).
+  if (!exempt.length) return { Version: '2012-10-17', Statement: [{ Sid: 'ProbalineNoDirectModelCalls', Effect: 'Deny', Principal: { AWS: '*' }, Action: actions(i), Resource: '*' }] };
   return {
     Version: '2012-10-17',
     Statement: [{
-      Sid: 'ProbalineGatewayOnly',
+      Sid: modeOf(i) === 'gateway' ? 'ProbalineGatewayOnly' : 'ProbalineEmergencyRoleOnly',
       Effect: 'Allow',
       Principal: { AWS: '*' },
       Action: actions(i),
       Resource: '*',
-      Condition: { ArnLike: { 'aws:PrincipalArn': allowed(i) } },
+      Condition: { ArnLike: { 'aws:PrincipalArn': exempt } },
     }],
   };
 }
@@ -74,7 +95,9 @@ export function cloudFormationTemplate(input: AwsLockInput) {
   const i = checkInput(input);
   return {
     AWSTemplateFormatVersion: '2010-09-09',
-    Description: 'Probaline: model calls only through the Probaline gateway (service control policy).',
+    Description: modeOf(i) === 'gateway'
+      ? 'Probaline: model calls only through the Probaline gateway (service control policy).'
+      : 'Probaline: no direct Bedrock or SageMaker model calls; AI goes through Probaline’s cloud (service control policy).',
     Parameters: {
       TargetIds: {
         Type: 'CommaDelimitedList',
@@ -87,7 +110,9 @@ export function cloudFormationTemplate(input: AwsLockInput) {
         Type: 'AWS::Organizations::Policy',
         Properties: {
           Name: 'probaline-model-calls-through-gateway',
-          Description: 'Denies Bedrock and SageMaker model calls except from the Probaline gateway role and the emergency role.',
+          Description: modeOf(i) === 'gateway'
+            ? 'Denies Bedrock and SageMaker model calls except from the Probaline gateway role and the emergency role.'
+            : 'Denies Bedrock and SageMaker model calls except from the emergency role.',
           Type: 'SERVICE_CONTROL_POLICY',
           Content: serviceControlPolicy(i),
           TargetIds: { Ref: 'TargetIds' },
@@ -97,15 +122,17 @@ export function cloudFormationTemplate(input: AwsLockInput) {
   };
 }
 
-/** Structural checks we can make without AWS: size, shape, and that the gateway is never denied. */
+/** Structural checks we can make without AWS: size, shape, that the gateway is never denied, and that a hosted
+ * lock exempts nobody but the emergency role. */
 export function checkPolicy(scp: ReturnType<typeof serviceControlPolicy>, input: AwsLockInput): string[] {
   const problems: string[] = [];
   const size = JSON.stringify(scp).length;
   if (size > SCP_MAX_CHARS) problems.push(`The policy is ${size} characters; AWS allows ${SCP_MAX_CHARS}.`);
   for (const s of scp.Statement) {
     if (s.Effect !== 'Deny') continue;
-    const exempt = s.Condition?.ArnNotLike?.['aws:PrincipalArn'] ?? [];
-    if (!exempt.includes(input.gatewayRoleArn)) problems.push('The gateway role would be denied.');
+    const exempt: string[] = ('Condition' in s && s.Condition?.ArnNotLike?.['aws:PrincipalArn']) || [];
+    if (modeOf(input) === 'gateway' && !exempt.includes(input.gatewayRoleArn ?? '')) problems.push('The gateway role would be denied.');
+    if (modeOf(input) === 'hosted' && exempt.some((a) => a !== input.breakGlassRoleArn)) problems.push('A role other than the emergency role is exempt.');
     if (s.Action.some((a) => !/^(bedrock|sagemaker):[A-Za-z*]+$/.test(a))) problems.push('An action outside Bedrock and SageMaker is listed.');
   }
   return problems;
@@ -128,7 +155,10 @@ export function generateAwsLock(input: AwsLockInput): AwsLockFiles {
     cloudFormation: cloudFormationTemplate(i),
     problems: checkPolicy(scp, i),
     notes: [
-      ...(i.breakGlassRoleArn ? [] : ['No emergency role: if the gateway is down, nobody in the targeted accounts can call models directly. Add one before attaching to production.']),
+      ...(modeOf(i) === 'hosted' ? ['Your AI requests go through Probaline’s cloud, which calls models from Probaline’s own AWS account. Nothing in your accounts needs to call Bedrock or SageMaker, so this policy refuses everyone but the emergency role.'] : []),
+      ...(i.breakGlassRoleArn ? [] : [modeOf(i) === 'gateway'
+        ? 'No emergency role: if the gateway is down, nobody in the targeted accounts can call models directly. Add one before attaching to production.'
+        : 'No emergency role: nobody in the targeted accounts can call models directly, even if Probaline is unreachable. Add one before attaching to production.']),
       'Attach to one OU first and watch the collector report for a few days before attaching wider.',
       'SCPs don’t apply to the management account or to service-linked roles. Bedrock agents and knowledge bases call models with their own service roles: add those roles to the exceptions if you use them.',
       'Model calls from other clouds and from the internet are locked by the AI-domain feed, not this policy.',
