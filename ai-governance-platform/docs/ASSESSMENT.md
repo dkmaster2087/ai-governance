@@ -119,7 +119,7 @@ without a new version of Probaline:
   it only if it's newer than the one in use: a replayed old file can't remove services. The last good one is kept
   in the database for every copy and for reports; without one, the built-in list is used.
 - **Nothing is sent:** no license key, install or company name, counts or user data (see HYBRID.md). An admin can
-  check now or upload a catalog file on **Settings** (the platform admin in Cloud, company admins on their own
+  check now or upload a catalog file on **Admin (gear) → Settings** (the platform admin in Cloud, company admins on their own
   install); `CATALOG_UPDATES=off` stops downloads, `CATALOG_URL` points at a mirror.
 - **New services are watched, never blocked,** unless the company chose to block all unapproved tools or
   subscribed its firewalls to that category's AI-domain feed. A catalog can also carry advisories about services

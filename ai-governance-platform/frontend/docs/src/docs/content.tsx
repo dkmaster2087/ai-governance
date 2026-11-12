@@ -708,7 +708,7 @@ npx cdk deploy --all --context stage=prod \\
           [<C>GATEWAY_EGRESS_IPS</C>, 'Your gateway’s outbound addresses, comma separated, for the “block except from the gateway” rules'],
           [<C>SECRET_STORE</C>, <><C>aws</C> (default, Secrets Manager) or <C>database</C>: provider keys and credentials encrypted in the database</>],
           [<C>SECRETS_ENCRYPTION_KEY</C>, <>With <C>SECRET_STORE=database</C>: 32 random bytes, base64 (<C>openssl rand -base64 32</C>). Keep it apart from your database backups</>],
-          [<C>CATALOG_UPDATES</C>, <><C>auto</C> (default): download Probaline’s signed AI service catalog every hour; <C>off</C>: don’t (upload the file on Settings instead)</>],
+          [<C>CATALOG_UPDATES</C>, <><C>auto</C> (default): download Probaline’s signed AI service catalog every hour; <C>off</C>: don’t (upload the file in Admin → Settings instead)</>],
           [<C>CATALOG_URL</C>, <>Where to download it, e.g. your own mirror (default <C>https://probaline.com/catalog/v1/latest.json</C>). Behind a proxy, set <C>HTTPS_PROXY</C></>],
           [<C>CATALOG_TRUSTED_KEYS</C>, 'Optional PEM public keys, for a mirror that signs its own additions; Probaline’s keys are always trusted'],
         ]} />
