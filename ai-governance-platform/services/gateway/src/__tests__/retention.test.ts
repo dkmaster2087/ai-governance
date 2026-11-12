@@ -37,6 +37,24 @@ describe('evidence retention', () => {
     expect(expiryOf(ts, { days: 30, hold: true })).toBeUndefined();
   });
 
+  it('keeps only the recent window in the database when an archive holds the rest', () => {
+    const ts = new Date().toISOString();
+    const inDays = (d: number) => Math.floor((Date.parse(ts) + d * DAY) / 1000);
+    // The archive (memory here) keeps a year; the database keeps 90 days plus two days' margin.
+    expect(expiryOf(ts, { days: 365, hold: false })).toBe(inDays(92));
+    const saved = { store: process.env.OBJECT_STORE, days: process.env.AUDIT_DB_DAYS };
+    try {
+      process.env.AUDIT_DB_DAYS = '30';
+      expect(expiryOf(ts, { days: 365, hold: false })).toBe(inDays(32));
+      // No archive: the database is the only copy, so it keeps the full period.
+      process.env.OBJECT_STORE = 'none';
+      expect(expiryOf(ts, { days: 365, hold: false })).toBe(inDays(365));
+    } finally {
+      process.env.OBJECT_STORE = saved.store;
+      if (saved.days === undefined) delete process.env.AUDIT_DB_DAYS; else process.env.AUDIT_DB_DAYS = saved.days;
+    }
+  });
+
   it('places a hold with a reason, which takes the expiry off existing records, and releasing puts it back', async () => {
     const old = new Date(Date.now() - 10 * DAY).toISOString();
     await collection('auditLogs').put({ tenantId: T, requestId: 'r1', timestamp: old, ttl: Math.floor(Date.now() / 1000) + 999_999 });

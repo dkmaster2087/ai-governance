@@ -7,17 +7,31 @@ const logger = createLogger('gateway:retention');
 /**
  * How long each company's evidence is kept, and the deleting that makes "kept until" true.
  *
- * - The searchable record carries its own expiry (`ttl`); the database deletes it after that time.
- * - The archive copy (one folder per day) is removed by a daily sweep, claimed by one gateway instance.
+ * - The archive copy (one folder per day) is kept for the company's full retention period and removed by a
+ *   daily sweep, claimed by one gateway instance.
+ * - The searchable database record is kept for the recent window only (AUDIT_DB_DAYS, 90 by default) so the
+ *   database stays small and fast; older records are read from the archive, more slowly. Without an archive
+ *   (OBJECT_STORE=none) the database is the only copy and keeps the full retention period.
  * - A legal hold stops both: records lose their expiry, and the sweep skips the company.
  */
 
 export const DEFAULT_RETENTION_DAYS = 365;
 const DAY_MS = 86_400_000;
+/** Extra days a record stays in the database past the window, so reads at the window's edge never need the archive. */
+const DATABASE_MARGIN_DAYS = 2;
 const day = (ms: number) => new Date(ms).toISOString().slice(0, 10);
 const archiveBucket = () => process.env.AUDIT_LOG_BUCKET || 'ai-governance-audit-logs';
 
 export interface Retention { days: number; hold: boolean }
+
+/** Days a record stays searchable in the database. */
+export function databaseDays(): number {
+  const d = Number(process.env.AUDIT_DB_DAYS);
+  return d > 0 ? d : 90;
+}
+
+/** Whether an archive copy exists to fall back on (any object store but `none`). */
+export const archiveEnabled = () => (process.env.OBJECT_STORE || 's3').toLowerCase() !== 'none';
 
 export async function retentionOf(tenantId: string): Promise<Retention> {
   const s = await tenantSettings().getSettings(tenantId);
@@ -25,10 +39,14 @@ export async function retentionOf(tenantId: string): Promise<Retention> {
   return { days: days > 0 ? days : DEFAULT_RETENTION_DAYS, hold: s?.legalHold?.on === true };
 }
 
-/** The record's expiry in seconds, or undefined while on hold. */
+/**
+ * When the database record expires, in seconds, or undefined while on hold. Never later than the company's
+ * retention; with an archive, no later than the database window either.
+ */
 export function expiryOf(timestamp: string, r: Retention): number | undefined {
   if (r.hold) return undefined;
-  return Math.floor((Date.parse(timestamp) + r.days * DAY_MS) / 1000);
+  const days = archiveEnabled() ? Math.min(r.days, databaseDays() + DATABASE_MARGIN_DAYS) : r.days;
+  return Math.floor((Date.parse(timestamp) + days * DAY_MS) / 1000);
 }
 
 type AuditRow = { tenantId: string; requestId: string; timestamp: string; ttl?: number };

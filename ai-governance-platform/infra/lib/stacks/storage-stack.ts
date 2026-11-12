@@ -231,8 +231,10 @@ export class StorageStack extends cdk.Stack {
           transitions: [{ storageClass: s3.StorageClass.INFREQUENT_ACCESS, transitionAfter: cdk.Duration.days(30) }],
         },
         {
-          id: 'TransitionToGlacier',
-          transitions: [{ storageClass: s3.StorageClass.GLACIER, transitionAfter: cdk.Duration.days(90) }],
+          // Past the database window (90 days) the archive is where old evidence is read from, so it must stay
+          // readable on demand: Glacier Instant Retrieval, not Glacier Flexible Retrieval, which needs a restore.
+          id: 'TransitionToGlacierInstant',
+          transitions: [{ storageClass: s3.StorageClass.GLACIER_INSTANT_RETRIEVAL, transitionAfter: cdk.Duration.days(90) }],
         },
         {
           // The gateway deletes each company's archive days once its retention period ends (versioning keeps

@@ -91,7 +91,10 @@ export class FileObjectStore implements ObjectStore {
         else if (!e.name.endsWith('.tmp') && r.startsWith(prefix)) out.push(r);
       }
     };
-    await walk(this.dir, '');
+    // Start at the deepest folder the prefix names (e.g. one company's day), not at the top of the store.
+    const base = prefix.includes('/') ? prefix.slice(0, prefix.lastIndexOf('/')) : '';
+    if (base) checkKey(base);
+    await walk(base ? path.join(this.dir, ...base.split('/')) : this.dir, base);
     return out.sort();
   }
 

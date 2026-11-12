@@ -41,6 +41,7 @@ Three ways to install:
 | `PROBALINE_LICENSE` | No | The license file's text. It can be entered on the License page instead |
 | `PROBALINE_SSO_ISSUER`, `PROBALINE_SSO_CLIENT_ID`, `PROBALINE_SSO_CLIENT_SECRET`, `PROBALINE_SSO_NAME` | No | Company sign-in. See "Signing in" |
 | `OBJECT_STORE` | No | Archive copies of audit records: `none` (the database already has every record), `file` (with `OBJECT_STORE_DIR`; every copy must write to the same volume), or `s3` (with `AUDIT_LOG_BUCKET`, plus `S3_ENDPOINT` for MinIO or another S3-compatible store) |
+| `AUDIT_DB_DAYS` | No | Days audit records stay in the database (default 90). Older records, up to each company's retention, are read from the archive, more slowly. Ignored with `OBJECT_STORE=none`: the database then keeps the full retention period |
 | `TRUSTED_PROXY_HOPS` | No | How many proxies in front add `X-Forwarded-For`. Usually 1 (your load balancer or ingress) |
 | `SMTP_HOST`, `SMTP_PORT`, `SMTP_FROM`, `SMTP_USER`, `SMTP_PASSWORD`, `SMTP_TLS`, `SMTP_CA` | No | Email through your own mail server. See "Email" |
 

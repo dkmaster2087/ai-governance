@@ -152,6 +152,8 @@ export class ServicesStack extends cdk.Stack {
       secrets: { ...trustedKeysSecret, ...tlsSecrets('analytics') },
     });
     for (const t of [auditLogsTable, tenantsTable, shadowAiTable, metricsTable]) t.grantReadData(analyticsService.taskDefinition.taskRole);
+    // Evidence older than the database window is read from the archive copy.
+    auditLogBucket.grantRead(analyticsService.taskDefinition.taskRole);
 
 
     // Customers' provider API keys live in Secrets Manager under this prefix.

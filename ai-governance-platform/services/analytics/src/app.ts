@@ -4,6 +4,7 @@ import { allPages, collection, records, SPECS } from '@ai-governance/storage';
 import { AuditLog } from '@ai-governance/types';
 import { createLogger, INTERNAL_HEADER, InternalAuthError, InternalCaller, InternalTls, peerService, tlsServerOptions, TrustedKey, verifyInternal } from '@ai-governance/utils';
 import { isModelTraffic, queryAuditLogs } from './reports/audit-query';
+import { findArchived } from './reports/archive';
 import { costBreakdown, costSummary, costUsers, mcpActivity, ruleActivity } from './reports/cost';
 import { buildEvidenceRecord, listEvidence } from './reports/evidence';
 import { summarizeGatewayTraffic } from './reports/gateway-summary';
@@ -174,17 +175,22 @@ export async function buildApp(opts: { trusted: TrustedKey[]; tls?: InternalTls 
   app.get('/internal/v1/evidence', async (request, reply) => {
     const q = parse(evidenceQuery, request, reply); if (!q) return;
     const r = range(q); if (!r) return bad(reply, 'INVALID_RANGE', 'Range must be positive and at most 31 days');
-    const { logs, truncated } = await queryAuditLogs(tenantOf(request), r.fromIso, r.toIso);
-    return { ...listEvidence(logs, q), truncated, from: r.fromIso, to: r.toIso };
+    const { logs, truncated, archived } = await queryAuditLogs(tenantOf(request), r.fromIso, r.toIso);
+    return { ...listEvidence(logs, q), truncated, archived, from: r.fromIso, to: r.toIso };
   });
 
-  /** One case file. Keyed by the caller's company, so another company's request ID finds nothing. */
+  /**
+   * One case file. Keyed by the caller's company, so another company's request ID finds nothing.
+   * Past the database window it comes from the archive (slower); `at`, the record's time when known, narrows that.
+   */
   app.get('/internal/v1/evidence/:requestId', async (request, reply) => {
     const { requestId } = request.params as { requestId: string };
+    const { at } = request.query as { at?: string };
     const tenantId = tenantOf(request);
-    const item = await collection<AuditLog & Record<string, unknown>>('auditLogs').get({ tenantId, requestId });
-    if (!item) return bad(reply, 'NOT_FOUND', 'No record for that request', 404);
     const view = await tenantView(tenantId);
+    const item = (await collection<AuditLog & Record<string, unknown>>('auditLogs').get({ tenantId, requestId }))
+      ?? await findArchived(tenantId, requestId, view.retentionDays, typeof at === 'string' ? at : undefined);
+    if (!item) return bad(reply, 'NOT_FOUND', 'No record for that request', 404);
     return buildEvidenceRecord(item, view.retentionDays, view.legalHold);
   });
 

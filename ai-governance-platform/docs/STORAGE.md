@@ -87,6 +87,16 @@ PostgreSQL in Docker when they are available), so the backends can't drift apart
   request can reach SQL as code. Values are always passed as parameters.
 - **Paging** tokens are opaque and only valid for the backend that issued them.
 
+## Audit records: database window and archive
+
+- The database keeps the last `AUDIT_DB_DAYS` days (90 by default, plus two days' margin) so it stays small and
+  fast. Each record's expiry is the shorter of that window and the company's retention; legal hold removes it.
+- The archive copy (`OBJECT_STORE`: S3, MinIO, or a directory) keeps each record for the company's full
+  retention and is swept daily. Reads older than the window (evidence search, a case file) come from it, a day
+  folder at a time: slower, by design. On AWS the archive moves to Glacier Instant Retrieval after 90 days, so it
+  stays readable without a restore.
+- With `OBJECT_STORE=none` there is no archive, and the database keeps every record for the full retention.
+
 ## What stays the same
 
 - The AWS deployment (CDK) is unchanged and still uses DynamoDB and S3.

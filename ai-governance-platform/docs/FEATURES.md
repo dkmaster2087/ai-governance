@@ -95,6 +95,15 @@ The rules:
 - For stopped requests only: about 60 characters either side of the trigger, with personal data masked; a
   personal-data trigger is stored only as its type (for example `[SSN]`).
 - The text of delivered prompts is never stored.
+- **How long:** each company sets its evidence retention (365 days by default, 30 days to 10 years). A legal
+  hold keeps everything until it is released.
+  - The **last 90 days** are in the database, so the dashboard, search and case files are fast
+    (`AUDIT_DB_DAYS` changes the window).
+  - **Older records**, up to the retention period, are read from the archive copy: S3 on AWS, MinIO or another
+    S3-compatible store, or a directory on the server's disk on-premises. Searches and case files reaching back
+    that far work the same but are slower.
+  - Without an archive (`OBJECT_STORE=none`, the default for the Helm chart and the customer-AWS template), the
+    database keeps every record for the full retention period.
 - **Admin activity:** every change made through the dashboard or API (rules, keys, models, MCP servers,
   approvals, connectors, sign-in settings, log export, tenant changes by a platform admin), successful or
   refused for lack of permission: who (user ID, email, role), what (action and the IDs it touched, never the
