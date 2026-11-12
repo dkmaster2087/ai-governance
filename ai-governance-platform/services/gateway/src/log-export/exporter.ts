@@ -50,11 +50,11 @@ export function exporterOptionsFromEnv(): ExporterOptions {
 export interface SendResult { ok: boolean; status?: number; ms: number; error?: string; answer?: string }
 
 /** Sends one HTTP request. Swappable in tests. */
-export type Transport = (req: { url: string; headers: Record<string, string>; body: string; timeoutMs: number }) => Promise<{ status: number; body: string; ms: number }>;
+export type Transport = (req: { url: string; headers: Record<string, string>; body: string | Buffer; contentType?: string; timeoutMs: number }) => Promise<{ status: number; body: string; ms: number }>;
 
 export const httpTransport: Transport = async (req) => {
   const r = await callBackend({
-    url: new URL(req.url), method: 'POST', headers: req.headers, body: req.body, contentType: 'application/json',
+    url: new URL(req.url), method: 'POST', headers: req.headers, body: req.body, contentType: req.contentType ?? 'application/json',
     timeoutMs: req.timeoutMs, maxBytes: 4096, allowPrivate: allowPrivateDestinations(),
   });
   return { status: r.status, body: r.body, ms: r.ms };
@@ -232,7 +232,7 @@ export class Exporter {
     const started = this.now();
     try {
       const secrets = await this.store().secrets(d);
-      const req = buildRequest({ kind: d.kind, splunkIndex: d.splunkIndex }, secrets, records, batchId, new Date(this.now()));
+      const req = buildRequest({ kind: d.kind, splunkIndex: d.splunkIndex, otlpEncoding: d.otlpEncoding }, secrets, records, batchId, new Date(this.now()));
       const res = await this.transport({ ...req, timeoutMs: this.opts.timeoutMs });
       const answer = res.body.slice(0, 300);
       return res.status >= 200 && res.status < 300 ? { ok: true, status: res.status, ms: res.ms, answer } : { ok: false, status: res.status, ms: res.ms, answer };

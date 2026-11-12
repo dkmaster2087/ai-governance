@@ -9,10 +9,13 @@ import { tenantSettings } from '../services/tenant-settings.service';
 import { checkSecrets } from '../services/secrets-check';
 import { checkPromptAttack, latestTurn, promptAttackBedrock, PromptAttackResult, PROMPT_ATTACK_RULE } from '../services/prompt-attack';
 import { redactDeep } from '../services/secret-detector';
+import { maskPromptFields } from '../services/proxy-pii';
+import { PIIDetectionService } from '../data-protection/pii-detection.service';
 
 const logger = createLogger('gateway:proxy');
 const policyClient = new PolicyEngineClient();
 const auditService = new AuditService();
+const pii = new PIIDetectionService();
 const settings = tenantSettings();
 
 /** Known AI provider targets — maps a slug to the real base URL */
@@ -111,6 +114,8 @@ export async function proxyRoutes(app: FastifyInstance) {
     let messages = extractMessages(body);
     const modelId = extractModel(body);
     const auditMetadata: Record<string, string> = { proxyMode: 'true' };
+    /** Whether personal data was removed from the prompt (check 3). */
+    let piiDetected = false;
     /** The prompt-attack verdict (Beta), added to the audit record when it's written. */
     let promptAttack: Promise<PromptAttackResult> | null = null;
     const withAttack = async () => (promptAttack ? { ...auditMetadata, ...(await promptAttack).metadata } : auditMetadata);
@@ -164,6 +169,22 @@ export async function proxyRoutes(app: FastifyInstance) {
       if (secrets.outcome === 'redacted') {
         body = redactDeep(body).value;
         messages = extractMessages(body);
+      }
+
+      // --- 2b'. Personal data: removed from the prompt text before it leaves, as on the app endpoint ---
+      try {
+        const masked = await maskPromptFields(body, (t) => pii.maskText(t));
+        if (masked.changed) {
+          body = masked.body;
+          messages = extractMessages(body);
+          piiDetected = true;
+        }
+      } catch (err) {
+        if ((await settings.getFailMode(tenantId)) !== 'open') {
+          logger.error('Proxy request blocked: personal data check failed', { requestId, tenantId });
+          return reply.status(503).send({ error: 'Governance check unavailable', code: 'GOVERNANCE_UNAVAILABLE', requestId });
+        }
+        auditMetadata.governanceDegraded = [auditMetadata.governanceDegraded, 'pii_masking'].filter(Boolean).join(',');
       }
 
       // --- 2c. Prompt attacks (Beta): "flag" is recorded with the answer; "block" waits for the verdict ---
@@ -245,6 +266,7 @@ export async function proxyRoutes(app: FastifyInstance) {
           { requestId, content: '[proxy passthrough]', inputTokens: usage.input, outputTokens: usage.output, latencyMs, provider: provider as any, modelId, finishReason: 'stop', timestamp: new Date().toISOString() },
           { allowed: true, action: 'allow', triggeredRules: [], riskScore: 0 },
           latencyMs,
+          { piiDetected },
         ).catch((err) => logger.error('Proxy audit failed', { requestId, error: (err as Error).message }));
       });
       return;
@@ -278,6 +300,7 @@ export async function proxyRoutes(app: FastifyInstance) {
           { requestId, content: '[proxy passthrough]', inputTokens, outputTokens, latencyMs, provider: provider as any, modelId, finishReason: 'stop', timestamp: new Date().toISOString() },
           { allowed: true, action: 'allow', triggeredRules: [], riskScore: 0 },
           latencyMs,
+          { piiDetected },
         );
       }
 

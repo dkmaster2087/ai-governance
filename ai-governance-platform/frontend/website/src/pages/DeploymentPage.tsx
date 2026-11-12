@@ -4,8 +4,7 @@ import { DeploymentPicture } from '../components/visuals';
 
 export const MODELS: Array<{ name: string; status: 'Available' | 'Coming'; line: string; ours: string[]; theirs: string[]; note?: string }> = [
   { name: 'Cloud', status: 'Available', line: 'We run everything.', ours: ['Gateway', 'Dashboard', 'Evidence'], theirs: [] },
-  { name: 'Hybrid', status: 'Coming', line: 'Prompts stay with you; we run the dashboard.', ours: ['Dashboard', 'Rules'], theirs: ['Gateway', 'Evidence'] },
-  { name: 'Self-hosted', status: 'Available', line: 'Everything in your AWS account.', ours: [], theirs: ['Gateway', 'Dashboard', 'Evidence'], note: 'Your database: DynamoDB or PostgreSQL. On-premises and Kubernetes: planned' },
+  { name: 'Your infrastructure', status: 'Available', line: 'Everything on your servers. Nothing is sent to us.', ours: [], theirs: ['Gateway', 'Dashboard', 'Evidence'], note: 'One container image with your PostgreSQL: docker compose, Kubernetes (Helm) or AWS (CloudFormation). It checks its license file itself.' },
 ];
 
 export function DeploymentPage() {
@@ -13,7 +12,7 @@ export function DeploymentPage() {
     <>
       <Container>
         <PageHeader eyebrow="Deployment" title="Run it where your data is allowed to be.">
-          Same software in all three. Choose who operates it.
+          The same image in both. Choose who runs it.
         </PageHeader>
         <div className="grid gap-5 pb-16" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(280px, 1fr))' }}>
           {MODELS.map((m) => (

@@ -197,34 +197,51 @@ describe('export formats', () => {
     const req = buildRequest({ kind: 'webhook' }, { url: 'https://siem.acme.example/in', signingSecret: 'whsec_test' }, records, 'b_1', now);
     const sig = req.headers['x-probaline-signature'];
     const t = now.getTime() / 1000;
-    expect(sig).toBe(signatureHeader('whsec_test', req.body, t));
-    expect(verifySignature('whsec_test', req.body, sig, t)).toBe(true);
-    expect(verifySignature('whsec_test', req.body + ' ', sig, t)).toBe(false);
-    expect(verifySignature('whsec_other', req.body, sig, t)).toBe(false);
-    expect(verifySignature('whsec_test', req.body, sig, t + 3600)).toBe(false);
-    expect(JSON.parse(req.body)).toMatchObject({ schema: 'probaline.batch/1', batchId: 'b_1', count: 1 });
+    const body = String(req.body);
+    expect(sig).toBe(signatureHeader('whsec_test', body, t));
+    expect(verifySignature('whsec_test', body, sig, t)).toBe(true);
+    expect(verifySignature('whsec_test', body + ' ', sig, t)).toBe(false);
+    expect(verifySignature('whsec_other', body, sig, t)).toBe(false);
+    expect(verifySignature('whsec_test', body, sig, t + 3600)).toBe(false);
+    expect(JSON.parse(body)).toMatchObject({ schema: 'probaline.batch/1', batchId: 'b_1', count: 1 });
   });
 
   it('Splunk HEC gets one event per line with the token and sourcetype', () => {
     const req = buildRequest({ kind: 'splunk_hec', splunkIndex: 'security' }, { url: 'https://splunk.acme.example:8088', token: 'hec-token-1234' }, [fromDecision(decision(1)), fromDecision(decision(2))], 'b_2');
     expect(req.url).toBe('https://splunk.acme.example:8088/services/collector/event');
     expect(req.headers.authorization).toBe('Splunk hec-token-1234');
-    const lines = req.body.split('\n').map((l) => JSON.parse(l));
+    const lines = String(req.body).split('\n').map((l) => JSON.parse(l));
     expect(lines).toHaveLength(2);
     expect(lines[0]).toMatchObject({ sourcetype: 'probaline:decision', index: 'security', source: 'probaline', event: { requestId: 'req_1' } });
     expect(lines[0].time).toBe(Date.parse('2026-11-06T10:00:01.000Z') / 1000);
   });
 
   it('OTLP/HTTP gets resource logs with severity and attributes, and the collector headers', () => {
-    const req = buildRequest({ kind: 'otlp_http' }, { url: 'https://otel.acme.example:4318', headers: { 'DD-API-KEY': 'dd' } }, [fromDecision(decision(3))], 'b_3');
+    const req = buildRequest({ kind: 'otlp_http', otlpEncoding: 'json' }, { url: 'https://otel.acme.example:4318', headers: { 'DD-API-KEY': 'dd' } }, [fromDecision(decision(3))], 'b_3');
     expect(req.url).toBe('https://otel.acme.example:4318/v1/logs');
     expect(req.headers['DD-API-KEY']).toBe('dd');
-    const body = JSON.parse(req.body);
+    const body = JSON.parse(String(req.body));
     const lr = body.resourceLogs[0].scopeLogs[0].logRecords[0];
     expect(body.resourceLogs[0].resource.attributes).toContainEqual({ key: 'service.name', value: { stringValue: 'probaline' } });
     expect(lr).toMatchObject({ severityText: 'WARN', severityNumber: 13, timeUnixNano: String(Date.parse('2026-11-06T10:00:03.000Z')) + '000000' });
     expect(lr.attributes).toContainEqual({ key: 'probaline.outcome', value: { stringValue: 'stopped' } });
     expect(JSON.parse(lr.body.stringValue).requestId).toBe('req_3');
+  });
+
+  it('OTLP/HTTP sends protobuf by default, carrying the same fields', () => {
+    const req = buildRequest({ kind: 'otlp_http' }, { url: 'https://otel.acme.example:4318' }, [fromDecision(decision(3))], 'b_4');
+    expect(req.contentType).toBe('application/x-protobuf');
+    expect(Buffer.isBuffer(req.body)).toBe(true);
+    const bytes = req.body as Buffer;
+    // ExportLogsServiceRequest: field 1 (resource_logs), length-delimited.
+    expect(bytes[0]).toBe(0x0a);
+    const text = bytes.toString('latin1');
+    expect(text).toContain('service.name');
+    expect(text).toContain('probaline.outcome');
+    expect(text).toContain('req_3');
+    // time_unix_nano is fixed64 (field 1, wire type 1 = 0x09) inside the log record.
+    const nanos = Buffer.alloc(8); nanos.writeBigUInt64LE(BigInt(Date.parse('2026-11-06T10:00:03.000Z')) * 1_000_000n);
+    expect(bytes.includes(Buffer.concat([Buffer.from([0x09]), nanos]))).toBe(true);
   });
 
   it('refuses plain http, private addresses and credentials in the address', () => {
@@ -258,7 +275,7 @@ function receiver(fail: () => boolean = () => false) {
   const got: any[] = [];
   const transport: Transport = async (req) => {
     if (fail()) return { status: 503, body: 'busy', ms: 1 };
-    got.push({ ...JSON.parse(req.body), headers: req.headers });
+    got.push({ ...JSON.parse(String(req.body)), headers: req.headers });
     return { status: 200, body: 'ok', ms: 1 };
   };
   return { got, transport };

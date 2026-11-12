@@ -49,7 +49,7 @@ export const DOCS: DocPage[] = [
           <li><strong>Personal data.</strong> Emails, phone numbers, Social Security and card numbers are removed in place, then the request is sent.</li>
         </ol>
         <P>Every decision is recorded as evidence. A browser extension separately shows AI use that goes around the gateway.</P>
-        <H2>Coming in: AI agents using your systems (MCP, beta)</H2>
+        <H2>Coming in: AI agents using your systems (MCP)</H2>
         <Figure><McpFlow /></Figure>
         <P>Agents such as Claude, ChatGPT, Cursor and Copilot, or your own agents, connect to an MCP server you create in Probaline. They never reach your APIs directly. Each tool call is checked, in order:</P>
         <ol className="my-3 pl-6 flex flex-col gap-2 text-[16px] leading-relaxed">
@@ -128,7 +128,7 @@ client = OpenAI(
         <P>The developer’s <C>Authorization</C> or <C>x-api-key</C> header is the provider key and is passed through untouched. Your proxy adds the Probaline key in a separate header:</P>
         <Code>{`X-Probaline-Key: <a Probaline API key with the chat permission>`}</Code>
         <P>Requests without <C>X-Probaline-Key</C> are rejected. Prompts sent as content blocks and Anthropic system prompts are checked like any other text.</P>
-        <Note>Proxy mode is in beta. Streamed answers pass straight through after the request is checked. Proxy mode applies your rules and the secrets check (stopping the request, or removing the secret from the body before it’s forwarded) but doesn’t remove personal data.</Note>
+        <Note>Every prompt gets your rules, the secrets check and personal-data removal before it’s forwarded: only the prompt text is changed (system prompts, messages, tool results), never model names, tool definitions or IDs. Answers pass straight through from the provider, so personal data in an answer isn’t removed in this mode.</Note>
       </>
     ),
   },
@@ -296,13 +296,14 @@ client = OpenAI(
           [<C>sign_in.mcp_refresh_reused</C>, 'A sign-in token was used twice; the sign-in was ended'],
         ]} />
         <Note>Wrong dashboard passwords are checked by your sign-in provider, not Probaline. In AWS they are CloudTrail events from Amazon Cognito. Requests with unknown API keys can’t be tied to a company, so they aren’t listed.</Note>
-        <H2>Log export (beta)</H2>
+        <H2>Log export</H2>
         <P>On <strong>Log export</strong>, an admin adds up to five destinations and chooses what each receives: <strong>decisions</strong> (every AI request and MCP tool call, allowed or stopped, and why), <strong>admin activity</strong> and <strong>sign-ins</strong>. Records go out in batches of up to 100 within about a minute. Prompts, answers and stop excerpts are never sent. Records from before a destination is added aren’t sent.</P>
         <Table head={['Destination', 'Format', 'Use for']} rows={[
           ['HTTPS webhook', 'POST of a JSON batch, signed', 'Your own endpoint, Sumo Logic HTTP source, any HTTP collector'],
           ['Splunk HEC', <><C>/services/collector/event</C>, one event per line, <C>Authorization: Splunk &lt;token&gt;</C>, sourcetype <C>probaline:&lt;type&gt;</C></>, 'Splunk Enterprise, Splunk Cloud'],
-          ['OpenTelemetry', <>OTLP/HTTP JSON to <C>/v1/logs</C>, your headers</>, 'An OpenTelemetry Collector, Datadog, Elastic, Grafana; Microsoft Sentinel and syslog through a Collector'],
+          ['OpenTelemetry', <>OTLP/HTTP to <C>/v1/logs</C>, protobuf (or JSON if you choose), your headers</>, 'An OpenTelemetry Collector, Datadog, Elastic, Grafana; Microsoft Sentinel and syslog through a Collector'],
         ]} />
+        <Note>Tested in the product: Splunk Enterprise 9.4 through HEC (fields such as <C>type</C>, <C>action</C> and <C>outcome</C> are searchable with no setup), and Elastic (APM Server 8.15; records land in <C>logs-apm.app.probaline-*</C> with severity and <C>probaline_*</C> labels). Datadog and Sumo Logic follow each product’s published intake but haven’t been checked in the product yet.</Note>
         <H2>Record fields</H2>
         <P>Every record, whatever its type and destination, has the same fields (schema <C>probaline.log/1</C>):</P>
         <Code>{`{
@@ -546,7 +547,7 @@ node collector/dist/cli.js report --out ./results --company "Acme"
         <Table head={['Endpoint', 'Purpose']} rows={[
           [<C>GET /v1/activity</C>, 'Admin activity and sign-ins, newest first; filters category, outcome, from, to; page with next'],
           [<C>GET /v1/log-export</C>, 'Destinations and how each is doing'],
-          [<C>POST /v1/log-export/destinations</C>, 'Add one: kind (webhook, splunk_hec, otlp_http), name, url, recordTypes, token, headers'],
+          [<C>POST /v1/log-export/destinations</C>, 'Add one: kind (webhook, splunk_hec, otlp_http), name, url, recordTypes, token, headers; otlpEncoding (protobuf, the default, or json)'],
           [<C>PATCH · DELETE /v1/log-export/destinations/:id</C>, 'Change, pause or remove'],
           [<C>POST /v1/log-export/destinations/:id/test</C>, 'Send a sample record now'],
           [<C>GET /v1/log-export/dead-letters</C>, 'Batches that weren’t delivered; POST …/:id/retry or DELETE …/:id'],
@@ -643,7 +644,7 @@ npx cdk deploy --all --context stage=prod \\
         <P>The <strong>Deploy</strong> workflow runs only when started by hand: Actions → Deploy → Run workflow, then choose the stage, or tear one down. A push never deploys. It creates the image repositories, pushes images tagged with the commit, deploys the stacks, then builds and uploads the three sites with the addresses the stacks report. It signs in to AWS with a role (OIDC) and needs the repository secrets <C>AWS_DEPLOY_ROLE_ARN</C> and <C>AWS_ACCOUNT_ID</C>. On the <C>prod</C> environment set the variables <C>GATEWAY_URL</C> and <C>CERTIFICATE_ARN</C> (and optionally the site domains and <C>CLOUDFRONT_CERTIFICATE_ARN</C>), and add required reviewers.</P>
         <Note>Beta: this deploy passes its checks but hasn’t yet been run against a real AWS account.</Note>
         <H2>Checks on every change</H2>
-        <P>The <strong>CI</strong> workflow runs on every push and pull request: all unit tests, every build, the CDK synth and a build of each container image. It never deploys and needs no secrets. The end-to-end suite isn’t in CI yet; run it locally (below).</P>
+        <P>The <strong>CI</strong> workflow runs on every push and pull request: all unit tests, every build, the CDK synth and a build of each container image. It never deploys and needs no secrets. It also runs the end-to-end suite against the real services, once with DynamoDB and once with PostgreSQL.</P>
         <H2>Locally, for evaluation</H2>
         <P>Runs everything on your machine with LocalStack, a stand-in model and sample traffic. Requires Docker and Node.js 20+.</P>
         <Code>{`scripts/dev-local.sh start              # records in DynamoDB (LocalStack)

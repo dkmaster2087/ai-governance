@@ -49,6 +49,8 @@ export interface Destination {
   /** otlp_http: names of the headers kept in the secret store (values never shown). */
   headerNames?: string[];
   splunkIndex?: string;
+  /** otlp_http: protobuf (the default; every receiver takes it) or JSON. */
+  otlpEncoding?: 'protobuf' | 'json';
   createdAt: string;
   createdBy: string;
   updatedAt: string;

@@ -1,5 +1,6 @@
 import { createHmac, randomUUID, timingSafeEqual } from 'crypto';
 import type { ExportRecord } from './records';
+import { encodeOtlpLogs, OtlpLogsJson } from './otlp-protobuf';
 
 /** Where records go. Each speaks the destination's own intake format. */
 export type DestinationKind = 'webhook' | 'splunk_hec' | 'otlp_http';
@@ -20,12 +21,16 @@ export interface DestinationOptions {
   kind: DestinationKind;
   /** splunk_hec: index (optional; the token's default otherwise). */
   splunkIndex?: string;
+  /** otlp_http: protobuf (default; every OTLP receiver accepts it) or json (only some do). */
+  otlpEncoding?: 'protobuf' | 'json';
 }
 
 export interface OutgoingRequest {
   url: string;
   headers: Record<string, string>;
-  body: string;
+  body: string | Buffer;
+  /** application/json unless said otherwise (OTLP protobuf: application/x-protobuf). */
+  contentType?: string;
 }
 
 const USER_AGENT = 'Probaline-LogExport/1';
@@ -101,7 +106,7 @@ function severity(r: ExportRecord): { severityNumber: number; severityText: stri
 
 /** OTLP/HTTP logs, JSON encoding (any OpenTelemetry Collector, Datadog, Elastic, Grafana, Honeycomb…). */
 function otlp(o: DestinationOptions, s: DestinationSecrets, records: ExportRecord[]): OutgoingRequest {
-  const body = JSON.stringify({
+  const data: OtlpLogsJson = {
     resourceLogs: [{
       resource: { attributes: [attr('service.name', 'probaline'), attr('probaline.tenant_id', records[0]?.tenantId ?? '')] },
       scopeLogs: [{
@@ -120,8 +125,11 @@ function otlp(o: DestinationOptions, s: DestinationSecrets, records: ExportRecor
         })),
       }],
     }],
-  });
-  return { url: withPath(s.url, '/v1/logs'), headers: { 'user-agent': USER_AGENT, ...(s.headers ?? {}) }, body };
+  };
+  const headers = { 'user-agent': USER_AGENT, ...(s.headers ?? {}) };
+  return o.otlpEncoding === 'json'
+    ? { url: withPath(s.url, '/v1/logs'), headers, body: JSON.stringify(data) }
+    : { url: withPath(s.url, '/v1/logs'), headers, body: encodeOtlpLogs(data), contentType: 'application/x-protobuf' };
 }
 
 export function buildRequest(o: DestinationOptions, s: DestinationSecrets, records: ExportRecord[], batchId: string, now = new Date()): OutgoingRequest {

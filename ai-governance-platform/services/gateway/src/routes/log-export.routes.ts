@@ -27,14 +27,15 @@ const fields = {
   token: z.string().trim().min(8).max(500),
   headers: z.array(header).max(10),
   splunkIndex: z.string().trim().regex(/^[A-Za-z0-9_-]{0,80}$/, 'Index names are letters, digits, dashes and underscores'),
+  otlpEncoding: z.enum(['protobuf', 'json']),
 };
 const createBody = z.object({
   kind: z.enum(DESTINATION_KINDS as unknown as [string, ...string[]]),
   name: fields.name, url: fields.url, recordTypes: fields.recordTypes,
-  enabled: fields.enabled.optional(), token: fields.token.optional(), headers: fields.headers.optional(), splunkIndex: fields.splunkIndex.optional(),
+  enabled: fields.enabled.optional(), token: fields.token.optional(), headers: fields.headers.optional(), splunkIndex: fields.splunkIndex.optional(), otlpEncoding: fields.otlpEncoding.optional(),
 });
 const updateBody = z.object({
-  name: fields.name, url: fields.url, recordTypes: fields.recordTypes, enabled: fields.enabled, token: fields.token, headers: fields.headers, splunkIndex: fields.splunkIndex,
+  name: fields.name, url: fields.url, recordTypes: fields.recordTypes, enabled: fields.enabled, token: fields.token, headers: fields.headers, splunkIndex: fields.splunkIndex, otlpEncoding: fields.otlpEncoding,
 }).partial();
 
 /** A destination as the dashboard sees it: no secrets, no lease, no queued records. */
@@ -42,6 +43,7 @@ export function view(d: Destination) {
   return {
     destinationId: d.destinationId, name: d.name, kind: d.kind, recordTypes: d.recordTypes, enabled: d.enabled, urlHint: d.urlHint,
     ...(d.secretHint ? { secretHint: d.secretHint } : {}), ...(d.headerNames ? { headerNames: d.headerNames } : {}), ...(d.splunkIndex ? { splunkIndex: d.splunkIndex } : {}),
+    ...(d.kind === 'otlp_http' ? { otlpEncoding: d.otlpEncoding ?? 'protobuf' } : {}),
     createdAt: d.createdAt, updatedAt: d.updatedAt, deliveredCount: d.deliveredCount ?? 0, deadLetterCount: d.deadLetterCount ?? 0,
     lastDeliveredAt: d.lastDeliveredAt, lastAttemptAt: d.lastAttemptAt, lastError: d.lastError,
     ...(d.pending ? { retrying: { count: d.pending.records.length, attempts: d.pending.attempts, nextAttemptAt: new Date(d.pending.nextAttemptAt).toISOString() } } : {}),
@@ -86,6 +88,7 @@ export async function logExportRoutes(app: FastifyInstance) {
       ...(signingSecret ? { secretHint: `…${signingSecret.slice(-4)}` } : b.token ? { secretHint: `…${b.token.slice(-4)}` } : {}),
       ...(b.kind === 'otlp_http' && b.headers?.length ? { headerNames: b.headers.map((h) => h.name) } : {}),
       ...(b.kind === 'splunk_hec' && b.splunkIndex ? { splunkIndex: b.splunkIndex } : {}),
+      ...(b.kind === 'otlp_http' && b.otlpEncoding ? { otlpEncoding: b.otlpEncoding as Destination['otlpEncoding'] } : {}),
       createdAt: now, createdBy: request.userId, updatedAt: now,
       // Records from now on; history isn't replayed.
       cursorDecisions: { after: now, ids: [] }, cursorActivity: { after: now },
@@ -121,6 +124,7 @@ export async function logExportRoutes(app: FastifyInstance) {
       if (types.some((t) => t !== 'decisions') && !hadActivity) set.cursorActivity = { after: now };
     }
     if (b.splunkIndex !== undefined && d.kind === 'splunk_hec') set.splunkIndex = b.splunkIndex;
+    if (b.otlpEncoding !== undefined && d.kind === 'otlp_http') set.otlpEncoding = b.otlpEncoding;
 
     if (b.url !== undefined || b.token !== undefined || b.headers !== undefined) {
       let secrets: DestinationSecrets;

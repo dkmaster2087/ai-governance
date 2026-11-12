@@ -20,6 +20,7 @@
     "test:e2e": "npm run build -w shared/catalog -w collector -w packages/verify-identity && node --test --test-concurrency=1 tests/e2e/request-path.test.mjs tests/e2e/log-export.test.mjs tests/e2e/enforcement.test.mjs"
   },
   "devDependencies": {
+    "@modelcontextprotocol/sdk": "^1.32.2",
     "@types/node": "^20.0.0",
     "bytenode": "^1.7.0",
     "esbuild": "^0.21.5",

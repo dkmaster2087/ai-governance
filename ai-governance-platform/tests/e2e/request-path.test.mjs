@@ -452,6 +452,31 @@ describe('MCP servers', () => {
     assert.equal(published.body.status, 'published', JSON.stringify(published.body));
   });
 
+  test('a real MCP client (the official SDK, as Claude Code and Cursor use) connects, lists and calls tools', async () => {
+    const { Client } = await import('@modelcontextprotocol/sdk/client/index.js');
+    const { StreamableHTTPClientTransport } = await import('@modelcontextprotocol/sdk/client/streamableHttp.js');
+    const client = new Client({ name: 'e2e-real-agent', version: '1.0.0' });
+    const transport = new StreamableHTTPClientTransport(new URL(`${GATEWAY}/mcp/${A}/${serverId}`), {
+      requestInit: { headers: { authorization: `Bearer ${agentKey}` } },
+    });
+    await client.connect(transport);
+    try {
+      assert.equal(client.getServerVersion()?.name !== undefined, true, 'the server introduced itself');
+      const { tools } = await client.listTools();
+      assert.deepEqual(tools.map((t) => t.name).sort(), ['getEmployee', 'searchEmployees']);
+      assert.ok(tools.find((t) => t.name === 'getEmployee').inputSchema.properties.id, 'the tool says what it needs');
+      const result = await client.callTool({ name: 'getEmployee', arguments: { id: 'sdk-7' } });
+      assert.equal(result.isError, false, JSON.stringify(result));
+      assert.ok(!result.content[0].text.includes('jane.doe@acme.example'), result.content[0].text);
+      assert.deepEqual(hits.at(-1), { url: '/employees/sdk-7', auth: 'Bearer people-api-token' });
+      // A tool the server doesn't offer is refused through the protocol, not by crashing the session.
+      const missing = await client.callTool({ name: 'createEmployee', arguments: {} }).catch((e) => ({ refused: String(e.message ?? e) }));
+      assert.ok(missing.refused || missing.isError, JSON.stringify(missing));
+    } finally {
+      await client.close();
+    }
+  });
+
   test('an agent lists only the read tools and calls one; the API sees Probaline\'s credential, the agent sees no email', async () => {
     const init = await rpc('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'e2e', version: '1' } });
     assert.equal(init.body.result.protocolVersion, '2025-06-18');
@@ -727,6 +752,19 @@ describe('IDE traffic (proxy mode)', () => {
     assert.equal(res.body.code, 'POLICY_VIOLATION');
     assert.deepEqual(await atModel(m), []);
     assert.equal((await caseFile(A, res.body.requestId)).body.outcome, 'stopped');
+  });
+
+  test('removes personal data before the IDE’s request leaves, and the case file says so', async () => {
+    const m = marker();
+    const res = await proxy(keyA, `email jane.doe@example.com and SSN 123-45-6789 about ${m}`);
+    assert.equal(res.status, 200, JSON.stringify(res.body));
+    const got = await atModel(m);
+    assert.equal(got.length, 1);
+    assert.ok(!got[0].prompt.includes('jane.doe@example.com'), got[0].prompt);
+    assert.ok(!got[0].prompt.includes('123-45-6789'), got[0].prompt);
+    await new Promise((r) => setTimeout(r, 200));
+    const record = await caseFile(A, res.headers.get('x-probaline-request-id'));
+    assert.equal(record.body.outcome, 'cleaned', JSON.stringify(record.body));
   });
 
   test('is forwarded unchanged when allowed', async () => {

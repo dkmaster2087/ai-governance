@@ -198,7 +198,7 @@ describe('log export', () => {
 
   test('Splunk HEC and OpenTelemetry destinations get the records in their own formats', async () => {
     await addDestination(A, { kind: 'splunk_hec', name: 'E2E Splunk', url: base, token: 'e2e-hec-token-0001', splunkIndex: 'probaline', recordTypes: ['admin_activity'] });
-    await addDestination(A, { kind: 'otlp_http', name: 'E2E OTLP', url: base, headers: [{ name: 'DD-API-KEY', value: 'e2e-dd-key' }], recordTypes: ['admin_activity'] });
+    await addDestination(A, { kind: 'otlp_http', name: 'E2E OTLP', otlpEncoding: 'json', url: base, headers: [{ name: 'DD-API-KEY', value: 'e2e-dd-key' }], recordTypes: ['admin_activity'] });
     const rule = await call('POST', '/v1/log-export/destinations', { headers: as(A), body: { kind: 'webhook', name: 'E2E short-lived', url: `${base}/hook`, recordTypes: ['decisions'] } });
     assert.equal(rule.status, 201);
     await call('DELETE', `/v1/log-export/destinations/${rule.body.destination.destinationId}`, { headers: as(A) });
@@ -211,6 +211,7 @@ describe('log export', () => {
 
     await until('OTLP logs', () => otlpRecords().some((l) => l.attributes.some((a) => a.key === 'probaline.action' && a.value.stringValue === 'log_export.deleted')));
     assert.equal(got.otlp.at(-1).headers['dd-api-key'], 'e2e-dd-key');
+    assert.equal(got.otlp.at(-1).headers['content-type'], 'application/json');
     const lr = otlpRecords().find((l) => l.attributes.some((a) => a.value.stringValue === 'log_export.deleted'));
     assert.equal(JSON.parse(lr.body.stringValue).type, 'admin_activity');
     assert.match(lr.timeUnixNano, /^\d{19}$/);

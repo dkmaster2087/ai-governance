@@ -400,3 +400,19 @@ now go by email to every admin at 30, 14, 7 and 1 days before the end, the same 
 AI requests stop; each once whatever the number of gateway copies, retried if the mail server refuses.
 Verified: unit tests, and a real SMTP server (Mailpit, STARTTLS required): an untrusted certificate was refused,
 and with SMTP_CA the message arrived.
+
+## From beta to release, wave 1 (2026-11-12)
+
+| Item | Now | Verified |
+|---|---|---|
+| IDE (proxy) mode: personal data | Removed from prompt text before it's forwarded (system prompts, messages, text blocks, tool results; OpenAI, Anthropic, Cohere and Mistral formats). Model names, tool definitions, images, IDs and the assistant's own tool calls are left as sent. Fail mode applies if masking fails. Answers still pass straight through. | Unit tests per format; end to end: email and SSN never reach the model, and the case file says "cleaned". |
+| MCP with a real client | — | End to end with the official MCP SDK (`@modelcontextprotocol/sdk`, Streamable HTTP, as Claude Code and Cursor use): connects, lists and calls tools. |
+| Elastic | OTLP export now sends protobuf by default (every OpenTelemetry receiver must accept it; APM Server takes only protobuf). JSON stays as a per-destination choice (`otlpEncoding`). | Elasticsearch and APM Server 8.15.3: the test record, admin activity and a stopped request landed in `logs-apm.app.probaline-default` with severity and labels. |
+| API identity check | — | Already end to end: a direct call is refused; the same call through Probaline passes the package's guard with who asked. |
+| End-to-end suite in CI | Already in `ci.yml`, on DynamoDB and PostgreSQL. | Its first run on GitHub. |
+| Splunk | — | Splunk Enterprise 9.4 on a temporary EC2 server (x86; deleted afterwards): the test record, admin activity and a stopped request arrived through HEC in index `main` with sourcetypes `probaline:<type>`; `type`, `action`, `outcome` and `requestId` searchable with no setup. |
+| Labels | Website: IDE mode and MCP now Available; the Deployment page shows Cloud and Your infrastructure (both Available) in place of the old hybrid and self-hosted cards; the Security page's sign-in and license lines updated. Dashboard: Splunk and Elastic marked Tested; Log export no longer beta (Datadog and Sumo Logic stay marked Beta). Docs: proxy-mode and MCP beta notes removed. | Website, docs and dashboard tests. |
+
+Still open: Datadog and Sumo Logic; the
+Deploy workflow's first real run on GitHub (needs the AWS role and secrets); SSO with a real Okta or Entra tenant;
+the Go and Java identity snippets.

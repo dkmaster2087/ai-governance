@@ -34,10 +34,14 @@ describe('website', () => {
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('One gateway, three checks');
   });
 
-  it('offers MCP servers as a fourth way in, marked beta', () => {
+  it('offers MCP servers as a fourth way in, available like IDEs; browsers stay beta', () => {
     at('/gateway');
     const card = screen.getByRole('heading', { name: 'AI agents (MCP)' }).closest('[class*="p-6"]')!;
-    expect(within(card as HTMLElement).getByText('Beta')).toBeInTheDocument();
+    expect(within(card as HTMLElement).getByText('Available')).toBeInTheDocument();
+    const ide = screen.getByRole('heading', { name: 'Developers’ IDEs' }).closest('[class*="p-6"]')!;
+    expect(within(ide as HTMLElement).getByText('Available')).toBeInTheDocument();
+    const browsers = screen.getByRole('heading', { name: 'Employees’ browsers' }).closest('[class*="p-6"]')!;
+    expect(within(browsers as HTMLElement).getByText('Beta')).toBeInTheDocument();
     expect(screen.getByRole('heading', { name: /Give agents your APIs/ })).toBeInTheDocument();
     expect(screen.getByText('Needs approval')).toBeInTheDocument();
     expect(within(card as HTMLElement).getByText('People sign in with their company account')).toBeInTheDocument();
@@ -74,10 +78,10 @@ describe('website', () => {
     expect(screen.getByRole('heading', { name: 'AI usage assessment' })).toBeInTheDocument();
   });
 
-  it('marks hybrid as coming and on-premises as planned', () => {
+  it('offers cloud and your own infrastructure, both available', () => {
     render(<MemoryRouter><DeploymentPage /></MemoryRouter>);
-    expect(screen.getByRole('heading', { name: 'Hybrid' }).closest('[class*="p-6"]')).toHaveTextContent('Coming');
-    expect(screen.getByText(/On-premises and Kubernetes: planned/)).toBeInTheDocument();
-    expect(screen.getByText(/DynamoDB or PostgreSQL/)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: 'Your infrastructure' }).closest('[class*="p-6"]')).toHaveTextContent('Available');
+    expect(screen.getByText(/docker compose, Kubernetes \(Helm\) or AWS/)).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: 'Hybrid' })).toBeNull();
   });
 });

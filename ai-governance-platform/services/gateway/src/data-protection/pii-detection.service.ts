@@ -32,7 +32,8 @@ export class PIIDetectionService {
     return { ...response, content: maskedContent };
   }
 
-  private async maskText(text: string): Promise<string> {
+  /** Personal data in one text replaced by labels (built-in detectors, then Comprehend when on). */
+  async maskText(text: string): Promise<string> {
     // First apply regex-based masking (fast, no API cost)
     let masked = maskPII(text, MASK_PLACEHOLDER);
 

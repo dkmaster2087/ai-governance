@@ -62,7 +62,7 @@ function guardedLookup(hostname: string, options: dns.LookupOptions, cb: (err: N
 export interface BackendResponse { status: number; contentType: string; body: string; truncated: boolean; ms: number }
 
 export function callBackend(o: {
-  url: URL; method: string; headers: Record<string, string>; body?: string; timeoutMs?: number; maxBytes: number; contentType?: string;
+  url: URL; method: string; headers: Record<string, string>; body?: string | Buffer; timeoutMs?: number; maxBytes: number; contentType?: string;
   /** Override the MCP setting for private addresses (log export has its own switch). */
   allowPrivate?: boolean;
 }): Promise<BackendResponse> {

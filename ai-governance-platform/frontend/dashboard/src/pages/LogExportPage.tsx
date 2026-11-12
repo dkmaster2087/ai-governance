@@ -24,16 +24,15 @@ const TYPES: Array<{ value: RecordChoice; label: string; hint: string }> = [
 const TYPE_LABEL: Record<string, string> = { decisions: 'Decisions', admin_activity: 'Admin activity', sign_ins: 'Sign-ins', decision: 'Decisions', sign_in: 'Sign-ins' };
 
 /** Which tool goes with which destination. Honest about what's direct and what goes through a collector. */
-const TOOLS: Array<{ tool: string; how: string; status: 'Beta' | 'Through a collector' }> = [
-  { tool: 'Splunk', how: 'Splunk HEC', status: 'Beta' },
+const TOOLS: Array<{ tool: string; how: string; status: 'Tested' | 'Beta' | 'Through a collector' }> = [
+  { tool: 'Splunk', how: 'Splunk HEC (Splunk Enterprise or Splunk Cloud)', status: 'Tested' },
   { tool: 'Datadog', how: 'OpenTelemetry, to the Datadog Agent or OTLP intake', status: 'Beta' },
-  { tool: 'Elastic', how: 'OpenTelemetry, to Elastic’s OTLP endpoint', status: 'Beta' },
+  { tool: 'Elastic', how: 'OpenTelemetry, to Elastic’s OTLP endpoint (APM Server or Elastic Cloud)', status: 'Tested' },
   { tool: 'Sumo Logic', how: 'HTTPS webhook to an HTTP source (or OpenTelemetry)', status: 'Beta' },
   { tool: 'Microsoft Sentinel', how: 'OpenTelemetry Collector with the Azure Monitor exporter', status: 'Through a collector' },
   { tool: 'Syslog', how: 'OpenTelemetry Collector with the syslog exporter', status: 'Through a collector' },
 ];
 
-const Beta = () => <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-line-subtle text-ink-soft">Beta</span>;
 
 function ago(iso?: string) {
   if (!iso) return 'never';
@@ -281,7 +280,6 @@ export function LogExportPage() {
         <div>
           <div className="flex items-center gap-3">
             <h1 className="m-0 text-[34px] leading-[1.1] font-bold tracking-[-0.02em]">Log export</h1>
-            <Beta />
           </div>
           <p className="m-0 mt-1.5 text-ink-muted text-[15px] max-w-[760px]">
             Send decisions, <Link to="/activity" className="font-semibold text-ink">admin activity and sign-ins</Link> to your SIEM or log tools as they happen.
@@ -329,12 +327,12 @@ export function LogExportPage() {
             <li key={t.tool} className="flex flex-wrap items-baseline gap-x-4 gap-y-0.5 py-2.5 border-b border-line-subtle last:border-b-0">
               <span className="font-semibold w-[160px] flex-none">{t.tool}</span>
               <span className="flex-[1_1_240px] text-ink-soft">{t.how}</span>
-              <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full', t.status === 'Beta' ? 'bg-line-subtle text-ink-soft' : 'bg-canvas text-ink-muted border border-line')}>{t.status}</span>
+              <span className={clsx('text-xs font-semibold px-2 py-0.5 rounded-full', t.status === 'Tested' ? 'bg-ink text-white' : t.status === 'Beta' ? 'bg-line-subtle text-ink-soft' : 'bg-canvas text-ink-muted border border-line')}>{t.status}</span>
             </li>
           ))}
         </ul>
         <p className="m-0 mt-3 text-sm text-ink-muted">
-          Beta: the formats follow each tool’s published intake, but haven’t been checked against every tool yet. Every record has the same fields
+          Tested: records checked arriving in that product. Beta: the format follows the tool’s published intake, but hasn’t been checked in the product yet. Every record has the same fields
           (schema <code className="font-mono">probaline.log/1</code>); prompts and answers are never sent.
         </p>
       </Panel>
