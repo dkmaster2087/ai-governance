@@ -53,6 +53,22 @@ tools.
 
 ## Dashboard
 
+The menu has four sections, each with its pages as tabs, and set-up pages behind the gear icon. Every page keeps
+its address, so older links still work.
+
+| Section | Pages (tabs) |
+|---|---|
+| Overview | Traffic (`/gateway`), Spend (`/cost`) |
+| AI use | Tools (`/shadow-ai`), Paths & locks (`/enforcement`) |
+| Controls | Rules, Models, MCP servers (with approvals, connectors and sign-in), Alerts |
+| Audit | Case files (`/evidence`), Stopped, Compliance, Activity, Log export |
+| Admin (gear) | Users, API keys, License, Settings |
+
+Auditors see Overview and Audit. Requests waiting for approval show at the top of every page. Platform admins see
+Platform, Customers (Tenants, Licenses), Usage and Health, with Settings behind the gear.
+
+The pages:
+
 | Page | Shows |
 |---|---|
 | Gateway | Traffic as a pipeline (apps → checks → providers), decisions waiting, a plain-English feed |
