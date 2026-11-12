@@ -1,3 +1,4 @@
+import { installSignIn } from '../install/sign-in';
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
 import { z } from 'zod';
 import { createLogger } from '@ai-governance/utils';
@@ -90,6 +91,11 @@ export async function usersRoutes(app: FastifyInstance, opts: { directory?: User
   app.post('/users/:email/resend', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const user = await load(request, reply);
     if (!user) return;
+    // On an install this is "new temporary password", which also works for someone who forgot theirs.
+    if (installSignIn()) {
+      if (user.status === 'disabled') return reply.status(409).send({ error: 'Turn them on first', code: 'DISABLED' });
+      try { return { ok: true, ...(await dir().resend(user)) }; } catch (err) { return fail(reply, err); }
+    }
     if (user.status !== 'invited') return reply.status(409).send({ error: 'They have already signed in', code: 'ALREADY_ACTIVE' });
     try { await dir().resend(user); return { ok: true }; } catch (err) { return fail(reply, err); }
   });

@@ -114,7 +114,10 @@ export const addressAllowed = (host: string | undefined, addresses: string[]) =>
 export function licensedAddressOnly(app: FastifyInstance, license: () => OfflineLicenseState = offlineLicense) {
   app.addHook('onRequest', async (request, reply) => {
     const path = request.url.split('?')[0];
-    if (path.startsWith('/health') || path.startsWith('/v1/license') || path === '/v1/me') return;
+    if (path.startsWith('/health') || path.startsWith('/v1/license') || path === '/v1/me' || path.startsWith('/v1/auth/')) return;
+    // The dashboard's own pages and files load anywhere, so an admin reaching the wrong address can still sign
+    // in and fix the license; what they'd use the gateway for (the API) is refused.
+    if (!/^\/(v1|mcp|oauth|public|connector|\.well-known)(\/|$)/.test(path)) return;
     const addresses = await license().addresses();
     if (!addresses || addressAllowed(request.hostname, addresses)) return;
     return reply.status(421).send({

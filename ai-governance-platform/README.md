@@ -119,6 +119,9 @@ node scripts/create-platform-admin.mjs <user-pool-id> you@example.com "First" "L
 | `STORAGE_BACKEND` | gateway, analytics | `dynamodb` (default), `postgres` or `memory` |
 | `PROBALINE_ROLE` | the image | `all` (default: gateway + reports), `gateway` or `reports` |
 | `LICENSING` | gateway | `offline` for a customer-run install: the signed license file is checked locally and the gateway serves only the address it names. Unset in Cloud |
+| `SIGN_IN` | gateway | `install`: the gateway signs people in and serves the dashboard itself. The default for `LICENSING=offline` without Cognito |
+| `PROBALINE_COMPANY_NAME`, `PROBALINE_ADMIN_EMAIL`, `PROBALINE_ADMIN_PASSWORD` | gateway (install) | First start: the company and its first admin (the password is temporary; without one, one is made and logged once) |
+| `PROBALINE_SSO_ISSUER`, `PROBALINE_SSO_CLIENT_ID`, `PROBALINE_SSO_CLIENT_SECRET`, `PROBALINE_SSO_NAME` | gateway (install) | Company sign-in (OIDC: Entra ID, Okta, Google…). Redirect URI: `<PUBLIC_GATEWAY_URL>/v1/auth/sso/callback`. Only people on the Users page can sign in |
 | `PROBALINE_LICENSE` | gateway (offline) | The license file's text, so a new install works before an admin enters it on the License page |
 | `LICENSE_SIGNING_KMS_KEY_ID` | gateway (Cloud) | The KMS key that signs license files issued from the Licenses page (`LICENSE_SIGNING_KEY`, a PEM, works in development only) |
 | `DATABASE_URL`, `PG_TABLE_PREFIX` | same | PostgreSQL connection (`?sslmode=require` for TLS) and optional table prefix |

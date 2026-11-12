@@ -16,10 +16,11 @@ export interface CompanyUser {
 
 export const listUsers = async () => (await gateway.get<{ managed: boolean; users: CompanyUser[] }>('/v1/users')).data;
 export const inviteUser = async (input: { email: string; givenName: string; familyName: string; role: UserRole }) =>
-  (await gateway.post<CompanyUser>('/v1/users', input)).data;
+  (await gateway.post<CompanyUser & { temporaryPassword?: string }>('/v1/users', input)).data;
 export const changeUser = async (email: string, change: { role?: UserRole; enabled?: boolean }) =>
   (await gateway.patch<CompanyUser>(`/v1/users/${encodeURIComponent(email)}`, change)).data;
 export const removeUser = async (email: string) => (await gateway.delete(`/v1/users/${encodeURIComponent(email)}`)).data;
-export const resendInvite = async (email: string) => (await gateway.post(`/v1/users/${encodeURIComponent(email)}/resend`, {})).data;
+/** Cognito: the invitation email again. A customer-run install: a new temporary password, returned to show once. */
+export const resendInvite = async (email: string) => (await gateway.post<{ ok: true; temporaryPassword?: string }>(`/v1/users/${encodeURIComponent(email)}/resend`, {})).data;
 /** Tell the gateway someone signed in (marks an invited person active). */
 export const announceSignIn = async () => { try { await gateway.get('/v1/me'); } catch { /* not important */ } };

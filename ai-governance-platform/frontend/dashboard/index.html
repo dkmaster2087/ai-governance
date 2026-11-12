@@ -5,15 +5,7 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Probaline — Dashboard</title>
-    <script>
-      // Apply theme before React loads to prevent flash
-      (function() {
-        // Light is the default; dark returns later as an opt-in theme.
-        var theme = 'light';
-        try { theme = localStorage.getItem('probaline_theme_v2') || 'light'; } catch (e) {}
-        document.documentElement.className = theme;
-      })();
-    </script>
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="root"></div>

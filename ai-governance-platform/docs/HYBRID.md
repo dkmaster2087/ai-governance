@@ -99,7 +99,7 @@ One image, `services/Dockerfile`, started by `PROBALINE_ROLE`:
 |---|---|---|---|
 | 1 | One image, run by role; Cloud runs two roles of it | about 1 week | Built 2026-11-12 |
 | 2 | Signed license file: local checks of signature, end date and gateway address, with notices and grace; the platform issues licenses as files and tracks customers; remove the reporting agent | about 1 week | Built 2026-11-12 |
-| 3 | The image serves the dashboard; the customer's SSO (OIDC) and local accounts | about 1 week | |
+| 3 | The image serves the dashboard; the customer's SSO (OIDC) and local accounts | about 1 week | Built 2026-11-12 |
 | 4 | Packaging: Helm chart, docker-compose, AWS template, install guide, test in a clean environment | about 1 week | |
 
 ## How the license works (step 2, built)
@@ -116,6 +116,26 @@ One image, `services/Dockerfile`, started by `PROBALINE_ROLE`:
   for …"). Health checks and the License page answer on any address.
 - **Limits, stated plainly:** offline licensing is a commercial control. Someone who alters the image can bypass it,
   as with any offline license; the signed file stops casual copying and editing, and the terms cover the rest.
+
+## Sign-in and the dashboard (step 3, built)
+
+- **The image serves the dashboard,** built for install sign-in (`VITE_AUTH_MODE=install`). It's at the gateway's own
+  address, with the API under `/api` as in Cloud. Its pages and files are public; everything they show comes from
+  the API, which needs a sign-in.
+- **People sign in at the gateway; nothing goes to us.** The gateway issues its own session tokens (ES256, its
+  rotating keys, 12 hours) with the same claims a Cloud sign-in carries, so every permission check is unchanged.
+  - **Company sign-in (OIDC):** `PROBALINE_SSO_*` settings, using the same OIDC client as MCP sign-in, with PKCE and a
+    nonce. Only people already on the Users page get in, matched by email; their role comes from the Users page.
+  - **Local accounts:**
+    - Adding someone shows the admin a temporary password, once; it's replaced at first sign-in.
+    - Passwords need 12 characters with mixed case, a number and a symbol, and are stored as scrypt hashes, apart
+      from the user records.
+    - Five wrong passwords lock the account for 15 minutes; sign-in attempts are also limited per address.
+    - "New temporary password" resets a forgotten one.
+  - **Turning someone off or removing them** ends their sessions: at once on that copy of the gateway, within a minute
+    on the others.
+- **First start:** `PROBALINE_COMPANY_NAME` and `PROBALINE_ADMIN_EMAIL` (plus an optional temporary
+  `PROBALINE_ADMIN_PASSWORD`) create the company and its first admin.
 
 ## Open questions
 

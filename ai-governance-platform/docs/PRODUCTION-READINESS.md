@@ -351,3 +351,13 @@ can't revoke them. The reporting agent and its endpoints are removed: customer-r
 Verified: unit tests (gateway 416, analytics 50, dashboard 107, infra 48); a license signed through the dev KMS
 key, run in the customer image offline: active, licensed address served, other address refused, health open.
 Not yet clicked: issuing a file from the Licenses page as a platform admin on dev.
+
+## Customer-run sign-in and dashboard (2026-11-12)
+
+Hybrid step 3. The image serves the dashboard and signs people in itself: company SSO (OIDC) and local accounts,
+with the gateway's own session tokens. Verified: gateway tests 425 (including SSO start and return with a stand-in
+provider, lockout, turn-off ending sessions, path-traversal checks on served files), dashboard tests 110, the
+end-to-end suite 54/54 (Cloud unaffected), and the image itself: first admin created, signed in through the served
+dashboard, the temporary password replaced, a person added with a temporary password shown once. Found and fixed:
+an inline script in the dashboard's page was blocked by the gateway's security policy (moved to a file).
+Not yet tried against a real identity provider (Entra ID, Okta).

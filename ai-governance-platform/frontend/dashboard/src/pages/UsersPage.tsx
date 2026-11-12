@@ -1,6 +1,19 @@
 import { useState } from 'react';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import { changeUser, CompanyUser, inviteUser, listUsers, removeUser, resendInvite } from '../lib/users-api';
+import { AUTH_MODE } from '../lib/auth-mode';
+
+/** A customer-run install: no email is sent; the admin gives people a temporary password, shown once. */
+const onInstall = AUTH_MODE === 'install';
+
+function TemporaryPassword({ email, password }: { email: string; password: string }) {
+  return (
+    <div role="status" className="basis-full flex flex-col gap-1.5 bg-canvas border border-line-subtle rounded-lg px-4 py-3">
+      <span className="text-sm">Temporary password for {email}. Give it to them yourself; it’s shown only now. They choose their own at first sign-in.</span>
+      <code className="font-mono text-[15px] font-semibold select-all">{password}</code>
+    </div>
+  );
+}
 import { errorMessage } from '../lib/rules-api';
 import { useAuth, getTenantUsers, registerTenantAccount, deleteUserAccount, usersManagedExternally, UserRole, AuthUser } from '../lib/auth';
 import { Button, Note, Panel, SectionLabel } from '../components/kit/primitives';
@@ -57,7 +70,9 @@ function PersonRow({ u, me }: { u: CompanyUser; me?: string }) {
       )}
       {!isMe && (
         <div className="flex gap-2 flex-wrap justify-end">
-          {u.status === 'invited' && <Button variant="ghost" disabled={resend.isPending} onClick={() => resend.mutate()}>{resend.isSuccess ? 'Sent' : 'Resend invitation'}</Button>}
+          {onInstall
+            ? u.status !== 'disabled' && <Button variant="ghost" disabled={resend.isPending} onClick={() => resend.mutate()}>New temporary password</Button>
+            : u.status === 'invited' && <Button variant="ghost" disabled={resend.isPending} onClick={() => resend.mutate()}>{resend.isSuccess ? 'Sent' : 'Resend invitation'}</Button>}
           <Button variant="ghost" disabled={change.isPending} onClick={() => change.mutate({ enabled: u.status === 'disabled' })}>{u.status === 'disabled' ? 'Turn on' : 'Turn off'}</Button>
           {confirming ? (
             <>
@@ -68,6 +83,7 @@ function PersonRow({ u, me }: { u: CompanyUser; me?: string }) {
         </div>
       )}
       {error && <p role="alert" className="basis-full m-0 text-stop-text font-semibold">{errorMessage(error)}</p>}
+      {resend.data?.temporaryPassword && <TemporaryPassword email={u.email} password={resend.data.temporaryPassword} />}
       {change.isSuccess && !error && change.variables?.role && (
         <p role="status" className="basis-full m-0 text-sm text-ink-muted">Saved: {u.givenName} is now {roleLabel(change.variables.role)}. It applies the next time they sign in.</p>
       )}
@@ -83,8 +99,12 @@ function CompanyUsers({ tenantName, me }: { tenantName: string; me?: string }) {
   const [form, setForm] = useState({ givenName: '', familyName: '', email: '', role: 'tenant_auditor' as UserRole });
   const invite = useMutation({
     mutationFn: () => inviteUser({ ...form, email: form.email.trim(), givenName: form.givenName.trim(), familyName: form.familyName.trim() }),
-    onSuccess: () => { setForm({ givenName: '', familyName: '', email: '', role: 'tenant_auditor' }); setAdding(false); qc.invalidateQueries({ queryKey: ['company-users'] }); },
+    onSuccess: (made) => {
+      setGiven(made.temporaryPassword ? { email: made.email, password: made.temporaryPassword } : null);
+      setForm({ givenName: '', familyName: '', email: '', role: 'tenant_auditor' }); setAdding(false); qc.invalidateQueries({ queryKey: ['company-users'] });
+    },
   });
+  const [given, setGiven] = useState<{ email: string; password: string } | null>(null);
   const ready = form.givenName.trim() && form.familyName.trim() && form.email.trim() && !invite.isPending;
   const people = data?.users ?? [];
   return (
@@ -92,9 +112,13 @@ function CompanyUsers({ tenantName, me }: { tenantName: string; me?: string }) {
       <div className="flex flex-wrap justify-between items-end gap-4">
         <div>
           <p className="m-0 text-[30px] leading-[1.15] font-bold tracking-[-0.02em]">{data ? `${people.length} ${people.length === 1 ? 'person' : 'people'} can sign in to ${tenantName}.` : 'People'}</p>
-          <p className="m-0 mt-1.5 text-ink-muted text-[15px]">People you add get an email invitation with a temporary password, and choose their own the first time they sign in.</p>
+          <p className="m-0 mt-1.5 text-ink-muted text-[15px]">
+            {onInstall
+              ? 'People you add get a temporary password, shown to you once to pass on, and choose their own the first time they sign in. With company sign-in set up, they can use that instead.'
+              : 'People you add get an email invitation with a temporary password, and choose their own the first time they sign in.'}
+          </p>
         </div>
-        {!adding && <Button onClick={() => setAdding(true)}>Invite someone</Button>}
+        {!adding && <Button onClick={() => setAdding(true)}>{onInstall ? 'Add someone' : 'Invite someone'}</Button>}
       </div>
       {adding && (
         <Panel aria-label="Invite someone" className="px-6 py-5">
@@ -112,12 +136,13 @@ function CompanyUsers({ tenantName, me }: { tenantName: string; me?: string }) {
               </select></label>
             {invite.isError && <p role="alert" className="m-0 col-span-full text-stop-text font-semibold">{errorMessage(invite.error)}</p>}
             <div className="flex gap-2 col-span-full">
-              <Button type="submit" disabled={!ready}>{invite.isPending ? 'Sending…' : 'Send invitation'}</Button>
+              <Button type="submit" disabled={!ready}>{invite.isPending ? 'Adding…' : onInstall ? 'Add' : 'Send invitation'}</Button>
               <Button type="button" variant="secondary" onClick={() => setAdding(false)}>Cancel</Button>
             </div>
           </form>
         </Panel>
       )}
+      {given && <Panel className="px-6 py-4 flex flex-wrap"><TemporaryPassword email={given.email} password={given.password} /></Panel>}
       {isError && <Panel className="px-6"><Note title="Couldn’t load people."><button type="button" className="underline font-semibold" onClick={() => refetch()}>Try again</button></Note></Panel>}
       {isLoading && <Panel className="px-6 py-5"><p className="m-0 text-ink-muted">Loading…</p></Panel>}
       {data && people.length === 0 && <Panel className="px-6"><Note title="No one yet." /></Panel>}

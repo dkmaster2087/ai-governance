@@ -5,6 +5,7 @@ import { scheduleKeyRotation } from './mcp/keys';
 import { opsMetrics } from './services/cloudwatch';
 import { exporter } from './log-export/exporter';
 import { secretBackend, usesDatabaseSecrets } from './services/secret-store';
+import { bootstrapInstall, installSignIn } from './install/sign-in';
 
 const logger = createLogger('gateway');
 const PORT = parseInt(process.env.PORT || '3000', 10);
@@ -15,6 +16,13 @@ async function main() {
   if (usesDatabaseSecrets()) {
     try { secretBackend().database(); } catch (err) {
       logger.error('Not starting: secrets can\'t be stored', { error: (err as Error).message });
+      process.exit(1);
+    }
+  }
+  // A customer-run install makes its company and first admin on first start (install/sign-in.ts).
+  if (installSignIn()) {
+    try { await bootstrapInstall(); } catch (err) {
+      logger.error('Not starting: the install couldn\'t be set up', { error: (err as Error).message });
       process.exit(1);
     }
   }

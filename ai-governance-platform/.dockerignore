@@ -2,7 +2,9 @@ node_modules
 **/node_modules
 **/dist
 **/.turbo
-frontend
+frontend/*
+# The image builds the dashboard for customer-run installs (services/Dockerfile); the website and docs stay out.
+!frontend/dashboard
 infra
 .git
 *.md

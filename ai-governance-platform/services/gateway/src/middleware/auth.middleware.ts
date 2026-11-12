@@ -1,4 +1,6 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { installSignIn, InstallSessionVerifier } from '../install/sign-in';
+import { API_PATHS } from '../install/dashboard';
 import fp from 'fastify-plugin';
 import { CognitoJwtVerifier } from 'aws-jwt-verify';
 import { createLogger } from '@ai-governance/utils';
@@ -24,6 +26,8 @@ declare module 'fastify' {
 
 /** Routes that need no credentials. */
 const PUBLIC_PREFIXES = ['/health', '/public/',
+  // An install's own sign-in (registered only there): each route is a way to sign in.
+  '/v1/auth/',
   // OAuth for MCP clients and published keys: open by design (each route checks what it needs).
   '/.well-known/', '/oauth/',
   // Connectors authenticate with their own token in the route.
@@ -94,6 +98,7 @@ export function forgetApiKey(keyId: string): void {
 }
 
 export function createAuthPlugin(deps: AuthDeps) {
+  const servesDashboard = installSignIn();
   const keyCache: KeyCache = new Map();
   keyCaches.add(keyCache);
 
@@ -113,6 +118,8 @@ export function createAuthPlugin(deps: AuthDeps) {
     app.addHook('preHandler', async (request, reply) => {
       if (PUBLIC_PREFIXES.some((p) => request.url.startsWith(p))) return;
       const path = request.url.split('?')[0];
+      // An install's dashboard pages and files are public (they hold no data); everything they show comes from the API.
+      if (servesDashboard && !API_PATHS.test(path)) return;
       // CORS preflight never carries credentials
       if (request.method === 'OPTIONS') return;
 
@@ -263,6 +270,9 @@ function defaultDeps(): AuthDeps {
       tokenUse: 'id',
     });
     userTokens = { verify: async (token) => (await verifier.verify(token)) as unknown as UserTokenClaims };
+  } else if (installSignIn()) {
+    // A customer-run install: the gateway's own sessions (install/sign-in.ts).
+    userTokens = new InstallSessionVerifier();
   }
   if (config.devAuth) logger.warn('AUTH_DEV_MODE is on: `Bearer test-key` is accepted. Never enable this in production.');
   const tenants = tenantSettings();

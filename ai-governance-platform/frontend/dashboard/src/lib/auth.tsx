@@ -4,6 +4,7 @@ import { AUTH_MODE, DEV_AUTH } from './auth-mode';
 import { createApiClient, setAuthHeaderProvider, setSessionTenant, UNAUTHORIZED_EVENT } from './http';
 import * as cognito from './cognito';
 import * as devAccounts from './dev-accounts';
+import * as install from './install-session';
 import { announceSignIn } from './users-api';
 
 export { AUTH_MODE } from './auth-mode';
@@ -90,7 +91,11 @@ function readStoredUser(): AuthUser | null {
 }
 
 function userFromSession(session: CognitoUserSession): AuthUser | null {
-  const claims = session.getIdToken().decodePayload() as Record<string, string>;
+  return userFromClaims(session.getIdToken().decodePayload() as Record<string, string>);
+}
+
+/** The user a sign-in token describes: Cognito's, or an install's own (the same claims). */
+function userFromClaims(claims: Record<string, string>): AuthUser | null {
   const role = claims['custom:role'] as UserRole;
   const tenantId = claims['custom:tenantId'];
   if (!tenantId || !ROLES.includes(role)) return null;
@@ -110,6 +115,10 @@ setAuthHeaderProvider(async (): Promise<Record<string, string>> => {
   if (AUTH_MODE === 'cognito') {
     const session = await cognito.currentSession();
     return session ? { authorization: `Bearer ${session.getIdToken().getJwtToken()}` } : {};
+  }
+  if (AUTH_MODE === 'install') {
+    const s = install.currentSession();
+    return s ? { authorization: `Bearer ${s.token}` } : {};
   }
   if (AUTH_MODE === 'dev') {
     const user = readStoredUser();
@@ -142,7 +151,28 @@ const AuthContext = createContext<AuthContextValue | null>(null);
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [user, setUser] = useState<AuthUser | null>(() => (AUTH_MODE === 'dev' ? readStoredUser() : null));
-  const [restoring, setRestoring] = useState(AUTH_MODE === 'cognito');
+  const [restoring, setRestoring] = useState(AUTH_MODE === 'cognito' || AUTH_MODE === 'install');
+  /** On an install, a temporary password waiting to be replaced (the person's email and the temporary one). */
+  const [pendingPassword, setPendingPassword] = useState<{ email: string; password: string } | null>(null);
+
+  const installSignedIn = useCallback(async (s: install.InstallSession): Promise<LoginResult> => {
+    const base = userFromClaims(install.claimsOf(s.token) as Record<string, string>);
+    if (!base) { install.forget(); return { success: false, error: 'Your account has no role assigned. Ask an administrator.' }; }
+    install.keep(s);
+    setUser(base);
+    setUser(await withTenantName(base));
+    return { success: true };
+  }, []);
+
+  // Restore an install session on load, or take the one company sign-in handed back in the address.
+  useEffect(() => {
+    if (AUTH_MODE !== 'install') return;
+    const fragment = new URLSearchParams(window.location.hash.slice(1));
+    const handedBack = fragment.get('session');
+    if (handedBack) window.history.replaceState(null, '', window.location.pathname);
+    const s = (handedBack && install.sessionFromToken(handedBack)) || install.currentSession();
+    (s ? installSignedIn(s) : Promise.resolve()).finally(() => setRestoring(false));
+  }, [installSignedIn]);
 
   const signedIn = useCallback(async (session: CognitoUserSession): Promise<LoginResult> => {
     const base = userFromSession(session);
@@ -169,6 +199,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     if (AUTH_MODE === 'cognito') cognito.signOut();
+    if (AUTH_MODE === 'install') install.forget();
     localStorage.removeItem(STORAGE_KEY);
     setUser(null);
   }, []);
@@ -190,6 +221,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const login = async (email: string, password: string): Promise<LoginResult> => {
     if (AUTH_MODE === 'cognito') return fromStep(await cognito.signIn(email, password));
+    if (AUTH_MODE === 'install') {
+      const step = await install.signInWithPassword(email, password);
+      if (step.status === 'new_password_required') { setPendingPassword({ email, password }); return { success: false, challenge: 'new_password' }; }
+      return step.status === 'signed_in' ? installSignedIn(step.session) : { success: false, error: step.error };
+    }
     if (AUTH_MODE === 'dev') {
       const account = devAccounts.getAllAccounts()[email.toLowerCase()];
       if (!account || account.password !== password) return { success: false, error: 'Incorrect email or password' };
@@ -201,6 +237,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const completeChallenge = async (challenge: 'new_password' | 'mfa', value: string): Promise<LoginResult> => {
+    if (AUTH_MODE === 'install' && challenge === 'new_password' && pendingPassword) {
+      const step = await install.signInWithPassword(pendingPassword.email, pendingPassword.password, value);
+      if (step.status === 'signed_in') { setPendingPassword(null); return installSignedIn(step.session); }
+      return { success: false, challenge: 'new_password', error: step.status === 'error' ? step.error : undefined };
+    }
     if (AUTH_MODE !== 'cognito') return { success: false, error: 'Not supported' };
     const step = challenge === 'new_password' ? await cognito.completeNewPassword(value) : await cognito.submitMfaCode(value);
     return fromStep(step);

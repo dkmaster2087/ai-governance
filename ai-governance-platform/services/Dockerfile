@@ -33,6 +33,20 @@ COPY scripts/build-service.mjs scripts/
 RUN npm run build -w shared/catalog -w shared/types -w shared/utils -w shared/storage \
   && node scripts/build-service.mjs ${TARGET} --out /out
 
+# The dashboard, built for a customer-run install: the gateway serving it signs people in (VITE_AUTH_MODE=install).
+# Cloud serves its own build from CloudFront; there, this copy is never used.
+FROM node:24-trixie-slim AS dashboard
+WORKDIR /repo
+COPY package.json package-lock.json ./
+COPY frontend/dashboard/package.json frontend/dashboard/
+RUN npm ci --include-workspace-root -w frontend/dashboard
+COPY frontend/dashboard frontend/dashboard
+# Files the dashboard shows people to download (code snippets, scan scripts), embedded as text.
+COPY packages/verify-identity/src packages/verify-identity/src
+COPY packages/verify-identity/snippets packages/verify-identity/snippets
+COPY collector/endpoint collector/endpoint
+RUN cd frontend/dashboard && VITE_AUTH_MODE=install npx vite build --outDir /dashboard
+
 FROM ${RUNTIME} AS compile
 ARG TARGET=probaline
 COPY --from=bundle --chown=65532:65532 /out/${TARGET} /app
@@ -42,9 +56,11 @@ FROM ${RUNTIME}
 ARG TARGET=probaline
 LABEL org.opencontainers.image.title="${TARGET}" org.opencontainers.image.vendor="Probaline"
 COPY --from=compile /app/*.jsc /app/loader.js /app/
+COPY --from=dashboard /dashboard /app/dashboard
 WORKDIR /app
 # The gateway listens on PORT; in the all role, reports listen on 127.0.0.1:3003 inside the container only.
-ENV NODE_ENV=production PORT=3000
+# DASHBOARD_DIR: served only when the install signs people in itself (install/dashboard.ts).
+ENV NODE_ENV=production PORT=3000 DASHBOARD_DIR=/app/dashboard
 EXPOSE 3000
 USER 65532:65532
 CMD ["/app/loader.js"]

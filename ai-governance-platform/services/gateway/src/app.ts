@@ -20,6 +20,9 @@ import { requestTracing } from './middleware/request-tracing';
 import { getSecurityConfig } from './config/security';
 import { clientAddressConfig, clientAddressPlugin } from './middleware/client-address';
 import { licensedAddressOnly, offlineLicensing } from './licensing/offline-license';
+import { installSignIn } from './install/sign-in';
+import { installSignInRoutes } from './install/sign-in.routes';
+import { serveDashboard, stripApiPrefix } from './install/dashboard';
 import { metricsRoutes } from './routes/metrics.routes';
 import { gatewayRoutes } from './routes/gateway.routes';
 import { platformRoutes } from './routes/platform.routes';
@@ -48,6 +51,8 @@ export async function buildApp() {
     // X-Forwarded-For is read by clientAddress, which believes only the proxies we run (TRUSTED_PROXY_HOPS).
     trustProxy: false,
     bodyLimit: securityConfig.maxBodySize,
+    // An install's dashboard reaches the API under /api, as in Cloud (where CloudFront removes it).
+    ...(installSignIn() ? { rewriteUrl: (req: { url?: string }) => stripApiPrefix(req.url ?? '/') } : {}),
   });
 
   // Security plugins
@@ -82,6 +87,8 @@ export async function buildApp() {
   // A customer-run install serves only the address its license names: one license, one gateway (docs/HYBRID.md).
   // Health checks and the License page answer on any address, so an install reached the wrong way can be fixed.
   if (offlineLicensing()) licensedAddressOnly(app);
+  // A customer-run install serves its own dashboard, with the API under /api as in Cloud (see install/dashboard.ts).
+  if (installSignIn()) await serveDashboard(app);
 
   // Auth & validation
   await app.register(requestTracing);
@@ -92,6 +99,7 @@ export async function buildApp() {
 
   // Routes
   await app.register(healthRoutes, { prefix: '/health' });
+  if (installSignIn()) await app.register(installSignInRoutes, { prefix: '/v1' });
   await app.register(contactRoutes, { prefix: '/public' });
   await app.register(feedRoutes, { prefix: '/public' });
   await app.register(aiRoutes, { prefix: '/v1' });

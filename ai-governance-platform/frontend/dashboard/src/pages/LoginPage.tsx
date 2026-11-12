@@ -1,9 +1,10 @@
-import { useState, FormEvent } from 'react';
+import { useEffect, useState, FormEvent } from 'react';
 import { useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { Eye, EyeOff, AlertCircle, ArrowRight } from 'lucide-react';
 import { PlumbMark } from '../components/kit/PlumbMark';
 import { useAuth, getRegisteredAccounts, AUTH_MODE } from '../lib/auth';
+import { SignInMethods, signInMethods, SSO_START } from '../lib/install-session';
 import { useTheme } from '../lib/theme';
 
 export function LoginPage() {
@@ -19,6 +20,16 @@ export function LoginPage() {
   /** Set when Cognito needs one more step to finish signing in. */
   const [challenge, setChallenge] = useState<'new_password' | 'mfa' | null>(null);
   const [challengeValue, setChallengeValue] = useState('');
+  /** On an install: whether company sign-in is set up (and its name). */
+  const [methods, setMethods] = useState<SignInMethods | null>(null);
+
+  useEffect(() => {
+    if (AUTH_MODE !== 'install') return;
+    signInMethods().then(setMethods);
+    // Company sign-in hands an error back in the address.
+    const handed = new URLSearchParams(window.location.hash.slice(1)).get('error');
+    if (handed) { setError(handed); window.history.replaceState(null, '', window.location.pathname); }
+  }, []);
 
   const handleResult = (result: { success: boolean; error?: string; challenge?: 'new_password' | 'mfa' }) => {
     if (result.success) {
@@ -26,6 +37,7 @@ export function LoginPage() {
     } else if (result.challenge) {
       setChallenge(result.challenge);
       setChallengeValue('');
+      if (result.error) setError(result.error);
     } else {
       setError(result.error || 'Login failed');
     }
@@ -161,6 +173,12 @@ export function LoginPage() {
                 <AlertCircle className="w-4 h-4 flex-shrink-0" />
                 {error}
               </div>
+            )}
+
+            {AUTH_MODE === 'install' && methods?.sso && !challenge && (
+              <a href={SSO_START} className="w-full flex items-center justify-center py-3 rounded-xl border border-ink text-ink font-semibold no-underline hover:bg-ink hover:text-white transition-colors duration-200">
+                Sign in with {methods.sso.name}
+              </a>
             )}
 
             <button

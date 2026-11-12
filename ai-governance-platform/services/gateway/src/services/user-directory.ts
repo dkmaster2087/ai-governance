@@ -33,7 +33,8 @@ export class DirectoryError extends Error {
 export interface SignInAccounts {
   /** Whether accounts are real (Cognito) or only recorded (local development without Cognito). */
   readonly real: boolean;
-  invite(u: Pick<DashboardUser, 'email' | 'givenName' | 'familyName' | 'role' | 'tenantId'>, resend?: boolean): Promise<void>;
+  /** On an install, the temporary password to give the person (shown once to the admin). Cognito emails its own. */
+  invite(u: Pick<DashboardUser, 'email' | 'givenName' | 'familyName' | 'role' | 'tenantId'>, resend?: boolean): Promise<void | { temporaryPassword?: string }>;
   setRole(email: string, role: UserRole): Promise<void>;
   setEnabled(email: string, enabled: boolean): Promise<void>;
   remove(email: string): Promise<void>;
@@ -104,19 +105,20 @@ export class UserDirectory {
   list = async (tenantId: string) => (await allPages((after) => users().query({ partition: tenantId, after }))) as DashboardUser[];
   get = async (tenantId: string, email: string) => (await users().get(key(tenantId, email))) as DashboardUser | null;
 
-  async invite(input: Pick<DashboardUser, 'email' | 'givenName' | 'familyName' | 'role' | 'tenantId'>, invitedBy: string): Promise<DashboardUser> {
+  async invite(input: Pick<DashboardUser, 'email' | 'givenName' | 'familyName' | 'role' | 'tenantId'>, invitedBy: string): Promise<DashboardUser & { temporaryPassword?: string }> {
     const email = input.email.toLowerCase();
     if (await this.get(input.tenantId, email)) throw new DirectoryError('That person is already in this company', 'USER_EXISTS', 409);
     // The account first, so a failed invitation leaves no half-made user behind.
-    await this.accounts.invite({ ...input, email });
+    const made = await this.accounts.invite({ ...input, email });
     const user: DashboardUser = { ...input, email, status: 'invited', invitedAt: new Date().toISOString(), invitedBy };
     await users().put(user as DashboardUser & Record<string, unknown>);
     logger.info('User invited', { tenantId: input.tenantId, email, role: input.role, by: invitedBy });
-    return user;
+    return { ...user, ...(made?.temporaryPassword ? { temporaryPassword: made.temporaryPassword } : {}) };
   }
 
-  async resend(user: DashboardUser) {
-    await this.accounts.invite(user, true);
+  /** Cognito: the invitation email again. An install: a new temporary password, returned to show once. */
+  async resend(user: DashboardUser): Promise<{ temporaryPassword?: string }> {
+    return (await this.accounts.invite(user, true)) || {};
   }
 
   async setRole(user: DashboardUser, role: UserRole) {
@@ -145,6 +147,10 @@ export class UserDirectory {
 
 let shared: UserDirectory | null = null;
 export const userDirectory = () => (shared ??= new UserDirectory(
-  process.env.COGNITO_USER_POOL_ID ? new CognitoAccounts(process.env.COGNITO_USER_POOL_ID) : new RecordedAccounts(),
+  process.env.COGNITO_USER_POOL_ID ? new CognitoAccounts(process.env.COGNITO_USER_POOL_ID)
+    // A customer-run install signs people in itself (install/sign-in.ts). Loaded here: that module uses this one's types.
+    : (require('../install/sign-in') as typeof import('../install/sign-in')).installSignIn()
+      ? new (require('../install/sign-in') as typeof import('../install/sign-in')).LocalAccounts()
+      : new RecordedAccounts(),
 ));
 export const setUserDirectory = (d: UserDirectory | null) => { shared = d; };
