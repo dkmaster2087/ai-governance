@@ -198,7 +198,7 @@ aws --endpoint-url=$ENDPOINT dynamodb create-table \
     AttributeName=tenantId,KeyType=HASH \
     AttributeName=email,KeyType=RANGE \
   --billing-mode PAY_PER_REQUEST || true
-for t in "activity eventKey" "log-export recordKey" "enforcement recordKey"; do
+for t in "activity eventKey" "log-export recordKey" "enforcement recordKey" "catalog recordKey"; do
   set -- $t
   aws --endpoint-url=$ENDPOINT dynamodb create-table \
     --region $REGION \

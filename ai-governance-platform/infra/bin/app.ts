@@ -63,7 +63,7 @@ const servicesStack = new ServicesStack(app, `${prefix}-services-${stage}`, {
     versions: storageStack.mcpVersionsTable, approvals: storageStack.mcpApprovalsTable,
     oauth: storageStack.mcpOauthTable, connectors: storageStack.mcpConnectorsTable,
   },
-  logTables: { activity: storageStack.activityTable, logExport: storageStack.logExportTable, enforcement: storageStack.enforcementTable },
+  logTables: { activity: storageStack.activityTable, logExport: storageStack.logExportTable, enforcement: storageStack.enforcementTable, catalog: storageStack.catalogTable },
   egressAddresses: networkStack.natAddresses,
   auditLogsTable: storageStack.auditLogsTable,
   modelsTable: storageStack.modelsTable,

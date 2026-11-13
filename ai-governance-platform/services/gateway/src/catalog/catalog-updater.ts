@@ -19,7 +19,7 @@ const logger = createLogger('gateway:catalog');
  *   CATALOG_URL points at a mirror instead.
  */
 
-export const DEFAULT_CATALOG_URL = 'https://probaline.com/catalog/v1/latest.json';
+export const DEFAULT_CATALOG_URL = 'https://probaline.com/api/public/catalog/v1/latest.json';
 
 interface StoredCatalog { tenantId: string; period: string; document?: string; sequence?: number; source?: 'feed' | 'upload'; appliedAt?: string; by?: string }
 interface CatalogStatus { tenantId: string; period: string; lastCheckedAt?: string; lastResult?: string; lastError?: string; etag?: string; lastSuccessAt?: string }

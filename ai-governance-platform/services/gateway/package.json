@@ -15,6 +15,8 @@
     "@ai-governance/storage": "*",
     "@ai-governance/types": "*",
     "@ai-governance/utils": "*",
+    "@anthropic-ai/bedrock-sdk": "^1.1.2",
+    "@anthropic-ai/sdk": "^1.8.0",
     "@aws-sdk/client-bedrock-runtime": "^3.0.0",
     "@aws-sdk/client-cognito-identity-provider": "^3.1164.0",
     "@aws-sdk/client-comprehend": "^3.0.0",

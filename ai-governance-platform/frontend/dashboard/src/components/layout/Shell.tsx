@@ -59,6 +59,7 @@ export const NAV: Record<UserRole, RoleNav> = {
       { label: 'Platform', tabs: [{ label: 'Platform', href: '/overview' }] },
       { label: 'Customers', tabs: [{ label: 'Tenants', href: '/tenants' }, { label: 'Licenses', href: '/licenses' }] },
       { label: 'Usage', tabs: [{ label: 'Usage', href: '/analytics' }] },
+      { label: 'AI catalog', tabs: [{ label: 'Review', href: '/catalog' }] },
       { label: 'Health', tabs: [{ label: 'Health', href: '/health' }] },
     ],
     admin: [{ label: 'Settings', href: '/settings' }],

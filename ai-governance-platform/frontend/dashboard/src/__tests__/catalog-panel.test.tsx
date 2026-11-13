@@ -5,7 +5,7 @@ import { vi } from 'vitest';
 const state = {
   sequence: 1, version: '2026-11-12.1430', publishedAt: '2026-11-12T14:30:00Z', source: 'feed', services: 61,
   advisories: [{ id: 'a1', serviceId: 'x', severity: 'warning', title: 'Newco now trains on prompts', detail: 'Its terms changed on 10 Nov.', publishedAt: '2026-11-10T00:00:00Z' }],
-  updates: 'auto', url: 'https://probaline.com/catalog/v1/latest.json',
+  updates: 'auto', url: 'https://probaline.com/api/public/catalog/v1/latest.json',
   lastCheckedAt: '2026-11-12T15:00:00Z', lastResult: 'error', lastError: 'That catalog wasn’t signed by a key this install trusts.',
 };
 const checkCatalog = vi.fn(async () => ({ result: 'unchanged', message: 'The catalog hasn’t changed since the last check.', catalog: { ...state, lastResult: 'unchanged', lastError: undefined } }));
@@ -25,7 +25,7 @@ describe('AI service catalog panel', () => {
   it('shows the catalog in use, where updates come from, the last problem and advisories', async () => {
     renderPanel(false);
     expect(await screen.findByText(/Catalog 2026-11-12.1430 · 61 services · downloaded from Probaline/)).toBeInTheDocument();
-    expect(screen.getByText('https://probaline.com/catalog/v1/latest.json')).toBeInTheDocument();
+    expect(screen.getByText('https://probaline.com/api/public/catalog/v1/latest.json')).toBeInTheDocument();
     expect(screen.getByText(/nothing about this install is sent/)).toBeInTheDocument();
     expect(screen.getByText(/key this install trusts/)).toBeInTheDocument();
     expect(screen.getByText('Newco now trains on prompts')).toBeInTheDocument();

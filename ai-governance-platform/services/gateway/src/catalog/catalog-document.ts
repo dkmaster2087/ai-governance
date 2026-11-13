@@ -30,6 +30,15 @@ export const kidOf = (key: KeyObject) => createHash('sha256').update(key.export(
 
 type Trusted = { kid: string; key: KeyObject; label: string };
 let testKeys: Trusted[] | null = null;
+/** Keys the Cloud publisher learned from KMS at run time (its own signing key), so Cloud applies what it publishes. */
+const runtimeKeys: Trusted[] = [];
+
+/** Trust the publisher's own key (read from KMS by the Cloud gateway that signs with it). */
+export function trustCatalogKeyAtRuntime(publicKeyPem: string, label: string) {
+  const key = createPublicKey(publicKeyPem);
+  const kid = kidOf(key);
+  if (!runtimeKeys.some((k) => k.kid === kid)) runtimeKeys.push({ kid, key, label });
+}
 
 /** Compiled-in keys, plus any the install adds in CATALOG_TRUSTED_KEYS (PEM public keys, one after another). */
 function trustedKeys(): Trusted[] {
@@ -42,7 +51,7 @@ function trustedKeys(): Trusted[] {
     } catch {
       return [];
     }
-  });
+  }).concat(runtimeKeys);
 }
 
 /** Tests only: trust these keys instead. */

@@ -57,7 +57,7 @@ describe('catalog updates on an install', () => {
     expect(toolForDomain('newchat.example').id).toBe('new-chat');
     expect(feedEntries(['chat']).some((e) => e.domain === 'newchat.example')).toBe(true);
     const state = await u.state();
-    expect(state).toMatchObject({ lastResult: 'updated', updates: 'auto', url: 'https://probaline.com/catalog/v1/latest.json' });
+    expect(state).toMatchObject({ lastResult: 'updated', updates: 'auto', url: 'https://probaline.com/api/public/catalog/v1/latest.json' });
   });
 
   it('asks with the last ETag, and records an unchanged catalog', async () => {

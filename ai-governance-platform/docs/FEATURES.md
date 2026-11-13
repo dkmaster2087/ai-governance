@@ -51,6 +51,11 @@ platform admin manages it in Cloud, company admins on their own install. `CATALO
 `CATALOG_URL` points at a mirror. New services are watched, not blocked, unless the company blocks all unapproved
 tools.
 
+In Cloud, the platform admin keeps the catalog current on **AI catalog**: every ten minutes Probaline reads public
+sources of new AI services (models.dev, OpenRouter's providers, Hacker News launches), Claude on Amazon Bedrock
+suggests what each new domain is, and a person approves, rejects or adds advisories, then publishes. Nothing is
+published without that review.
+
 ## Dashboard
 
 The menu has four sections, each with its pages as tabs, and set-up pages behind the gear icon. Every page keeps
@@ -65,7 +70,7 @@ its address, so older links still work.
 | Admin (gear) | Users, API keys, License, Settings |
 
 Auditors see Overview and Audit. Requests waiting for approval show at the top of every page. Platform admins see
-Platform, Customers (Tenants, Licenses), Usage and Health, with Settings behind the gear.
+Platform, Customers (Tenants, Licenses), Usage, AI catalog and Health, with Settings behind the gear.
 
 The pages:
 

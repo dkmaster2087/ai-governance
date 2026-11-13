@@ -37,7 +37,7 @@ interface ServicesStackProps extends cdk.StackProps {
     versions: dynamodb.Table; approvals: dynamodb.Table; oauth: dynamodb.Table; connectors: dynamodb.Table;
   };
   /** Admin activity and log export (gateway only). */
-  logTables?: { activity: dynamodb.Table; logExport: dynamodb.Table; enforcement?: dynamodb.Table };
+  logTables?: { activity: dynamodb.Table; logExport: dynamodb.Table; enforcement?: dynamodb.Table; catalog?: dynamodb.Table };
   /** The gateway's outbound addresses (the NAT gateways), for the Enforcement page's "allow only the gateway" rules. */
   egressAddresses?: string[];
   auditLogsTable: dynamodb.Table;
@@ -187,9 +187,9 @@ export class ServicesStack extends cdk.Stack {
       alias: `alias/${prefix}-license-signing-${stage}`,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
-    // Signs the AI service catalog every install downloads (scripts/catalog-sign.mjs, run by the deploy workflow).
-    // Installs check it against the public half compiled into the image (services/gateway/src/catalog/trusted-keys.ts).
-    // Nothing in AWS uses it at run time; kept on delete so catalogs it signed stay valid.
+    // Signs the AI service catalog every install downloads: the Cloud gateway publishes it (Catalog page) and serves it
+    // at /public/catalog/v1/latest.json. Installs check it against the public half compiled into the image
+    // (services/gateway/src/catalog/trusted-keys.ts). Kept on delete so catalogs it signed stay valid.
     const catalogSigningKey = new kms.Key(this, 'CatalogSigningKey', {
       description: `Probaline ${stage}: signs the AI service catalog installs download`,
       keySpec: kms.KeySpec.ECC_NIST_P256,
@@ -238,6 +238,14 @@ export class ServicesStack extends cdk.Stack {
         ...(dashboardDomain ? { DASHBOARD_URL: `https://${dashboardDomain}` } : {}),
         ...(props.logTables ? { ACTIVITY_TABLE: props.logTables.activity.tableName, LOG_EXPORT_TABLE: props.logTables.logExport.tableName } : {}),
         ...(props.logTables?.enforcement ? { ENFORCEMENT_TABLE: props.logTables.enforcement.tableName } : {}),
+        // Cloud publishes the AI service catalog and looks for new AI services (Claude on Amazon Bedrock classifies them).
+        ...(props.logTables?.catalog ? {
+          CATALOG_TABLE: props.logTables.catalog.tableName,
+          CATALOG_PUBLISHER: 'on',
+          CATALOG_DISCOVERY: this.node.tryGetContext('catalogDiscovery') === 'false' ? 'off' : 'on',
+          CATALOG_SIGNING_KMS_KEY_ID: catalogSigningKey.keyId,
+          ...(this.node.tryGetContext('catalogClassifierModel') ? { CATALOG_CLASSIFIER_MODEL: this.node.tryGetContext('catalogClassifierModel') } : {}),
+        } : {}),
         ...(props.egressAddresses?.length ? { GATEWAY_EGRESS_IPS: cdk.Fn.join(',', props.egressAddresses) } : {}),
         AUDIT_LOGS_TABLE: auditLogsTable.tableName,
         ANALYTICS_URL: internalUrl('analytics', 3003),
@@ -313,6 +321,15 @@ export class ServicesStack extends cdk.Stack {
         resources: ['*'],
       })
     );
+    // The Cloud gateway signs the AI service catalog it publishes, and asks Claude on Amazon Bedrock about candidates.
+    this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: ['kms:Sign', 'kms:GetPublicKey'],
+      resources: [catalogSigningKey.keyArn],
+    }));
+    this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: ['bedrock-mantle:CreateInference'],
+      resources: ['*'],
+    }));
     // Only the gateway may sign license files (platform admins issue them from the Licenses page).
     this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: ['kms:Sign', 'kms:GetPublicKey'],

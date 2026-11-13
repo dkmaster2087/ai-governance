@@ -709,7 +709,7 @@ npx cdk deploy --all --context stage=prod \\
           [<C>SECRET_STORE</C>, <><C>aws</C> (default, Secrets Manager) or <C>database</C>: provider keys and credentials encrypted in the database</>],
           [<C>SECRETS_ENCRYPTION_KEY</C>, <>With <C>SECRET_STORE=database</C>: 32 random bytes, base64 (<C>openssl rand -base64 32</C>). Keep it apart from your database backups</>],
           [<C>CATALOG_UPDATES</C>, <><C>auto</C> (default): download Probaline’s signed AI service catalog every hour; <C>off</C>: don’t (upload the file in Admin → Settings instead)</>],
-          [<C>CATALOG_URL</C>, <>Where to download it, e.g. your own mirror (default <C>https://probaline.com/catalog/v1/latest.json</C>). Behind a proxy, set <C>HTTPS_PROXY</C></>],
+          [<C>CATALOG_URL</C>, <>Where to download it, e.g. your own mirror (default <C>https://probaline.com/api/public/catalog/v1/latest.json</C>). Behind a proxy, set <C>HTTPS_PROXY</C></>],
           [<C>CATALOG_TRUSTED_KEYS</C>, 'Optional PEM public keys, for a mirror that signs its own additions; Probaline’s keys are always trusted'],
         ]} />
         <P>The catalog download is the only connection an install makes to Probaline. It sends nothing: no license key, install or company name, counts or user data, only a plain user agent. The file is signed, and an install applies it only if it’s newer than the one in use.</P>

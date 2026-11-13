@@ -228,26 +228,15 @@ jobs:
           node scripts/check-build-env.mjs "$SITE"
           npm run build -w shared/catalog -w shared/types -w shared/utils
           npm run build -w "frontend/$SITE"
-      # The AI service catalog every install downloads hourly, signed with this stage's KMS key and served by the
-      # website at /catalog/v1/latest.json. Its sequence is this commit's time, so re-deploying the same commit
-      # changes nothing for installs.
-      - name: Sign the AI service catalog
-        if: matrix.site == 'website'
-        run: node scripts/catalog-sign.mjs --kms "alias/$PREFIX-catalog-signing-${{ inputs.stage }}" --out frontend/website/dist/catalog/v1/latest.json
       - name: Upload and refresh the CDN
         env:
           BUCKET: ${{ needs.cdk-deploy.outputs[format('{0}Bucket', matrix.site)] }}
           DISTRIBUTION: ${{ needs.cdk-deploy.outputs[format('{0}DistributionId', matrix.site)] }}
         run: |
           aws s3 sync "frontend/${{ matrix.site }}/dist/" "s3://$BUCKET" --delete \
-            --cache-control "public, max-age=31536000, immutable" --exclude "index.html" --exclude "catalog/*"
+            --cache-control "public, max-age=31536000, immutable" --exclude "index.html"
           aws s3 cp "frontend/${{ matrix.site }}/dist/index.html" "s3://$BUCKET/index.html" \
             --cache-control "no-cache, no-store, must-revalidate"
-          if [ -f "frontend/${{ matrix.site }}/dist/catalog/v1/latest.json" ]; then
-            # Installs ask with If-None-Match every hour; never cached as immutable.
-            aws s3 cp "frontend/${{ matrix.site }}/dist/catalog/v1/latest.json" "s3://$BUCKET/catalog/v1/latest.json" \
-              --content-type application/json --cache-control "no-cache, max-age=300"
-          fi
           aws cloudfront create-invalidation --distribution-id "$DISTRIBUTION" --paths "/*"
 
   # ─── Teardown (destroy all stacks) ────────────────────────────────────────

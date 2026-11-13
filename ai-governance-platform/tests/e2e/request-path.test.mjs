@@ -998,7 +998,13 @@ describe('model limits and alerts', () => {
       assert.equal(hits.length, 1, 'one alert for the two stops');
       assert.match(hits[0].body.title, /2 requests stopped/);
       assert.match(hits[0].headers['x-probaline-signature'], /^t=\d+,v1=[0-9a-f]+$/);
-      const sent = (await call('GET', '/v1/alerts/events', { headers: adminOf(A) })).body;
+      // The event is saved after delivery (it records how delivery went), so it can lag the webhook by a moment.
+      let sent = [];
+      for (let i = 0; i < 30; i++) {
+        sent = (await call('GET', '/v1/alerts/events', { headers: adminOf(A) })).body;
+        if (sent.some((e) => e.alertRuleId === alertId && e.delivery.webhook === 'sent')) break;
+        await new Promise((r) => setTimeout(r, 100));
+      }
       assert.ok(sent.some((e) => e.alertRuleId === alertId && e.delivery.webhook === 'sent'), JSON.stringify(sent));
     } finally {
       if (alertId) await call('DELETE', `/v1/alerts/rules/${alertId}`, { headers: adminOf(A) });

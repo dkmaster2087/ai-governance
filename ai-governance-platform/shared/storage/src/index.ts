@@ -59,6 +59,8 @@ export const SPECS = {
   secrets: (): CollectionSpec => ({ name: 'secrets', table: env('SECRETS_TABLE', 'ai-gov-secrets-dev'), partitionKey: 'scope', sortKey: 'name' }),
   /** Lock and verify: AI-domain feeds (`feed#<id>`) and lock settings (`aws#settings`). */
   enforcement: (): CollectionSpec => ({ name: 'enforcement', table: env('ENFORCEMENT_TABLE', 'ai-gov-enforcement-dev'), partitionKey: 'tenantId', sortKey: 'recordKey' }),
+  /** The AI service catalog's upkeep (Cloud only): candidates (`cand#<domain>`), reviewed services (`svc#<id>`), advisories (`adv#<id>`), the published edition and source runs. */
+  catalog: (): CollectionSpec => ({ name: 'catalog', table: env('CATALOG_TABLE', 'ai-gov-catalog-dev'), partitionKey: 'tenantId', sortKey: 'recordKey' }),
 };
 
 export type CollectionName = keyof typeof SPECS;
