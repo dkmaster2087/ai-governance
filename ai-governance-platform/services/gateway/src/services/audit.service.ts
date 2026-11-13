@@ -1,4 +1,5 @@
 import { NormalizedAIRequest, NormalizedAIResponse, PolicyEvaluationResult, AuditLog } from '@ai-governance/types';
+import { keySpend } from './key-spend';
 import { alerting } from './alerting.service';
 import { hashContent, estimateCost, createLogger } from '@ai-governance/utils';
 import { collection, objects } from '@ai-governance/storage';
@@ -88,6 +89,10 @@ export class AuditService {
     } catch (err) {
       // Audit failures should not break the request flow
       logger.error('Failed to write audit log', { error: err, requestId: request.requestId });
+    }
+    // The key's daily token and spend totals, if it has caps (off the request path).
+    if (request.apiKeyId && response) {
+      keySpend().record(log.tenantId, request.apiKeyId, log.inputTokens + log.outputTokens, log.estimatedCost).catch(() => {});
     }
     // Company alerts (stopped spikes, personal data in answers, spend), off the request path.
     alerting().signal(() => alerting().fromAuditRecord(log));

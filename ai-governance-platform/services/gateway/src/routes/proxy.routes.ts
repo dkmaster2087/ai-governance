@@ -131,6 +131,7 @@ export async function proxyRoutes(app: FastifyInstance) {
         messages,
         metadata: { proxyMode: 'true' },
         timestamp: new Date().toISOString(),
+        ...(request.principal?.kind === 'api_key' ? { apiKeyId: request.principal.keyId } : {}),
       };
 
       // --- 2. Policy evaluation (respecting the tenant's fail mode if the engine is down) ---

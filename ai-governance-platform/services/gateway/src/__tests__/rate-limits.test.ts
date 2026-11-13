@@ -4,6 +4,7 @@ import { createAuthPlugin } from '../middleware/auth.middleware';
 import { requireAccess } from '../auth/guards';
 import { ApiKey, hashApiKey } from '../repositories/api-key.repository';
 import { RateCounter } from '../services/rate-counter';
+import { KeySpend, keySpend, setKeySpend } from '../services/key-spend';
 
 const RAW = 'pbl_acme_rate';
 const KEY: ApiKey = {
@@ -45,5 +46,48 @@ describe('per-key rate limits', () => {
     expect((await r.hit('t', 'key#x', 3, t + 60_000)).allowed).toBe(true);
     setRecords({ } as never);
     expect((await r.hit('t', 'key#x', 1, t)).allowed).toBe(true);
+  });
+});
+
+describe('daily caps per key', () => {
+  beforeEach(() => { setRecords(new MemoryStore()); setKeySpend(new KeySpend()); });
+  afterAll(() => setKeySpend(null));
+  const CAPPED: ApiKey = { ...KEY, keyId: 'k_cap', keyHash: hashApiKey('pbl_acme_cap'), rateLimit: 1000, dailyTokenLimit: 1000, dailySpendLimitUsd: 2 };
+
+  async function app() {
+    const a = Fastify();
+    await a.register(createAuthPlugin({
+      keys: { findByHash: async (h) => (h === CAPPED.keyHash ? CAPPED : null), touchLastUsed: async () => {} },
+      rate: new RateCounter(), devAuth: false, keyCacheTtlMs: 60_000,
+    }));
+    a.post('/v1/chat/completions', { preHandler: requireAccess({ scopes: ['chat'] }) }, async () => ({ ok: true }));
+    a.post('/v1/proxy/openai/v1/chat/completions', { preHandler: requireAccess({ scopes: ['chat'] }) }, async () => ({ ok: true }));
+    a.get('/v1/models', { preHandler: requireAccess({ scopes: ['chat'] }) }, async () => ({ ok: true }));
+    return a;
+  }
+  const headers = { authorization: 'Bearer pbl_acme_cap' };
+
+  it('refuses AI requests once a key has used its tokens for the day, and counts across copies', async () => {
+    const [a, b] = [await app(), await app()];
+    expect((await a.inject({ method: 'POST', url: '/v1/chat/completions', headers, payload: {} })).statusCode).toBe(200);
+    await keySpend().record('tenant_acme', 'k_cap', 600, 0.1);
+    await keySpend().record('tenant_acme', 'k_cap', 500, 0.1);
+    const over = await b.inject({ method: 'POST', url: '/v1/proxy/openai/v1/chat/completions', headers: { 'x-probaline-key': 'pbl_acme_cap' }, payload: {} });
+    expect(over.statusCode).toBe(429);
+    expect(over.json()).toMatchObject({ code: 'DAILY_LIMIT', error: expect.stringMatching(/used its 1,000 tokens for today/) });
+    // Other requests from the key still work.
+    expect((await a.inject({ method: 'GET', url: '/v1/models', headers })).statusCode).toBe(200);
+  });
+
+  it('refuses once the estimated spend reaches the cap, and only counts keys that have caps', async () => {
+    const a = await app();
+    await a.inject({ method: 'POST', url: '/v1/chat/completions', headers, payload: {} });
+    await keySpend().record('tenant_acme', 'k_cap', 10, 2.5);
+    expect((await a.inject({ method: 'POST', url: '/v1/chat/completions', headers, payload: {} })).json().error).toMatch(/\$2 spending limit/);
+    await keySpend().record('tenant_acme', 'k_uncapped', 10, 5);
+    expect(await keySpend().today('tenant_acme', 'k_uncapped')).toEqual({ tokens: 0, spendUsd: 0 });
+    // The next UTC day starts afresh.
+    const tomorrow = Date.now() + 86_400_000;
+    expect(await keySpend().refusal('tenant_acme', 'k_cap', { dailyTokenLimit: 1000 }, tomorrow)).toBeNull();
   });
 });

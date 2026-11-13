@@ -278,7 +278,7 @@ export async function mcpOauthRoutes(app: FastifyInstance, opts: { oidc?: OidcCl
       const caller: Caller = { kind: 'person', id: `person:${person.sub}`, userId: person.email ?? person.sub, appId: req.clientName, email: person.email, groups: person.groups };
       const refusal = !server ? 'This MCP server no longer exists.' : connectRefusal((await liveConfig(withDefaults(server))).config, caller);
       if (refusal) {
-        signIns().mcp(request, tenantId, 'sign_in.mcp', 'denied', person, { reason: 'no_access', serverId, client: String(req.clientName ?? '').slice(0, 80) });
+        signIns().mcp(request, tenantId, 'sign_in.mcp', 'denied', person, { reason: 'no_access', serverId, client: String(req.clientName ?? '').slice(0, 80), groups: person.groups.slice(0, 20).map((g) => g.slice(0, 80)).join(', ') || '(none sent)' });
         return html(reply, 403, messagePage('No access', refusal));
       }
     }

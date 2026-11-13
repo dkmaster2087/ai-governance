@@ -1,3 +1,4 @@
+import { ArgumentCheckMode } from './argument-attacks';
 import { JsonSchema, Operation } from './openapi';
 
 export type ServerStatus = 'draft' | 'published' | 'paused';
@@ -27,9 +28,12 @@ export interface ServerConfig {
   name: string;
   description: string;
   access: ServerAccess;
-  limits: { callsPerMinute: number; maxResultBytes: number };
+  /** callsPerDay: tool calls per person or key per day (UTC); 0 means no daily limit. */
+  limits: { callsPerMinute: number; maxResultBytes: number; callsPerDay?: number };
   /** Personal data in results is removed unless the admin turns this on for the server. */
   returnPersonalData?: boolean;
+  /** Attacks in tool arguments (SQL injection, commands, path traversal…): stopped (default), recorded, or not checked. */
+  argumentChecks?: ArgumentCheckMode;
   approvals: ApprovalSettings;
 }
 
@@ -56,12 +60,16 @@ export type BackendAuth =
   | { type: 'header'; header: string; secretArn?: string; hint?: string }
   | { type: 'bearer'; secretArn?: string; hint?: string };
 
-/** A backend API added to a server. */
+/**
+ * A backend added to a server: an API described by OpenAPI, or a company's existing MCP server (kind `mcp`,
+ * baseUrl is its Streamable HTTP endpoint), which Probaline calls on agents' behalf.
+ */
 export interface McpApi {
   tenantId: string;
   apiId: string;
   serverId: string;
   name: string;
+  kind?: 'openapi' | 'mcp';
   baseUrl: string;
   auth: BackendAuth;
   /** Reached through this connector in the company's network, instead of directly from the gateway. */
@@ -89,6 +97,10 @@ export interface McpTool {
   approval?: 'required' | 'none';
   /** Only people in these groups get the tool (empty: everyone who can connect, including API keys). */
   groups?: string[];
+  /** Calls to this tool per person or key per minute, on top of the server's limits; unset means only the server's. */
+  callsPerMinute?: number;
+  /** For a tool of a company's MCP server: its name there (the name agents see may be prefixed). */
+  upstreamName?: string;
   createdAt: string;
 }
 
@@ -106,7 +118,7 @@ export interface McpVersion {
   toolCount: number;
 }
 
-export const DEFAULT_LIMITS = { callsPerMinute: 60, maxResultBytes: 100_000 };
+export const DEFAULT_LIMITS = { callsPerMinute: 60, maxResultBytes: 100_000, callsPerDay: 0 };
 export const DEFAULT_ACCESS: ServerAccess = { allKeys: true, keyIds: [], people: 'none', groups: [] };
 export const DEFAULT_APPROVALS: ApprovalSettings = { approvers: [], waitSeconds: 45, expiresMinutes: 24 * 60 };
 
@@ -118,10 +130,11 @@ export function withDefaults<T extends Partial<ServerConfig>>(s: T): T & ServerC
     description: s.description ?? '',
     access: { ...DEFAULT_ACCESS, ...(s.access ?? {}) },
     limits: { ...DEFAULT_LIMITS, ...(s.limits ?? {}) },
+    argumentChecks: s.argumentChecks ?? 'block',
     approvals: { ...DEFAULT_APPROVALS, ...(s.approvals ?? {}) },
   };
 }
 
 export const configOf = (s: ServerConfig): ServerConfig => ({
-  name: s.name, description: s.description, access: s.access, limits: s.limits, returnPersonalData: !!s.returnPersonalData, approvals: s.approvals,
+  name: s.name, description: s.description, access: s.access, limits: s.limits, returnPersonalData: !!s.returnPersonalData, argumentChecks: s.argumentChecks ?? 'block', approvals: s.approvals,
 });

@@ -242,6 +242,46 @@ describe('MCP servers', () => {
     expect(seen[1].url).toBe('/employees?dept=Finance');
   });
 
+  it('stops attacks hidden in arguments before the API is called, or records them when set to flag', async () => {
+    const admin = await setUp();
+    await admin.inject({ method: 'POST', url: '/v1/mcp/servers/hr-self-service/publish' });
+    const a = await agent();
+    const stopped = await call(a, 'getEmployee', { id: "1' OR '1'='1" });
+    expect(stopped.isError).toBe(true);
+    expect(stopped.content[0].text).toMatch(/Stopped by Probaline: the arguments look like an attack on the API \(SQL injection in arguments\.id\)/);
+    expect(seen).toHaveLength(0);
+    expect((audit.log.mock.calls[0] as any[])[0].metadata).toMatchObject({ check: 'argument_attack', argumentAttack: 'sql' });
+    expect((await call(a, 'getEmployee', { id: '../../etc/passwd' })).content[0].text).toMatch(/a path outside the expected folder/);
+    expect((await call(a, 'getEmployee', { id: "O'Brien" })).isError).toBe(false);
+
+    expect((await admin.inject({ method: 'PATCH', url: '/v1/mcp/servers/hr-self-service', payload: { argumentChecks: 'flag' } })).statusCode).toBe(200);
+    await admin.inject({ method: 'POST', url: '/v1/mcp/servers/hr-self-service/publish' });
+    audit.log.mockClear(); seen.length = 0;
+    expect((await call(a, 'getEmployee', { id: '1; DROP TABLE staff' })).isError).toBe(false);
+    expect(seen).toHaveLength(1);
+    expect((audit.log.mock.calls[0] as any[])[0].metadata).toMatchObject({ argumentAttack: 'sql' });
+    expect((await admin.inject({ method: 'PATCH', url: '/v1/mcp/servers/hr-self-service', payload: { argumentChecks: 'sometimes' } })).statusCode).toBe(400);
+  });
+
+  it('limits calls per tool and per day, counting only tool calls', async () => {
+    const admin = await setUp();
+    await admin.inject({ method: 'PATCH', url: '/v1/mcp/servers/hr-self-service/tools/getEmployee', payload: { callsPerMinute: 2 } });
+    await admin.inject({ method: 'PATCH', url: '/v1/mcp/servers/hr-self-service', payload: { limits: { callsPerMinute: 60, maxResultBytes: 100_000, callsPerDay: 4 } } });
+    await admin.inject({ method: 'POST', url: '/v1/mcp/servers/hr-self-service/publish' });
+    const a = await agent();
+    for (let i = 0; i < 3; i++) expect((await rpc(a, 'tools/list')).statusCode).toBe(200);
+    expect((await call(a, 'getEmployee', { id: 'e1' })).isError).toBe(false);
+    expect((await call(a, 'getEmployee', { id: 'e2' })).isError).toBe(false);
+    expect((await call(a, 'getEmployee', { id: 'e3' })).content[0].text).toMatch(/Too many calls to getEmployee: the limit is 2 a minute/);
+    // Another key has its own count.
+    expect((await call(await agent(['mcp'], 'key_other'), 'getEmployee', { id: 'e4' })).isError).toBe(false);
+    expect((await call(a, 'listEmployees')).isError).toBe(false);
+    expect((await call(a, 'listEmployees')).isError).toBe(false);
+    expect((await call(a, 'listEmployees')).content[0].text).toMatch(/daily limit of 4 tool calls on HR self-service is used up/);
+    // Clearing the tool's limit.
+    expect((await admin.inject({ method: 'PATCH', url: '/v1/mcp/servers/hr-self-service/tools/getEmployee', payload: { callsPerMinute: null } })).json().callsPerMinute).toBeUndefined();
+  });
+
   it('stops calls that break a rule or carry a secret, before the API is called', async () => {
     const admin = await setUp();
     await admin.inject({ method: 'POST', url: '/v1/mcp/servers/hr-self-service/publish' });
@@ -310,7 +350,7 @@ describe('MCP servers', () => {
   it('lets an admin try a tool on a draft, and only admins change servers', async () => {
     const admin = await setUp();
     const test = (await admin.inject({ method: 'POST', url: '/v1/mcp/servers/hr-self-service/test', payload: { tool: 'getEmployee', arguments: { id: 'e9' } } })).json();
-    expect(test).toMatchObject({ outcome: 'delivered', isError: false, checks: ['arguments: valid', 'secrets: none', 'rules: passed', 'personal data: removed', 'instructions in result: none'] });
+    expect(test).toMatchObject({ outcome: 'delivered', isError: false, checks: ['arguments: valid', 'argument attacks: none', 'secrets: none', 'rules: passed', 'personal data: removed', 'instructions in result: none'] });
     expect((audit.log.mock.calls[0] as any[])[0].metadata).toMatchObject({ test: 'true', caller: 'test' });
     const auditor = await appAs({ role: 'tenant_auditor' });
     expect((await auditor.inject({ method: 'GET', url: '/v1/mcp/servers' })).statusCode).toBe(200);

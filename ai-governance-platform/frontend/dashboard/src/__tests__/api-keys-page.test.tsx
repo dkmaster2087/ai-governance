@@ -4,9 +4,10 @@ import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
 import { vi } from 'vitest';
 
 const createKey = vi.fn(async (..._args: unknown[]) => ({ keyId: 'k2', key: 'pbl_demo_secretvalue' }));
+const setKeyLimits = vi.fn(async (..._a: unknown[]) => ({}));
 vi.mock('../lib/api-keys-api', () => ({
   listKeys: vi.fn(async () => [
-    { keyId: 'k1', keyPrefix: 'pbl_demo_ab...', name: 'support-bot', scopes: ['chat', 'models'], status: 'active', createdAt: '2026-10-01', lastUsedAt: '2026-10-03', createdBy: 'u' },
+    { keyId: 'k1', keyPrefix: 'pbl_demo_ab...', name: 'support-bot', scopes: ['chat', 'models'], status: 'active', createdAt: '2026-10-01', lastUsedAt: '2026-10-03', createdBy: 'u', dailyTokenLimit: 100000, dailySpendLimitUsd: 25 },
     { keyId: 'k3', keyPrefix: 'pbl_demo_ef...', name: 'hr-assistant', scopes: ['mcp'], status: 'active', createdAt: '2026-10-05', lastUsedAt: '2026-10-02', createdBy: 'u' },
     { keyId: 'k4', keyPrefix: 'pbl_demo_gh...', name: 'chrome-fleet', scopes: ['shadow_ai:ingest'], status: 'active', createdAt: '2026-10-04', createdBy: 'u' },
     { keyId: 'k5', keyPrefix: 'pbl_demo_ij...', name: 'ops-agent', scopes: ['chat', 'mcp'], status: 'active', createdAt: '2026-10-02', createdBy: 'u' },
@@ -14,6 +15,7 @@ vi.mock('../lib/api-keys-api', () => ({
   ]),
   createKey: (...a: unknown[]) => createKey(...a),
   revokeKey: vi.fn(), rotateKey: vi.fn(), deleteKey: vi.fn(),
+  setKeyLimits: (...a: unknown[]) => setKeyLimits(...a),
 }));
 vi.mock('../lib/auth', () => ({ useAuth: () => ({ user: { tenantId: 't' } }) }));
 import { ApiKeysPage } from '../pages/ApiKeysPage';
@@ -70,5 +72,18 @@ describe('API keys page', () => {
     fireEvent.click(screen.getByRole('button', { name: 'Create key' }));
     expect(await screen.findByText('pbl_demo_secretvalue')).toBeInTheDocument();
     await waitFor(() => expect(createKey.mock.calls[0][0]).toEqual({ name: 'billing-api', scopes: ['chat', 'models'] }));
+  });
+
+  it('shows each key\'s daily limit and lets an admin change it', async () => {
+    renderPage();
+    const bot = await screen.findByRole('article', { name: 'support-bot' });
+    expect(within(bot).getByText('100,000 tokens · $25')).toBeInTheDocument();
+    expect(within(await screen.findByRole('article', { name: 'hr-assistant' })).getByText('None')).toBeInTheDocument();
+    fireEvent.click(within(bot).getByRole('button', { name: 'Daily limit' }));
+    const form = within(bot).getByRole('form', { name: 'support-bot daily limit' });
+    fireEvent.change(within(form).getByLabelText('Tokens a day'), { target: { value: '' } });
+    fireEvent.change(within(form).getByLabelText('Spend a day (USD)'), { target: { value: '10' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Save' }));
+    await waitFor(() => expect(setKeyLimits).toHaveBeenCalledWith('k1', { dailyTokenLimit: 0, dailySpendLimitUsd: 10 }));
   });
 });

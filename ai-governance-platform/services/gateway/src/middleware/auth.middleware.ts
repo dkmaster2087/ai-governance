@@ -1,4 +1,5 @@
 import { FastifyInstance, FastifyReply, FastifyRequest } from 'fastify';
+import { hasCaps, keySpend } from '../services/key-spend';
 import { installSignIn, InstallSessionVerifier } from '../install/sign-in';
 import { API_PATHS } from '../install/dashboard';
 import fp from 'fastify-plugin';
@@ -91,6 +92,9 @@ const keyCaches = new Set<KeyCache>();
  * Stop trusting a cached copy of this key in this process. Call after revoking, rotating or deleting it.
  * Other gateway instances drop it when their cache entry expires (keyCacheTtlMs, one minute by default).
  */
+/** AI requests, where tokens are spent: chat completions and IDE proxy mode. */
+const AI_PATH = /^\/(v1\/)?(chat\/completions|proxy\/(?!providers)[^/]+\/)/;
+
 export function forgetApiKey(keyId: string): void {
   for (const cache of keyCaches) {
     for (const [hash, entry] of cache) if (entry.key.keyId === keyId) cache.delete(hash);
@@ -217,6 +221,8 @@ export function createAuthPlugin(deps: AuthDeps) {
         keyId: apiKey.keyId,
         scopes: apiKey.scopes?.length ? apiKey.scopes : ['chat', 'models'],
         rateLimit: apiKey.rateLimit,
+        ...(apiKey.dailyTokenLimit ? { dailyTokenLimit: apiKey.dailyTokenLimit } : {}),
+        ...(apiKey.dailySpendLimitUsd ? { dailySpendLimitUsd: apiKey.dailySpendLimitUsd } : {}),
         userId,
         appId,
       };
@@ -255,6 +261,20 @@ export function createAuthPlugin(deps: AuthDeps) {
       if (!r.allowed) {
         return reply.status(429).header('retry-after', String(r.retryAfter))
           .send({ error: `This key may make ${r.limit} calls a minute; try again in ${r.retryAfter} seconds`, code: 'RATE_LIMITED' });
+      }
+    });
+
+    // Each key's daily caps on tokens and spend, for AI requests (chat and IDE proxy mode).
+    app.addHook('preHandler', async (request, reply) => {
+      const p = request.principal;
+      if (!p || p.kind !== 'api_key') return;
+      const caps = { dailyTokenLimit: p.dailyTokenLimit, dailySpendLimitUsd: p.dailySpendLimitUsd };
+      if (!hasCaps(caps) || !AI_PATH.test(request.url)) return;
+      const refusal = await keySpend().refusal(p.tenantId, p.keyId, caps);
+      if (refusal) {
+        const now = new Date();
+        const retryAfter = Math.ceil((Date.UTC(now.getUTCFullYear(), now.getUTCMonth(), now.getUTCDate() + 1) - now.getTime()) / 1000);
+        return reply.status(429).header('retry-after', String(retryAfter)).send({ error: refusal, code: 'DAILY_LIMIT' });
       }
     });
   });

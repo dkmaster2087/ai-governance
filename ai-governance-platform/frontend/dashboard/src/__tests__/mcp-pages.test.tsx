@@ -35,6 +35,8 @@ const decideApproval = vi.fn(async (..._a: unknown[]) => ({}));
 const createConnector = vi.fn(async (..._a: unknown[]) => ({ ...connector, connectorId: 'con_2', name: 'Frankfurt', token: 'pcn_tenant_demo.con_2.secret' }));
 const saveSignIn = vi.fn(async (..._a: unknown[]) => ({ ...signIn, configured: true }));
 const testTool = vi.fn(async (..._a: unknown[]) => ({ requestId: 'req-9', isError: false, outcome: 'delivered', checks: ['arguments: valid', 'rules: passed', 'personal data: removed'], text: '{"name":"Jane","email":"[EMAIL]"}' }));
+const addUpstream = vi.fn(async (..._a: unknown[]) => ({ tools: 4, reads: 3 }));
+const refreshUpstream = vi.fn(async (..._a: unknown[]) => ({ tools: 5, added: 1, updated: 4, removed: 0 }));
 vi.mock('../lib/mcp-api', async (orig) => ({
   ...(await orig<typeof import('../lib/mcp-api')>()),
   listServers: vi.fn(async () => [summary]),
@@ -51,6 +53,8 @@ vi.mock('../lib/mcp-api', async (orig) => ({
   createConnector: (...a: unknown[]) => createConnector(...a),
   saveSignIn: (...a: unknown[]) => saveSignIn(...a),
   testTool: (...a: unknown[]) => testTool(...a),
+  addUpstream: (...a: unknown[]) => addUpstream(...a),
+  refreshUpstream: (...a: unknown[]) => refreshUpstream(...a),
   serverUrl: (p: string) => `https://gateway.acme.example${p}`,
 }));
 vi.mock('../lib/api-keys-api', async (orig) => ({ ...(await orig<typeof import('../lib/api-keys-api')>()), listKeys: vi.fn(async () => []) }));
@@ -125,7 +129,30 @@ describe('MCP servers', () => {
     fireEvent.click(within(access).getByRole('button', { name: 'Save' }));
     await waitFor(() => expect(changeServer).toHaveBeenCalled());
     expect((changeServer.mock.calls[0][1] as any).access).toEqual({ allKeys: true, keyIds: [], people: 'groups', groups: ['HR', 'People partners'] });
+    expect(changeServer.mock.calls[0][1]).toMatchObject({ argumentChecks: 'block', limits: { callsPerDay: 0 } });
+    fireEvent.click(within(access).getByRole('button', { name: 'Record only' }));
+    fireEvent.change(within(access).getByLabelText('Tool calls per day, per person or key'), { target: { value: '500' } });
+    fireEvent.click(within(access).getByRole('button', { name: /Save/ }));
+    await waitFor(() => expect(changeServer.mock.calls.at(-1)?.[1]).toMatchObject({ argumentChecks: 'flag', limits: { callsPerDay: 500 } }));
     expect(await screen.findByText('Version 1')).toBeInTheDocument();
+  });
+
+  it('puts a company MCP server behind this one, and reads its tools again', async () => {
+    detail = { ...structuredClone(baseDetail), apis: [...baseDetail.apis, { apiId: 'api_m', name: 'HR internal', kind: 'mcp', baseUrl: 'https://hr-mcp.acme.example/mcp', auth: { type: 'bearer', hint: '…oken' }, openapi: { title: 'HR internal', version: '', operations: 4, skipped: [] } }] };
+    renderAt('/mcp/hr-self-service');
+    fireEvent.click(await screen.findByRole('button', { name: 'Add an MCP server' }));
+    const form = screen.getByRole('region', { name: 'Add an MCP server' });
+    expect(within(form).queryByText(/OpenAPI description/)).toBeNull();
+    fireEvent.change(within(form).getByPlaceholderText('e.g. HR assistant tools'), { target: { value: 'HR internal' } });
+    fireEvent.change(within(form).getByPlaceholderText('https://hr-mcp.internal.acme.com/mcp'), { target: { value: 'https://hr-mcp.acme.example/mcp' } });
+    fireEvent.change(within(form).getByLabelText('Secret'), { target: { value: 'upstream-token' } });
+    fireEvent.click(within(form).getByRole('button', { name: 'Connect and read its tools' }));
+    await waitFor(() => expect(addUpstream).toHaveBeenCalledWith('hr-self-service', { name: 'HR internal', url: 'https://hr-mcp.acme.example/mcp', auth: { type: 'bearer', secret: 'upstream-token' } }));
+    const card = screen.getByRole('article', { name: 'HR internal' });
+    expect(within(card).getByText(/MCP server ·/)).toBeInTheDocument();
+    fireEvent.click(within(card).getByRole('button', { name: 'Read tools again' }));
+    expect(await within(card).findByText(/5 tools: 1 new, 0 removed/)).toBeInTheDocument();
+    expect(refreshUpstream).toHaveBeenCalledWith('hr-self-service', 'api_m');
   });
 
   it('tries a tool with arguments from its schema and shows the checks', async () => {

@@ -3,7 +3,7 @@ import { useSearchParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import { useAuth } from '../lib/auth';
-import { ApiKeySummary, createKey, deleteKey, listKeys, revokeKey, rotateKey, Scope } from '../lib/api-keys-api';
+import { ApiKeySummary, createKey, deleteKey, listKeys, revokeKey, rotateKey, Scope, setKeyLimits } from '../lib/api-keys-api';
 import { errorMessage } from '../lib/rules-api';
 import { Button, ConfirmAction, Note, Panel, SectionLabel, Segmented } from '../components/kit/primitives';
 import { CATEGORIES, CategoryBadge, CategoryGlyph, categoriesOf, categoryStyle, KeyCategory } from '../lib/key-categories';
@@ -38,15 +38,28 @@ function NewKey({ value, onDone }: { value: string; onDone: () => void }) {
   );
 }
 
+/** "100,000 tokens · $25", or "None". */
+function capText(k: ApiKeySummary) {
+  const parts = [k.dailyTokenLimit ? `${k.dailyTokenLimit.toLocaleString('en-US')} tokens` : '', k.dailySpendLimitUsd ? `$${k.dailySpendLimitUsd.toLocaleString('en-US')}` : ''].filter(Boolean);
+  return parts.length ? parts.join(' · ') : 'None';
+}
+
 function KeyRow({ k, onNewKey }: { k: ApiKeySummary; onNewKey: (key: string) => void }) {
   const qc = useQueryClient();
   const refresh = () => qc.invalidateQueries({ queryKey: ['api-keys'] });
   const revoke = useMutation({ mutationFn: () => revokeKey(k.keyId), onSuccess: refresh });
   const rotate = useMutation({ mutationFn: () => rotateKey(k.keyId), onSuccess: (r) => { onNewKey(r.key); refresh(); } });
   const remove = useMutation({ mutationFn: () => deleteKey(k.keyId), onSuccess: refresh });
+  const [editing, setEditing] = useState(false);
+  const [tokens, setTokens] = useState(k.dailyTokenLimit ? String(k.dailyTokenLimit) : '');
+  const [spend, setSpend] = useState(k.dailySpendLimitUsd ? String(k.dailySpendLimitUsd) : '');
+  const limits = useMutation({
+    mutationFn: () => setKeyLimits(k.keyId, { dailyTokenLimit: Number(tokens) || 0, dailySpendLimitUsd: Number(spend) || 0 }),
+    onSuccess: () => { setEditing(false); refresh(); },
+  });
   const expired = k.status === 'active' && k.expiresAt && new Date(k.expiresAt) < new Date();
   const status = k.status === 'revoked' ? 'Revoked' : expired ? 'Expired' : 'Active';
-  const error = revoke.error ?? rotate.error ?? remove.error;
+  const error = revoke.error ?? rotate.error ?? remove.error ?? limits.error;
   const categories = categoriesOf(k);
 
   return (
@@ -67,12 +80,24 @@ function KeyRow({ k, onNewKey }: { k: ApiKeySummary; onNewKey: (key: string) => 
       <dl className="m-0 flex gap-6 text-sm">
         <div><dt className="text-xs text-ink-muted">Last used</dt><dd className="m-0">{date(k.lastUsedAt)}</dd></div>
         <div><dt className="text-xs text-ink-muted">Expires</dt><dd className="m-0">{k.expiresAt ? date(k.expiresAt) : 'Never'}</dd></div>
+        <div><dt className="text-xs text-ink-muted">Daily limit</dt><dd className="m-0">{capText(k)}</dd></div>
       </dl>
       <div className="flex gap-2 flex-wrap">
+        {status === 'Active' && <Button type="button" variant="secondary" onClick={() => setEditing(!editing)}>{editing ? 'Cancel' : 'Daily limit'}</Button>}
         {status === 'Active' && <ConfirmAction label="Replace" question={<>Replace {k.name}? The current key stops working now; you’ll see the new one once.</>} onConfirm={() => rotate.mutate()} disabled={rotate.isPending} />}
         {status === 'Active' && <ConfirmAction label="Revoke" question={<>Revoke {k.name}? Anything using it is refused from now on.</>} onConfirm={() => revoke.mutate()} disabled={revoke.isPending} />}
         {status !== 'Active' && <ConfirmAction label="Delete" variant="ghost" question={<>Delete {k.name} from the list?</>} onConfirm={() => remove.mutate()} disabled={remove.isPending} />}
       </div>
+      {editing && (
+        <form aria-label={`${k.name} daily limit`} className="basis-full flex flex-wrap gap-3 items-end" onSubmit={(e) => { e.preventDefault(); limits.mutate(); }}>
+          <label className="flex flex-col gap-1 w-[200px]"><span className="text-sm font-semibold">Tokens a day</span>
+            <input type="number" min={0} value={tokens} placeholder="No limit" onChange={(e) => setTokens(e.target.value)} className="min-h-[42px] px-3 border border-line-strong rounded-lg bg-white" /></label>
+          <label className="flex flex-col gap-1 w-[200px]"><span className="text-sm font-semibold">Spend a day (USD)</span>
+            <input type="number" min={0} step="0.01" value={spend} placeholder="No limit" onChange={(e) => setSpend(e.target.value)} className="min-h-[42px] px-3 border border-line-strong rounded-lg bg-white" /></label>
+          <Button type="submit" disabled={limits.isPending}>{limits.isPending ? 'Saving…' : 'Save'}</Button>
+          <p className="basis-full m-0 text-xs text-ink-muted">AI requests from this key are refused once either is reached, until midnight UTC. Spend is estimated from the prices on the Models page.</p>
+        </form>
+      )}
       {error && <p role="alert" className="basis-full m-0 text-stop-text font-semibold">{errorMessage(error)}</p>}
     </Panel>
   );

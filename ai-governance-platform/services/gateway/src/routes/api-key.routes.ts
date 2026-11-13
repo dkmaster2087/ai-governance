@@ -5,6 +5,7 @@ import { createLogger } from '@ai-governance/utils';
 import { requireAccess, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
 import { API_KEY_SCOPES, ApiKeyScope } from '../auth/principal';
 import { forgetApiKey } from '../middleware/auth.middleware';
+import { keySpend } from '../services/key-spend';
 
 const logger = createLogger('gateway:api-key-routes');
 
@@ -13,7 +14,14 @@ const createKeySchema = z.object({
   scopes: z.array(z.enum(API_KEY_SCOPES as [ApiKeyScope, ...ApiKeyScope[]])).min(1).max(10).optional().default(['chat', 'models']),
   rateLimit: z.number().min(1).max(10000).optional().default(100),
   expiresInDays: z.number().min(1).max(3650).optional(),
+  dailyTokenLimit: z.number().int().min(0).max(10_000_000_000).optional(),
+  dailySpendLimitUsd: z.number().min(0).max(1_000_000).optional(),
 });
+const limitsSchema = z.object({
+  rateLimit: z.number().int().min(1).max(10000).optional(),
+  dailyTokenLimit: z.number().int().min(0).max(10_000_000_000).optional(),
+  dailySpendLimitUsd: z.number().min(0).max(1_000_000).optional(),
+}).refine((c) => Object.keys(c).length > 0, 'Nothing to change');
 
 /** On-prem license keys are managed by the platform, not from a tenant's API key list. */
 const isLicense = (k: { scopes?: string[] }) => !!k.scopes?.includes('reporting:ingest');
@@ -38,6 +46,8 @@ export async function apiKeyRoutes(app: FastifyInstance) {
       scopes: k.scopes,
       status: k.status,
       rateLimit: k.rateLimit,
+      ...(k.dailyTokenLimit ? { dailyTokenLimit: k.dailyTokenLimit } : {}),
+      ...(k.dailySpendLimitUsd ? { dailySpendLimitUsd: k.dailySpendLimitUsd } : {}),
       createdAt: k.createdAt,
       expiresAt: k.expiresAt,
       lastUsedAt: k.lastUsedAt,
@@ -67,6 +77,8 @@ export async function apiKeyRoutes(app: FastifyInstance) {
       scopes: body.scopes,
       status: 'active',
       rateLimit: body.rateLimit,
+      ...(body.dailyTokenLimit ? { dailyTokenLimit: body.dailyTokenLimit } : {}),
+      ...(body.dailySpendLimitUsd ? { dailySpendLimitUsd: body.dailySpendLimitUsd } : {}),
       createdAt: new Date().toISOString(),
       expiresAt,
       createdBy: request.userId,
@@ -83,6 +95,26 @@ export async function apiKeyRoutes(app: FastifyInstance) {
       expiresAt,
       message: 'Store this key securely. It will not be shown again.',
     });
+  });
+
+  /** Change a key's limits: calls a minute, and daily caps on tokens and spend (0 removes a cap). */
+  app.patch('/api-keys/:keyId', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
+    const { keyId } = request.params as { keyId: string };
+    const parsed = limitsSchema.safeParse(request.body);
+    if (!parsed.success) return reply.status(400).send({ error: parsed.error.issues[0]?.message ?? 'Invalid change', code: 'INVALID_KEY' });
+    if (!(await ownKey(request.tenantId, keyId))) return reply.status(404).send({ error: 'Key not found', code: 'NOT_FOUND' });
+    await repo.setLimits(request.tenantId, keyId, parsed.data);
+    forgetApiKey(keyId);
+    const used = await keySpend().today(request.tenantId, keyId).catch(() => null);
+    return reply.send({ keyId, ...parsed.data, ...(used ? { usedToday: used } : {}) });
+  });
+
+  /** Today's tokens and estimated spend for a key, against its caps. */
+  app.get('/api-keys/:keyId/usage', { preHandler: requireAccess(TENANT_READ) }, async (request, reply) => {
+    const { keyId } = request.params as { keyId: string };
+    const key = await ownKey(request.tenantId, keyId);
+    if (!key) return reply.status(404).send({ error: 'Key not found', code: 'NOT_FOUND' });
+    return { keyId, ...(await keySpend().today(request.tenantId, keyId)), dailyTokenLimit: key.dailyTokenLimit ?? 0, dailySpendLimitUsd: key.dailySpendLimitUsd ?? 0 };
   });
 
   /** Revoke an API key */
@@ -115,6 +147,8 @@ export async function apiKeyRoutes(app: FastifyInstance) {
       scopes: oldKey.scopes,
       status: 'active',
       rateLimit: oldKey.rateLimit,
+      ...(oldKey.dailyTokenLimit ? { dailyTokenLimit: oldKey.dailyTokenLimit } : {}),
+      ...(oldKey.dailySpendLimitUsd ? { dailySpendLimitUsd: oldKey.dailySpendLimitUsd } : {}),
       createdAt: new Date().toISOString(),
       expiresAt: oldKey.expiresAt,
       createdBy: request.userId,

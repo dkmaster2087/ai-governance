@@ -23,6 +23,8 @@ export interface NormalizedAIRequest {
   temperature?: number;
   metadata: Record<string, string>;
   timestamp: string;
+  /** The API key that sent it, for its daily caps. Not stored in the case file. */
+  apiKeyId?: string;
 }
 
 export interface ChatMessage {

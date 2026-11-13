@@ -59,7 +59,8 @@ function guardedLookup(hostname: string, options: dns.LookupOptions, cb: (err: N
   });
 }
 
-export interface BackendResponse { status: number; contentType: string; body: string; truncated: boolean; ms: number }
+/** sessionId: the MCP session a company's MCP server handed out (`Mcp-Session-Id`), if any. */
+export interface BackendResponse { status: number; contentType: string; body: string; truncated: boolean; ms: number; sessionId?: string }
 
 export function callBackend(o: {
   url: URL; method: string; headers: Record<string, string>; body?: string | Buffer; timeoutMs?: number; maxBytes: number; contentType?: string;
@@ -95,7 +96,11 @@ export function callBackend(o: {
         chunks.push(c);
         size += c.length;
       });
-      const done = () => resolve({ status, contentType: String(res.headers['content-type'] ?? ''), body: Buffer.concat(chunks).toString('utf8'), truncated, ms: Date.now() - started });
+      const session = res.headers['mcp-session-id'];
+      const done = () => resolve({
+        status, contentType: String(res.headers['content-type'] ?? ''), body: Buffer.concat(chunks).toString('utf8'), truncated, ms: Date.now() - started,
+        ...(typeof session === 'string' && session.length <= 200 ? { sessionId: session } : {}),
+      });
       res.on('end', done);
       res.on('close', () => { if (truncated) done(); });
       res.on('error', (e) => (truncated ? done() : reject(new EgressError(e.message))));

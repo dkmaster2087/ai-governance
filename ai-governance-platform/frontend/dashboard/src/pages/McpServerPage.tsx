@@ -3,7 +3,7 @@ import { Link, useNavigate, useParams } from 'react-router-dom';
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 import clsx from 'clsx';
 import {
-  addApi, ApiAuthInput, changeServer, changeTool, deleteServer, getServer, getSignIn, listConnectors, listVersions, McpServerDetail, McpTool,
+  addApi, addUpstream, refreshUpstream, ApiAuthInput, changeServer, changeTool, deleteServer, getServer, getSignIn, listConnectors, listVersions, McpServerDetail, McpTool,
   pauseServer, publishServer, removeApi, restoreVersion, resumeServer, serverUrl, splitList, testTool, TestResult,
 } from '../lib/mcp-api';
 import { listKeys } from '../lib/api-keys-api';
@@ -74,7 +74,9 @@ function Connect({ server }: { server: McpServerDetail }) {
   );
 }
 
-function AddApi({ serverId, onDone }: { serverId: string; onDone: () => void }) {
+/** Add an API from its OpenAPI description, or (kind `mcp`) a company's existing MCP server. */
+function AddApi({ serverId, onDone, kind = 'openapi' }: { serverId: string; onDone: () => void; kind?: 'openapi' | 'mcp' }) {
+  const mcp = kind === 'mcp';
   const qc = useQueryClient();
   const { data: connectors } = useQuery({ queryKey: ['mcp-connectors'], queryFn: listConnectors });
   const [name, setName] = useState('');
@@ -85,23 +87,26 @@ function AddApi({ serverId, onDone }: { serverId: string; onDone: () => void }) 
   const [header, setHeader] = useState('X-API-Key');
   const [secret, setSecret] = useState('');
   const add = useMutation({
-    mutationFn: () => addApi(serverId, {
-      name: name.trim(), baseUrl: baseUrl.trim(), openapi, ...(via ? { connectorId: via } : {}),
-      auth: authType === 'none' ? { type: 'none' } : authType === 'bearer' ? { type: 'bearer', secret } : { type: 'header', header, secret },
-    }),
+    mutationFn: () => {
+      const auth: ApiAuthInput = authType === 'none' ? { type: 'none' } : authType === 'bearer' ? { type: 'bearer', secret } : { type: 'header', header, secret };
+      return mcp
+        ? addUpstream(serverId, { name: name.trim(), url: baseUrl.trim(), auth, ...(via ? { connectorId: via } : {}) })
+        : addApi(serverId, { name: name.trim(), baseUrl: baseUrl.trim(), openapi, auth, ...(via ? { connectorId: via } : {}) });
+    },
     onSuccess: () => { qc.invalidateQueries({ queryKey: ['mcp-server', serverId] }); onDone(); },
   });
-  const ready = name.trim() && baseUrl.trim() && openapi.trim() && (authType === 'none' || secret) && !add.isPending;
+  const ready = name.trim() && baseUrl.trim() && (mcp || openapi.trim()) && (authType === 'none' || secret) && !add.isPending;
 
   return (
-    <Panel aria-label="Add an API" className="px-6 py-5">
-      <SectionLabel className="mb-3">Add an API</SectionLabel>
+    <Panel aria-label={mcp ? 'Add an MCP server' : 'Add an API'} className="px-6 py-5">
+      <SectionLabel className="mb-3">{mcp ? 'Add a company MCP server' : 'Add an API'}</SectionLabel>
+      {mcp && <p className="m-0 mb-3 text-sm text-ink-muted max-w-[760px]">An MCP server your company already runs. Agents connect to this Probaline server instead; Probaline calls yours with its own credential, after every check. Lock yours to Probaline so agents can’t go around it: accept only calls with Probaline’s credential, or check the signed X-Probaline-Identity header.</p>}
       <form className="flex flex-col gap-4" onSubmit={(e) => { e.preventDefault(); if (ready) add.mutate(); }}>
         <div className="grid gap-4" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(260px, 1fr))' }}>
           <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Name</span>
-            <input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder="e.g. People API" maxLength={80} /></label>
-          <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">Base URL</span>
-            <input className={input} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder="https://people.internal.acme.com/v1" /></label>
+            <input className={input} value={name} onChange={(e) => setName(e.target.value)} placeholder={mcp ? 'e.g. HR assistant tools' : 'e.g. People API'} maxLength={80} /></label>
+          <label className="flex flex-col gap-1.5"><span className="text-sm font-semibold">{mcp ? 'Address (Streamable HTTP)' : 'Base URL'}</span>
+            <input className={input} value={baseUrl} onChange={(e) => setBaseUrl(e.target.value)} placeholder={mcp ? 'https://hr-mcp.internal.acme.com/mcp' : 'https://people.internal.acme.com/v1'} /></label>
           <label className="flex flex-col gap-1.5 min-w-0"><span className="text-sm font-semibold">How Probaline reaches it</span>
             <select className={clsx(input, 'w-full min-w-0')} value={via} onChange={(e) => setVia(e.target.value)}>
               <option value="">Directly, over the internet</option>
@@ -120,6 +125,7 @@ function AddApi({ serverId, onDone }: { serverId: string; onDone: () => void }) 
             </div>
           )}
         </fieldset>
+        {!mcp && <>
         <label className="flex flex-col gap-1.5">
           <span className="text-sm font-semibold">OpenAPI description <span className="font-normal text-ink-muted">(JSON or YAML, OpenAPI 3)</span></span>
           <textarea className="min-h-[160px] p-3 border border-line-strong rounded-lg bg-white font-mono text-[13px]" value={openapi} onChange={(e) => setOpenapi(e.target.value)} placeholder="openapi: 3.0.3 …" />
@@ -128,9 +134,10 @@ function AddApi({ serverId, onDone }: { serverId: string; onDone: () => void }) 
           <span className="font-semibold">Or upload a file: </span>
           <input type="file" accept=".json,.yaml,.yml,application/json,text/yaml" onChange={async (e) => { const f = e.target.files?.[0]; if (f) setOpenapi(await f.text()); }} />
         </label>
+        </>}
         {add.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(add.error)}</p>}
         <div className="flex gap-2">
-          <Button type="submit" disabled={!ready}>{add.isPending ? 'Reading the API…' : 'Add API'}</Button>
+          <Button type="submit" disabled={!ready}>{add.isPending ? (mcp ? 'Connecting…' : 'Reading the API…') : (mcp ? 'Connect and read its tools' : 'Add API')}</Button>
           <Button type="button" variant="secondary" onClick={onDone}>Cancel</Button>
         </div>
       </form>
@@ -142,6 +149,7 @@ function ToolRow({ serverId, tool }: { serverId: string; tool: McpTool }) {
   const qc = useQueryClient();
   const [editingGroups, setEditingGroups] = useState(false);
   const [groups, setGroups] = useState((tool.groups ?? []).join(', '));
+  const [limit, setLimit] = useState(tool.callsPerMinute ? String(tool.callsPerMinute) : '');
   const change = useMutation({
     mutationFn: (c: Parameters<typeof changeTool>[2]) => changeTool(serverId, tool.name, c),
     onSuccess: () => { setEditingGroups(false); qc.invalidateQueries({ queryKey: ['mcp-server', serverId] }); },
@@ -151,9 +159,14 @@ function ToolRow({ serverId, tool }: { serverId: string; tool: McpTool }) {
       <div className="flex items-start justify-between gap-4">
         <div className="min-w-0">
           <p className="m-0 font-semibold">{tool.title}{tool.write && <span className="ml-2 text-xs font-semibold text-ink-soft align-middle">Changes data</span>}</p>
-          <p className="m-0 mt-0.5 text-sm text-ink-muted"><span className="font-mono text-[12px] bg-ink-tint rounded px-1.5 py-px mr-1.5">{tool.method}</span><span className="font-mono text-[12px]">{tool.path}</span> · <span className="font-mono text-[12px]">{tool.name}</span></p>
           <p className="m-0 mt-0.5 text-sm text-ink-muted">
-            {tool.groups?.length ? <>Only for {tool.groups.join(', ')}</> : 'For everyone who can connect'} ·{' '}
+            {tool.upstreamName
+              ? <><span className="font-mono text-[12px] bg-ink-tint rounded px-1.5 py-px mr-1.5">MCP</span><span className="font-mono text-[12px]">{tool.upstreamName}</span></>
+              : <><span className="font-mono text-[12px] bg-ink-tint rounded px-1.5 py-px mr-1.5">{tool.method}</span><span className="font-mono text-[12px]">{tool.path}</span> · <span className="font-mono text-[12px]">{tool.name}</span></>}
+          </p>
+          <p className="m-0 mt-0.5 text-sm text-ink-muted">
+            {tool.groups?.length ? <>Only for {tool.groups.join(', ')}</> : 'For everyone who can connect'}
+            {tool.callsPerMinute ? <> · at most {tool.callsPerMinute} calls a minute each</> : null} ·{' '}
             <button type="button" className="underline" onClick={() => setEditingGroups(!editingGroups)}>{editingGroups ? 'cancel' : 'change'}</button>
           </p>
         </div>
@@ -164,9 +177,11 @@ function ToolRow({ serverId, tool }: { serverId: string; tool: McpTool }) {
           options={[{ value: 'required', label: 'A person approves each call' }, { value: 'none', label: 'Runs without approval' }]} />
       )}
       {editingGroups && (
-        <form className="flex flex-wrap gap-2 items-end" onSubmit={(e) => { e.preventDefault(); change.mutate({ groups: splitList(groups) }); }}>
-          <label className="flex flex-col gap-1 flex-1 min-w-[240px]"><span className="text-sm font-semibold">Only for these groups <span className="font-normal text-ink-muted">(empty: everyone; API keys don’t get group-limited tools)</span></span>
+        <form className="flex flex-wrap gap-2 items-end" onSubmit={(e) => { e.preventDefault(); change.mutate({ groups: splitList(groups), callsPerMinute: Number(limit) > 0 ? Number(limit) : null }); }}>
+          <label className="flex flex-col gap-1 flex-1 min-w-[min(240px,100%)]"><span className="text-sm font-semibold">Only for these groups <span className="font-normal text-ink-muted">(empty: everyone; API keys don’t get group-limited tools)</span></span>
             <input className={input} value={groups} onChange={(e) => setGroups(e.target.value)} placeholder="e.g. Payroll, HR leads" /></label>
+          <label className="flex flex-col gap-1 w-[200px]"><span className="text-sm font-semibold">Calls a minute, each</span>
+            <input className={input} type="number" min={1} max={10000} value={limit} placeholder="Server’s limit" onChange={(e) => setLimit(e.target.value)} /></label>
           <Button type="submit" variant="secondary" disabled={change.isPending}>Save</Button>
         </form>
       )}
@@ -185,11 +200,13 @@ function Access({ server }: { server: McpServerDetail }) {
   const [keyIds, setKeyIds] = useState<string[]>(server.access.keyIds);
   const [perMinute, setPerMinute] = useState(String(server.limits.callsPerMinute));
   const [maxKb, setMaxKb] = useState(String(Math.round(server.limits.maxResultBytes / 1000)));
+  const [perDay, setPerDay] = useState(server.limits.callsPerDay ? String(server.limits.callsPerDay) : '');
   const [personal, setPersonal] = useState(!!server.returnPersonalData);
+  const [attacks, setAttacks] = useState<'block' | 'flag' | 'off'>(server.argumentChecks ?? 'block');
   const save = useMutation({
     mutationFn: () => changeServer(server.serverId, {
-      access: { allKeys, keyIds, people, groups: splitList(groups) }, returnPersonalData: personal,
-      limits: { callsPerMinute: Number(perMinute) || 60, maxResultBytes: (Number(maxKb) || 100) * 1000 },
+      access: { allKeys, keyIds, people, groups: splitList(groups) }, returnPersonalData: personal, argumentChecks: attacks,
+      limits: { callsPerMinute: Number(perMinute) || 60, maxResultBytes: (Number(maxKb) || 100) * 1000, callsPerDay: Number(perDay) || 0 },
     }),
     onSuccess: () => qc.invalidateQueries({ queryKey: ['mcp-server', server.serverId] }),
   });
@@ -221,6 +238,8 @@ function Access({ server }: { server: McpServerDetail }) {
       <div className="flex flex-wrap gap-4">
         <label className="flex flex-col gap-1.5 w-[220px]"><span className="text-sm font-semibold">Calls per minute, per person or key</span>
           <input className={input} type="number" min={1} max={10000} value={perMinute} onChange={(e) => setPerMinute(e.target.value)} /></label>
+        <label className="flex flex-col gap-1.5 w-[220px]"><span className="text-sm font-semibold">Tool calls per day, per person or key</span>
+          <input className={input} type="number" min={0} max={1000000} value={perDay} placeholder="No daily limit" onChange={(e) => setPerDay(e.target.value)} /></label>
         <label className="flex flex-col gap-1.5 w-[220px]"><span className="text-sm font-semibold">Largest result (KB)</span>
           <input className={input} type="number" min={1} max={1000} value={maxKb} onChange={(e) => setMaxKb(e.target.value)} /></label>
       </div>
@@ -228,6 +247,11 @@ function Access({ server }: { server: McpServerDetail }) {
         <input type="checkbox" checked={!personal} onChange={(e) => setPersonal(!e.target.checked)} />
         <span><span className="font-medium">Remove personal data from results</span> <span className="text-ink-muted">· emails, phone numbers, SSNs and card numbers</span></span>
       </label>
+      <div className="flex flex-col gap-2">
+        <span className="text-sm font-semibold">Attacks in tool arguments <span className="font-normal text-ink-muted">· SQL injection, system commands, paths like ../, database operators, requests to cloud metadata</span></span>
+        <Segmented<'block' | 'flag' | 'off'> label="Attacks in tool arguments" value={attacks} onChange={setAttacks}
+          options={[{ value: 'block', label: 'Stop the call' }, { value: 'flag', label: 'Record only' }, { value: 'off', label: 'Off' }]} />
+      </div>
       {save.isError && <p role="alert" className="m-0 text-stop-text font-semibold">{errorMessage(save.error)}</p>}
       <div><Button type="button" disabled={save.isPending} onClick={() => save.mutate()}>{save.isSuccess ? 'Saved' : save.isPending ? 'Saving…' : 'Save'}</Button></div>
     </Panel>
@@ -350,7 +374,7 @@ export function McpServerPage() {
   const { serverId = '' } = useParams();
   const navigate = useNavigate();
   const qc = useQueryClient();
-  const [adding, setAdding] = useState(false);
+  const [adding, setAdding] = useState<false | 'openapi' | 'mcp'>(false);
   const [note, setNote] = useState('');
   const { data: server, isLoading, isError, refetch } = useQuery({ queryKey: ['mcp-server', serverId], queryFn: () => getServer(serverId) });
   const { data: connectors } = useQuery({ queryKey: ['mcp-connectors'], queryFn: listConnectors });
@@ -360,6 +384,7 @@ export function McpServerPage() {
   const resume = useMutation({ mutationFn: () => resumeServer(serverId), onSuccess: refresh });
   const remove = useMutation({ mutationFn: () => deleteServer(serverId), onSuccess: () => { qc.invalidateQueries({ queryKey: ['mcp-servers'] }); navigate('/mcp'); } });
   const dropApi = useMutation({ mutationFn: (apiId: string) => removeApi(serverId, apiId), onSuccess: refresh });
+  const refresh_ = useMutation({ mutationFn: (apiId: string) => refreshUpstream(serverId, apiId), onSuccess: refresh });
   const byApi = useMemo(() => {
     const m = new Map<string, McpTool[]>();
     for (const t of server?.tools ?? []) m.set(t.apiId, [...(m.get(t.apiId) ?? []), t]);
@@ -412,21 +437,31 @@ export function McpServerPage() {
             <h2 className="m-0 text-xl font-bold">APIs and tools</h2>
             <p className="m-0 mt-1 text-sm text-ink-muted">Tools that read are on when an API is added. Tools that change data are off until you turn them on, and then need a person’s approval unless you say otherwise.</p>
           </div>
-          {!adding && <Button variant="secondary" onClick={() => setAdding(true)}>Add an API</Button>}
+          {!adding && (
+            <div className="flex gap-2 flex-wrap">
+              <Button variant="secondary" onClick={() => setAdding('openapi')}>Add an API</Button>
+              <Button variant="secondary" onClick={() => setAdding('mcp')}>Add an MCP server</Button>
+            </div>
+          )}
         </div>
-        {adding && <AddApi serverId={serverId} onDone={() => setAdding(false)} />}
-        {server.apis.length === 0 && !adding && <Panel className="px-6"><Note title="No APIs yet.">Add one with its OpenAPI description; its operations become tools.</Note></Panel>}
+        {adding && <AddApi key={adding} kind={adding} serverId={serverId} onDone={() => setAdding(false)} />}
+        {server.apis.length === 0 && !adding && <Panel className="px-6"><Note title="No APIs yet.">Add one with its OpenAPI description, so its operations become tools, or put an MCP server your company already runs behind this one.</Note></Panel>}
         {server.apis.map((a) => (
           <Panel key={a.apiId} as="article" aria-label={a.name} className="px-6 py-5">
             <div className="flex justify-between items-start gap-3 flex-wrap mb-2">
               <div className="min-w-0">
                 <h3 className="m-0 text-lg font-bold">{a.name}</h3>
                 <p className="m-0 text-sm text-ink-muted [overflow-wrap:anywhere]">
-                  <span className="font-mono text-[12px]">{a.baseUrl}</span>{a.connectorId && <> · through {connectorName(a.connectorId)}</>} · {a.auth.type === 'none' ? 'no credential' : `${a.auth.type === 'bearer' ? 'bearer token' : `${a.auth.header} header`} ${a.auth.hint ?? ''}`} · {a.openapi.title} {a.openapi.version}
+                  {a.kind === 'mcp' && <span className="font-semibold text-ink-soft">MCP server · </span>}<span className="font-mono text-[12px]">{a.baseUrl}</span>{a.connectorId && <> · through {connectorName(a.connectorId)}</>} · {a.auth.type === 'none' ? 'no credential' : `${a.auth.type === 'bearer' ? 'bearer token' : `${a.auth.header} header`} ${a.auth.hint ?? ''}`}{a.kind !== 'mcp' && <> · {a.openapi.title} {a.openapi.version}</>}
                 </p>
               </div>
-              <Button variant="ghost" disabled={dropApi.isPending} onClick={() => { if (window.confirm(`Remove ${a.name} and its tools?`)) dropApi.mutate(a.apiId); }}>Remove</Button>
+              <div className="flex gap-2">
+                {a.kind === 'mcp' && <Button variant="secondary" disabled={refresh_.isPending} onClick={() => refresh_.mutate(a.apiId)}>{refresh_.isPending && refresh_.variables === a.apiId ? 'Reading…' : 'Read tools again'}</Button>}
+                <Button variant="ghost" disabled={dropApi.isPending} onClick={() => { if (window.confirm(`Remove ${a.name} and its tools?`)) dropApi.mutate(a.apiId); }}>Remove</Button>
+              </div>
             </div>
+            {refresh_.isSuccess && refresh_.variables === a.apiId && <p role="status" className="m-0 mb-2 text-sm text-ink-muted">{refresh_.data.tools} tools: {refresh_.data.added} new, {refresh_.data.removed} removed. New tools that change data are off.</p>}
+            {refresh_.isError && refresh_.variables === a.apiId && <p role="alert" className="m-0 mb-2 text-sm text-stop-text font-semibold">{errorMessage(refresh_.error)}</p>}
             {a.openapi.skipped.length > 0 && (
               <details className="mb-2 text-sm"><summary className="cursor-pointer text-ink-muted">{a.openapi.skipped.length} operations couldn’t become tools</summary>
                 <ul className="m-0 mt-1 pl-5 text-ink-muted">{a.openapi.skipped.map((s) => <li key={s}>{s}</li>)}</ul></details>

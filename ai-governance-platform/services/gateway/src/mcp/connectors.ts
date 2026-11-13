@@ -32,7 +32,7 @@ export interface Connector {
 }
 
 export interface JobRequest { method: string; url: string; headers: Record<string, string>; body?: string; timeoutMs: number; maxBytes: number }
-export interface JobAnswer { status: number; contentType: string; body: string; truncated: boolean; ms: number }
+export interface JobAnswer { status: number; contentType: string; body: string; truncated: boolean; ms: number; sessionId?: string }
 
 interface Job {
   tenantId: string;
@@ -134,7 +134,7 @@ export class ConnectorService {
         if (job.status === 'done') {
           if (job.error) throw new EgressError(job.error.message, job.error.code);
           const a = JSON.parse(await gatewayKeys().decrypt(job.answer!)) as JobAnswer;
-          return { status: a.status, contentType: a.contentType, body: a.body, truncated: a.truncated, ms: Date.now() - started };
+          return { status: a.status, contentType: a.contentType, body: a.body, truncated: a.truncated, ms: Date.now() - started, ...(a.sessionId ? { sessionId: a.sessionId } : {}) };
         }
         if (job.status === 'queued' && Date.now() > pickupBy) {
           // Not picked up: take it back so the connector doesn't make the call later.

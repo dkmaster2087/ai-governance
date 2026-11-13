@@ -135,14 +135,15 @@ Before any of these, the caller is checked: an API key with the mcp permission o
 
 | Step | What happens | Built on |
 |---|---|---|
-| Arguments | Validated against the schema; unknown fields refused | new |
+| Arguments | Validated against the schema, including the API's own `pattern` and `format` (email, uuid, date, date-time, ipv4, hostname, uri, int32/int64); unknown fields refused | new |
+| Arguments | Attack check: SQL injection, OS commands, path traversal, NoSQL operators and requests to local or cloud-metadata addresses, checked as sent and URL-decoded. Per server: stop the call (default), record only, or off | `mcp/argument-attacks.ts` |
 | Arguments | Company rules (words, patterns, personal-data types, rate limits); a rule set to block stops the call. Model rules don't apply | policy engine, as for prompts |
 | Arguments | Secrets check: an agent mustn't send a key or password into an API. Always stops the call (a tenant set to redact for prompts still stops tool calls); only `off` skips it | secrets check |
 | Write actions | "Needs approval": the call waits; an approver sees tool, arguments and caller, and approves or refuses in the dashboard; the agent gets the outcome. Timeout refuses | new |
 | Result | Personal data masked unless the server is set to return it | data protection service (the gateway's own scanner if it's down) |
 | Result | Prompt-injection screening: text that tries to instruct the agent is flagged with a note the agent sees, and recorded | patterns today; a classifier later |
 | Result | Size cap, so one call can't empty a database into a chat | new |
-| All | Calls a minute per caller per server, and per API key; the tenant's fail mode when the rules can't be checked (closed: no call; open: call made and marked) | shared counters |
+| All | Calls a minute per caller per server, and per API key; optional tool calls a day per caller per server, and calls a minute per caller per tool (only tool calls count); the tenant's fail mode when the rules can't be checked (closed: no call; open: call made and marked) | shared counters |
 
 Every call gets a **case file**, like prompts today: who (person or workload), agent, tool, arguments (masked),
 checks and their outcome, approval if any, backend status, timing. Results aren't stored, only a fingerprint,
@@ -202,7 +203,7 @@ second system.
 |---|---|---|
 | 1 (**built**) | **Create MCP servers on demand**: the MCP servers menu, create flow and per-server address (Streamable HTTP); APIs from OpenAPI; read tools; workloads with API keys; argument and result checks; case files; test console; pause and delete | 3–4 weeks |
 | 2 (**built**) | People sign in through their identity provider (OAuth for MCP clients, federation per tenant); group access per server and tool; write tools with approval; draft, publish and versions; signed identity for backends; connector for on-premises APIs | 3–4 weeks |
-| 3 | Put existing MCP servers behind Probaline (company-run and vendor-hosted), with the same checks; templates for common systems; injection classifier; on-behalf-of token exchange; end dates; isolated servers | 3–4 weeks |
+| 3 (**partly built**) | Put existing MCP servers behind Probaline (company-run and vendor-hosted), with the same checks (**built**); argument attack check (**built**); templates for common systems; injection classifier; on-behalf-of token exchange; end dates; isolated servers | 3–4 weeks |
 | 4 | Find MCP use in the assessment: the collector looks for MCP servers and agent traffic in network and cloud logs, so the report says which agents already reach company data | 1–2 weeks |
 
 Phase 1 alone is a useful product for companies' own agents. Phase 2 is the one to sell to a CISO.
@@ -254,6 +255,27 @@ Phase 1 alone is a useful product for companies' own agents. Phase 2 is the one 
   picture (they're on each server's page and in Evidence); SAML (OIDC only); Entra group overage (more than
   200 groups in a token); the identity provider's own consent screen for each client; email notifications
   for approvals; answers through a connector over 250 KB; key rotation for the gateway's signing key.
+
+### What phase 3 adds (2026-11-13)
+
+- **Company MCP servers behind Probaline.** Dashboard → an MCP server → **Add an MCP server**: the address of an
+  MCP server the company already runs (Streamable HTTP), how Probaline signs in to it (bearer token, API-key
+  header or none), and whether it's reached directly or through the connector. Probaline connects, lists its
+  tools and puts them on this server: tools marked read-only are on; every other tool is treated as one that
+  changes data, so it's off until an admin turns it on, and then needs approval. Agents connect only to
+  Probaline; Probaline calls the company's server with its own credential and `X-Probaline-Identity`, after
+  every check, and the result goes through the same result checks. Sessions (`Mcp-Session-Id`) are kept for
+  ten minutes and started again if the server forgets them; answers may be JSON or an event stream. Images and
+  audio in results are left out (the agent is told). **Read tools again** picks up new, changed and removed
+  tools; a tool that becomes one that changes data is switched off. A server that refuses Probaline's
+  credential is reported as such and nothing is saved.
+- **Lock it to Probaline.** So agents can't go around Probaline, the company server should accept only
+  Probaline: its credential, or the signed identity (the verifier kit), or a network rule allowing only the
+  gateway or connector.
+- **Argument attacks, schema patterns and formats, and the new limits** (see "Checks on every call").
+- Tested against a server built with the official MCP SDK (sessions, event streams, a required token).
+  **Not yet:** OAuth sign-in from Probaline to a company MCP server (bearer or header credentials only);
+  prompts and resources from company servers; servers using the older HTTP+SSE transport.
 
 ## Not in scope (for now)
 

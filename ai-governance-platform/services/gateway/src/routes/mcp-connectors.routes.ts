@@ -12,7 +12,7 @@ const connectorInput = z.object({ name: z.string().trim().min(1).max(80), allowe
 const connectorChange = z.object({ name: z.string().trim().min(1).max(80).optional(), allowedHosts: hosts.optional() });
 const answerInput = z.object({
   id: z.string().regex(/^[a-f0-9]{16}$/),
-  answer: z.object({ status: z.number().int().min(100).max(599), contentType: z.string().max(200), body: z.string().max(400_000), truncated: z.boolean(), ms: z.number().min(0) }).optional(),
+  answer: z.object({ status: z.number().int().min(100).max(599), contentType: z.string().max(200), body: z.string().max(400_000), truncated: z.boolean(), ms: z.number().min(0), sessionId: z.string().max(200).optional() }).optional(),
   error: z.object({ code: z.string().max(40), message: z.string().max(300) }).optional(),
 });
 

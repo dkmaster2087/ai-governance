@@ -30,12 +30,18 @@ export interface McpTool {
   enabled: boolean;
   approval?: 'required' | 'none';
   groups?: string[];
+  /** This tool's own limit per person or key per minute. */
+  callsPerMinute?: number;
+  /** A tool of a company MCP server: its name there. */
+  upstreamName?: string;
   inputSchema: { properties?: Record<string, { type?: string; description?: string }>; required?: string[] };
 }
 
 export interface McpApi {
   apiId: string;
   name: string;
+  /** `mcp`: a company's existing MCP server, put behind this one. */
+  kind?: 'openapi' | 'mcp';
   baseUrl: string;
   connectorId?: string;
   auth: { type: 'none' | 'bearer' | 'header'; header?: string; hint?: string };
@@ -47,8 +53,10 @@ export interface ApprovalSettings { approvers: string[]; waitSeconds: number; ex
 
 export interface McpServerDetail extends Omit<McpServerSummary, 'tools' | 'week'> {
   access: ServerAccess;
-  limits: { callsPerMinute: number; maxResultBytes: number };
+  limits: { callsPerMinute: number; maxResultBytes: number; callsPerDay?: number };
   returnPersonalData?: boolean;
+  /** Attacks in tool arguments: stopped (default), recorded, or not checked. */
+  argumentChecks?: 'block' | 'flag' | 'off';
   approvals: ApprovalSettings;
   apis: McpApi[];
   tools: McpTool[];
@@ -60,7 +68,7 @@ export interface TestResult { requestId: string; isError: boolean; text: string;
 
 export type ApiAuthInput = { type: 'none' } | { type: 'bearer'; secret: string } | { type: 'header'; header: string; secret: string };
 
-export type ServerChange = Partial<Pick<McpServerDetail, 'name' | 'description' | 'access' | 'limits' | 'returnPersonalData' | 'approvals'>>;
+export type ServerChange = Partial<Pick<McpServerDetail, 'name' | 'description' | 'access' | 'limits' | 'returnPersonalData' | 'argumentChecks' | 'approvals'>>;
 
 export const listServers = async () => (await gateway.get<McpServerSummary[]>('/v1/mcp/servers')).data;
 export const createServer = async (input: { name: string; description: string }) => (await gateway.post<McpServerDetail>('/v1/mcp/servers', input)).data;
@@ -74,8 +82,12 @@ export const listVersions = async (id: string) => (await gateway.get<McpVersion[
 export const restoreVersion = async (id: string, version: number) => (await gateway.post(`/v1/mcp/servers/${enc(id)}/versions/${version}/restore`, {})).data;
 export const addApi = async (id: string, input: { name: string; baseUrl: string; openapi: string; auth: ApiAuthInput; connectorId?: string }) =>
   (await gateway.post<{ tools: number; reads: number; skipped: string[] }>(`/v1/mcp/servers/${enc(id)}/apis`, input)).data;
+export const addUpstream = async (id: string, input: { name: string; url: string; auth: ApiAuthInput; connectorId?: string }) =>
+  (await gateway.post<{ tools: number; reads: number }>(`/v1/mcp/servers/${enc(id)}/upstreams`, input)).data;
+export const refreshUpstream = async (id: string, apiId: string) =>
+  (await gateway.post<{ tools: number; added: number; updated: number; removed: number }>(`/v1/mcp/servers/${enc(id)}/apis/${enc(apiId)}/refresh`, {})).data;
 export const removeApi = async (id: string, apiId: string) => (await gateway.delete(`/v1/mcp/servers/${enc(id)}/apis/${enc(apiId)}`)).data;
-export const changeTool = async (id: string, name: string, change: { enabled?: boolean; approval?: 'required' | 'none'; groups?: string[] }) =>
+export const changeTool = async (id: string, name: string, change: { enabled?: boolean; approval?: 'required' | 'none'; groups?: string[]; callsPerMinute?: number | null }) =>
   (await gateway.patch(`/v1/mcp/servers/${enc(id)}/tools/${enc(name)}`, change)).data;
 export const testTool = async (id: string, tool: string, args: Record<string, unknown>) =>
   (await gateway.post<TestResult>(`/v1/mcp/servers/${enc(id)}/test`, { tool, arguments: args })).data;

@@ -13,6 +13,10 @@ export interface ApiKey {
   scopes: string[];       // e.g., ['chat', 'models', 'audit']
   status: 'active' | 'revoked' | 'expired';
   rateLimit: number;      // Requests per minute for this key
+  /** Tokens per UTC day across all its AI requests; 0 or unset means no cap. */
+  dailyTokenLimit?: number;
+  /** Estimated spend (USD) per UTC day; 0 or unset means no cap. */
+  dailySpendLimitUsd?: number;
   createdAt: string;
   expiresAt?: string;
   lastUsedAt?: string;
@@ -82,6 +86,13 @@ export class ApiKeyRepository {
   async setLicenseInfo(tenantId: string, keyId: string, license: LicenseInfo): Promise<void> {
     const updated = await this.keys().update({ tenantId, keyId }, { set: { license }, ifExists: true });
     if (!updated) throw Object.assign(new Error('License key not found'), { statusCode: 404, code: 'NOT_FOUND' });
+  }
+
+  /** Change a key's limits. Returns false if there's no such key. */
+  async setLimits(tenantId: string, keyId: string, limits: { rateLimit?: number; dailyTokenLimit?: number; dailySpendLimitUsd?: number }): Promise<boolean> {
+    const set = Object.fromEntries(Object.entries(limits).filter(([, v]) => v !== undefined));
+    if (!Object.keys(set).length) return true;
+    return !!(await this.keys().update({ tenantId, keyId }, { set, ifExists: true }));
   }
 
   /** Update last used timestamp */

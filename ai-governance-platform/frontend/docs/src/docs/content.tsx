@@ -473,7 +473,7 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           <li>Try any tool in the test console, then <strong>Publish</strong>. Later changes are a draft until you publish them again; each publish is a version you can go back to.</li>
         </ol>
         <H2>People sign in</H2>
-        <P>In <strong>MCP servers → Sign-in for people</strong>, connect your identity provider: Entra ID, Okta, Google or any OpenID Connect provider. Register Probaline there as a web application with the redirect address the page shows, and enter its issuer, client ID and secret, and the claim that holds groups. Add the <C>offline_access</C> scope so someone disabled in your provider loses access within 15 minutes.</P>
+        <P>In <strong>MCP servers → Sign-in for people</strong>, connect your identity provider: Entra ID, Okta, Google or any OpenID Connect provider. Register Probaline there as a web application with the redirect address the page shows, and enter its issuer, client ID and secret, and the claim that holds groups. Add the <C>offline_access</C> scope so someone disabled in your provider loses access within 15 minutes. <strong>Okta:</strong> on the app’s <strong>Sign On</strong> tab, set the groups claim filter (name <C>groups</C>, matches regex <C>.*</C>), and add the <C>groups</C> scope here too, or Okta sends no groups and everyone limited by group is refused. A refused sign-in in <strong>Activity</strong> shows the groups the provider sent.</P>
         <P>People then add the server’s address in their agent. Claude and ChatGPT: <strong>Settings → Connectors → Add custom connector</strong>. Claude Code:</P>
         <Code>{`claude mcp add --transport http hr-self-service https://<gateway>/mcp/<company>/hr-self-service
 # then /mcp → Authenticate`}</Code>
@@ -490,11 +490,14 @@ node collector/dist/cli.js report --out ./results --company "Acme"
   probaline/connector:0.1.0`}</Code>
         <P>The connector and collector images are compiled, minimal (no shell, not root) and signed by Probaline’s release workflow with a bill of materials attached. Check one with <C>cosign verify</C> before you run it; the connector’s README has the exact command.</P>
         <P>It never calls cloud metadata addresses or follows redirects, and logs only host, method and status. Answers through a connector are capped at 250 KB.</P>
+        <H2>An MCP server your company already runs</H2>
+        <P>On a server, <strong>Add an MCP server</strong> puts one your company already runs (Streamable HTTP) behind Probaline. Give its address and how Probaline signs in (bearer token or API-key header), and choose whether it’s reached directly or through the connector. Probaline lists its tools: read-only ones are on; every other tool is off until you turn it on, and then needs approval. Agents connect to Probaline, and every call gets the checks below. <strong>Read tools again</strong> picks up changes; a tool that starts changing data is switched off. Lock your server to Probaline (accept only Probaline’s credential, or check <C>X-Probaline-Identity</C>) so agents can’t go around it.</P>
         <H2>What happens on every call</H2>
         <Table head={['Step', 'What Probaline does']} rows={[
           ['Who', 'A signed-in person (token for this server only, 15 minutes) or an API key with the mcp permission, allowed on this server. Suspended companies and ended licenses are refused'],
-          ['Limits', 'The server must be published and not paused; calls a minute per caller'],
-          ['Arguments', 'Checked against the tool’s schema; unknown fields refused'],
+          ['Limits', 'The server must be published and not paused; calls a minute per caller; optionally tool calls a day per caller, and calls a minute per tool'],
+          ['Arguments', 'Checked against the tool’s schema, including the API’s own patterns and formats; unknown fields refused'],
+          ['Attacks', 'SQL injection, system commands, paths like ../, database operators and requests to cloud-metadata addresses stop the call before your API sees it (per server: stop, record only, or off)'],
           ['Secrets', 'A key, token or password in the arguments stops the call, even if prompts are set to redact'],
           ['Company rules', 'Your words, patterns, personal-data and rate-limit rules, on the arguments as sent. A rule set to block stops the call before your API sees it. Approved-model rules don’t apply to tool calls'],
           ['Approval', 'For tools that change data and need it: waits for a person'],

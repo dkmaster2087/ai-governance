@@ -151,10 +151,12 @@ function buildMcpRecord(log: AuditLog, retentionDays: number, onHold = false): E
   const reason = outcome === 'stopped' ? m.policyReason || log.triggeredRules?.[log.triggeredRules.length - 1] || 'a company rule' : undefined;
   const steps: EvidenceStep[] = [{ label: 'Received', detail: `a call to ${tool} on ${server}, from ${who}.`, kind: 'neutral' }];
   if (outcome === 'stopped') {
-    const label = m.check === 'secrets' ? 'Stopped: secret in the arguments' : m.check === 'approval' ? 'Refused by an approver' : 'Stopped by a policy rule';
+    const label = m.check === 'secrets' ? 'Stopped: secret in the arguments' : m.check === 'approval' ? 'Refused by an approver'
+      : m.check === 'argument_attack' ? 'Stopped: arguments look like an attack' : 'Stopped by a policy rule';
     steps.push({ label, detail: `“${reason}”. The API was not called.`, kind: 'stopped' });
   } else {
-    steps.push({ label: 'Arguments passed the checks', detail: 'company rules and the secrets check.', kind: 'neutral' });
+    steps.push({ label: 'Arguments passed the checks', detail: 'company rules, the secrets check and the attack check.', kind: 'neutral' });
+    if (m.argumentAttack) steps.push({ label: 'Arguments flagged', detail: `they looked like an attack on the API (${m.argumentAttack}); recorded, not stopped, as this server is set to flag.`, kind: 'skipped' });
     if (m.approvalBy) steps.push({ label: 'Approved', detail: `by ${m.approvalBy} (request ${m.approvalId}).`, kind: 'neutral' });
     if (m.connector) steps.push({ label: 'Through the connector', detail: `the call was made inside the company network by connector ${m.connector}.`, kind: 'neutral' });
     const status = Number(m.backendStatus ?? 0);

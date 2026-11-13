@@ -14,6 +14,8 @@ import { checkBaseUrl, EgressError } from '../mcp/egress';
 import { OpenApiError, parseOpenApi } from '../mcp/openapi';
 import { handleMessage, rpcError } from '../mcp/protocol';
 import { mcpStore } from '../mcp/store';
+import { gatewayKeys } from '../mcp/keys';
+import { forgetUpstreamSession, UpstreamError, UpstreamMcp, UpstreamTool } from '../mcp/upstream';
 import { BackendAuth, DEFAULT_ACCESS, DEFAULT_APPROVALS, DEFAULT_LIMITS, McpApi, McpServer, McpTool, withDefaults } from '../mcp/types';
 import { credentialsInUse, liveConfig, publishVersion, restoreVersion } from '../mcp/versions';
 import { personFromToken } from './mcp-oauth.routes';
@@ -36,13 +38,26 @@ const serverChange = z.object({
     allKeys: z.boolean(), keyIds: z.array(z.string().max(80)).max(200),
     people: z.enum(['none', 'all', 'groups']).optional(), groups: z.array(group).max(100).optional(),
   }).optional(),
-  limits: z.object({ callsPerMinute: z.number().int().min(1).max(10_000), maxResultBytes: z.number().int().min(1_000).max(1_000_000) }).optional(),
+  limits: z.object({ callsPerMinute: z.number().int().min(1).max(10_000), maxResultBytes: z.number().int().min(1_000).max(1_000_000), callsPerDay: z.number().int().min(0).max(1_000_000).optional() }).optional(),
   returnPersonalData: z.boolean().optional(),
+  argumentChecks: z.enum(['block', 'flag', 'off']).optional(),
   approvals: z.object({
     approvers: z.array(email).max(50), waitSeconds: z.number().int().min(0).max(110), expiresMinutes: z.number().int().min(5).max(7 * 24 * 60),
     webhookUrl: z.string().trim().url().max(500).or(z.literal('')).optional(),
   }).optional(),
 }).refine((c) => Object.keys(c).length > 0, 'Nothing to change');
+const authInput = z.discriminatedUnion('type', [
+  z.object({ type: z.literal('none') }),
+  z.object({ type: z.literal('bearer'), secret: z.string().min(1).max(4000) }),
+  z.object({ type: z.literal('header'), header: z.string().regex(/^[A-Za-z0-9-]{1,60}$/), secret: z.string().min(1).max(4000) }),
+]);
+/** A company's existing MCP server (Streamable HTTP), put behind this Probaline MCP server. */
+const upstreamInput = z.object({
+  name: z.string().trim().min(1).max(80),
+  url: z.string().trim().min(8).max(500),
+  connectorId: z.string().regex(/^con_[a-f0-9]+$/).optional(),
+  auth: authInput,
+});
 const apiInput = z.object({
   name: z.string().trim().min(1).max(80),
   baseUrl: z.string().trim().min(8).max(500),
@@ -60,6 +75,7 @@ const toolChange = z.object({
   description: z.string().trim().min(1).max(2000).optional(),
   approval: z.enum(['required', 'none']).optional(),
   groups: z.array(group).max(50).optional(),
+  callsPerMinute: z.number().int().min(1).max(10_000).nullable().optional(),
 }).refine((c) => Object.keys(c).length > 0, 'Nothing to change');
 const testInput = z.object({ tool: z.string().min(1).max(64), arguments: z.record(z.unknown()).optional().default({}) });
 const publishInput = z.object({ note: z.string().trim().max(200).optional().default('') });
@@ -112,7 +128,7 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
     for (let i = 1; i <= 50; i++) {
       const server: McpServer = {
         tenantId: request.tenantId, serverId: i === 1 ? base : `${base}-${i}`, name: parsed.data.name, description: parsed.data.description,
-        status: 'draft', access: { ...DEFAULT_ACCESS }, limits: { ...DEFAULT_LIMITS }, returnPersonalData: false, approvals: { ...DEFAULT_APPROVALS },
+        status: 'draft', access: { ...DEFAULT_ACCESS }, limits: { ...DEFAULT_LIMITS }, returnPersonalData: false, argumentChecks: 'block', approvals: { ...DEFAULT_APPROVALS },
         createdAt: now, updatedAt: now, createdBy: request.userId,
       };
       if (await mcpStore.createServer(server)) {
@@ -261,6 +277,135 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
     return reply.status(201).send({ api: apiView(api), tools: spec.operations.length, reads: spec.operations.filter((o) => !o.write).length, skipped: spec.skipped });
   });
 
+  /** Where a backend is reached: through a connector (any host it may call) or directly (public https only). */
+  async function checkTarget(request: FastifyRequest, reply: FastifyReply, address: string, connectorId?: string, what = 'base URL'): Promise<boolean> {
+    if (connectorId) {
+      const c = await connectors().get(request.tenantId, connectorId);
+      if (!c) { bad(reply, 'NOT_FOUND', 'Connector not found', 404); return false; }
+      let u: URL;
+      try { u = new URL(address); } catch { bad(reply, 'INVALID_BASE_URL', `The ${what} isn't a valid URL`); return false; }
+      if (!['http:', 'https:'].includes(u.protocol) || u.username || u.password || u.hash) { bad(reply, 'INVALID_BASE_URL', 'Use an http or https address without credentials or fragment'); return false; }
+      if (!hostAllowed(c, u)) { bad(reply, 'CONNECTOR_HOST_NOT_ALLOWED', `The connector ${c.name} isn't allowed to call ${u.host}. Add it to the connector's allowed hosts first.`); return false; }
+      return true;
+    }
+    try { checkBaseUrl(address); } catch (err) { bad(reply, (err as EgressError).code, (err as Error).message); return false; }
+    return true;
+  }
+
+  /** Ask a company MCP server for its tools, as Probaline (signed: an admin adding or refreshing it). */
+  async function upstreamTools(request: FastifyRequest, server: McpServer, api: McpApi, secret?: string): Promise<UpstreamTool[]> {
+    const now = Math.floor(Date.now() / 1000);
+    const headers: Record<string, string> = {
+      'user-agent': 'Probaline-MCP/1.0',
+      'x-probaline-identity': await gatewayKeys().sign({
+        iss: publicBase(), aud: api.baseUrl, sub: `admin:${request.userId}`, iat: now, exp: now + 300, jti: randomBytes(8).toString('hex'),
+        kind: 'admin', tenant: request.tenantId, server: server.serverId, tool: 'tools/list',
+      }, 'probaline-identity+jwt'),
+    };
+    if (secret && api.auth.type === 'bearer') headers.authorization = `Bearer ${secret}`;
+    if (secret && api.auth.type === 'header') headers[api.auth.header.toLowerCase()] = secret;
+    forgetUpstreamSession(`${request.tenantId}#${api.apiId}`);
+    const upstream = new UpstreamMcp(`${request.tenantId}#${api.apiId}`, (b, h) => caller.sendUpstream(request.tenantId, api, b, h, 2_000_000), headers);
+    return upstream.listTools(MAX_TOOLS_PER_API);
+  }
+
+  const toolName = (n: string) => n.replace(/[^A-Za-z0-9_-]/g, '_').slice(0, 64) || 'tool';
+
+  /** Put a company MCP server's tools on this server: reads on, anything not marked read-only off and needing approval. */
+  async function saveUpstreamTools(server: McpServer, api: McpApi, found: UpstreamTool[]) {
+    const existing = await mcpStore.listTools(server.tenantId, server.serverId);
+    const mine = new Map(existing.filter((t) => t.apiId === api.apiId).map((t) => [t.upstreamName ?? t.name, t]));
+    const taken = new Set(existing.filter((t) => t.apiId !== api.apiId).map((t) => t.name));
+    const prefix = slug(api.name).replace(/-/g, '_').slice(0, 20);
+    const now = new Date().toISOString();
+    let added = 0; let updated = 0;
+    for (const t of found) {
+      const before = mine.get(t.name);
+      mine.delete(t.name);
+      if (before) {
+        // The company server changed a tool: take its new description and schema. A tool that now changes data is
+        // switched off until an admin looks at it again.
+        const nowWrite = t.write && !before.write;
+        await mcpStore.updateTool(server.tenantId, server.serverId, before.name, {
+          title: t.title, description: t.description, inputSchema: t.inputSchema, write: t.write,
+          ...(nowWrite ? { enabled: false, approval: 'required' as const } : {}),
+        });
+        updated++;
+        continue;
+      }
+      const base = toolName(t.name);
+      const name = taken.has(base) ? toolName(`${prefix}_${base}`) : base;
+      taken.add(name);
+      await mcpStore.putTool({
+        tenantId: server.tenantId, toolKey: `${server.serverId}#${name}`, serverId: server.serverId, apiId: api.apiId, name, upstreamName: t.name,
+        title: t.title, description: t.description, inputSchema: t.inputSchema, method: 'POST', path: '', params: { path: [], query: [], body: false },
+        write: t.write, enabled: !t.write, ...(t.write ? { approval: 'required' as const } : {}), createdAt: now,
+      });
+      added++;
+    }
+    // Tools the company server no longer has.
+    for (const gone of mine.values()) await mcpStore.deleteTool(server.tenantId, gone.toolKey);
+    return { added, updated, removed: mine.size };
+  }
+
+  app.post('/v1/mcp/servers/:serverId/upstreams', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
+    const server = await loadServer(request, reply);
+    if (!server) return;
+    const parsed = upstreamInput.safeParse(request.body);
+    if (!parsed.success) return bad(reply, 'INVALID_API', parsed.error.issues[0]?.message ?? 'Invalid MCP server');
+    const body = parsed.data;
+    if (!(await checkTarget(request, reply, body.url, body.connectorId, 'address'))) return;
+    const apiId = `api_${randomBytes(6).toString('hex')}`;
+    const now = new Date().toISOString();
+    const pending: McpApi = {
+      tenantId: request.tenantId, apiId, serverId: server.serverId, name: body.name, kind: 'mcp', baseUrl: body.url, createdAt: now,
+      auth: body.auth.type === 'none' ? { type: 'none' } : body.auth.type === 'bearer' ? { type: 'bearer' } : { type: 'header', header: body.auth.header },
+      ...(body.connectorId ? { connectorId: body.connectorId } : {}),
+      openapi: { title: body.name, version: '', operations: 0, skipped: [] },
+    };
+    // Connect first: nothing is saved for a server that can't be reached or refuses Probaline.
+    let found: UpstreamTool[];
+    try {
+      found = await upstreamTools(request, server, pending, body.auth.type === 'none' ? undefined : body.auth.secret);
+    } catch (err) {
+      const message = err instanceof UpstreamError || err instanceof EgressError ? err.message : 'The MCP server couldn\'t be reached';
+      return bad(reply, err instanceof UpstreamError ? err.code : 'UPSTREAM_UNREACHABLE', message, 502);
+    }
+    if (!found.length) return bad(reply, 'NO_TOOLS', 'The MCP server has no tools to offer', 422);
+    let auth: BackendAuth = { type: 'none' };
+    if (body.auth.type !== 'none') {
+      const secretArn = await credentials.save(request.tenantId, apiId, body.auth.secret);
+      auth = body.auth.type === 'bearer' ? { type: 'bearer', secretArn, hint: hint(body.auth.secret) } : { type: 'header', header: body.auth.header, secretArn, hint: hint(body.auth.secret) };
+    }
+    const api: McpApi = { ...pending, auth, openapi: { title: body.name, version: '', operations: found.length, skipped: [] } };
+    await mcpStore.putApi(api);
+    const counts = await saveUpstreamTools(server, api, found);
+    await changed(server);
+    logger.info('Company MCP server added', { tenantId: request.tenantId, serverId: server.serverId, apiId, tools: found.length, connector: body.connectorId });
+    return reply.status(201).send({ api: apiView(api), tools: found.length, reads: found.filter((t) => !t.write).length, ...counts });
+  });
+
+  /** Read a company MCP server's tools again: new ones are added, changed ones updated, removed ones dropped. */
+  app.post('/v1/mcp/servers/:serverId/apis/:apiId/refresh', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
+    const server = await loadServer(request, reply);
+    if (!server) return;
+    const api = await mcpStore.getApi(request.tenantId, (request.params as { apiId: string }).apiId);
+    if (!api || api.serverId !== server.serverId) return bad(reply, 'NOT_FOUND', 'API not found', 404);
+    if (api.kind !== 'mcp') return bad(reply, 'NOT_MCP', 'Only a company MCP server’s tools can be read again; for an OpenAPI API, add it again');
+    let found: UpstreamTool[];
+    try {
+      const secret = api.auth.type !== 'none' && api.auth.secretArn ? await credentials.get(api.auth.secretArn) : undefined;
+      found = await upstreamTools(request, server, api, secret);
+    } catch (err) {
+      const message = err instanceof UpstreamError || err instanceof EgressError ? err.message : 'The MCP server couldn\'t be reached';
+      return bad(reply, err instanceof UpstreamError ? err.code : 'UPSTREAM_UNREACHABLE', message, 502);
+    }
+    const counts = await saveUpstreamTools(server, api, found);
+    await mcpStore.putApi({ ...api, openapi: { ...api.openapi, operations: found.length } });
+    await changed(server);
+    return { tools: found.length, ...counts };
+  });
+
   app.delete('/v1/mcp/servers/:serverId/apis/:apiId', { preHandler: requireAccess(TENANT_ADMIN) }, async (request, reply) => {
     const server = await loadServer(request, reply);
     if (!server) return;
@@ -282,7 +427,12 @@ export async function mcpRoutes(app: FastifyInstance, opts: { caller?: ToolCalle
     const parsed = toolChange.safeParse(request.body);
     if (!parsed.success) return bad(reply, 'INVALID_TOOL', parsed.error.issues[0]?.message ?? 'Invalid change');
     if (parsed.data.approval && !tool.write) return bad(reply, 'INVALID_TOOL', 'Only tools that change data need approval');
-    const set: Partial<McpTool> = { ...parsed.data, ...(parsed.data.groups ? { groups: [...new Set(parsed.data.groups)] } : {}) };
+    const { callsPerMinute, ...rest } = parsed.data;
+    const set: Partial<McpTool> = {
+      ...rest, ...(parsed.data.groups ? { groups: [...new Set(parsed.data.groups)] } : {}),
+      // null clears the tool's own limit.
+      ...(callsPerMinute !== undefined ? { callsPerMinute: callsPerMinute ?? undefined } : {}),
+    };
     // A write switched on without a choice needs approval.
     if (tool.write && parsed.data.enabled && !tool.approval && !parsed.data.approval) set.approval = 'required';
     const updated = await mcpStore.updateTool(request.tenantId, server.serverId, name, set);

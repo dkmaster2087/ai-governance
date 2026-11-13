@@ -30,7 +30,8 @@ export interface ConnectorConfig {
 }
 
 export interface Job { id: string; method: string; url: string; headers: Record<string, string>; body?: string; timeoutMs: number; maxBytes: number }
-interface Answer { status: number; contentType: string; body: string; truncated: boolean; ms: number }
+/** sessionId: an MCP server's `Mcp-Session-Id`, passed back so Probaline can keep the session. */
+interface Answer { status: number; contentType: string; body: string; truncated: boolean; ms: number; sessionId?: string }
 
 /** Addresses no connector should ever call: cloud instance metadata and its friends. */
 const METADATA_HOSTS = new Set(['169.254.169.254', 'fd00:ec2::254', '169.254.170.2', 'metadata.google.internal', 'metadata.azure.com', '100.100.100.200']);
@@ -82,7 +83,11 @@ export function makeCall(job: Job, allowedHosts: string[]): Promise<Answer> {
         if (size + c.length > job.maxBytes) { chunks.push(c.subarray(0, job.maxBytes - size)); size = job.maxBytes; truncated = true; res.destroy(); return; }
         chunks.push(c); size += c.length;
       });
-      const done = () => resolve({ status, contentType: String(res.headers['content-type'] ?? ''), body: Buffer.concat(chunks).toString('utf8'), truncated, ms: Date.now() - started });
+      const session = res.headers['mcp-session-id'];
+      const done = () => resolve({
+        status, contentType: String(res.headers['content-type'] ?? ''), body: Buffer.concat(chunks).toString('utf8'), truncated, ms: Date.now() - started,
+        ...(typeof session === 'string' && session.length <= 200 ? { sessionId: session } : {}),
+      });
       res.on('end', done);
       res.on('close', () => { if (truncated) done(); });
       res.on('error', (e) => (truncated ? done() : reject(new CallError('BACKEND_UNREACHABLE', e.message))));

@@ -64,6 +64,7 @@ export class GatewayService {
       temperature: input.temperature,
       metadata: input.maxTokens && limit && input.maxTokens > limit ? { maxTokensCapped: `${input.maxTokens}→${limit}` } : {},
       timestamp,
+      ...(input.keyId ? { apiKeyId: input.keyId } : {}),
     };
 
     if (model?.allowedKeyIds?.length && !(input.keyId && model.allowedKeyIds.includes(input.keyId))) {

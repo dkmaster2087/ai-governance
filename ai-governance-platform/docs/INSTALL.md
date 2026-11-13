@@ -204,6 +204,29 @@ The image holds no state.
 2. Restart. Secrets are re-encrypted with the new key as they're next saved.
 3. Remove the old key once every provider key has been saved again.
 
+## Floods and abuse (DDoS)
+
+The gateway is best kept **inside your network**: the AWS template's load balancer is internal by default, and
+apps, IDEs and agents reach it over your network or VPN. Then a flood from the internet can't reach it at all.
+
+If you put it on the internet (for example for agents running outside your network):
+- **Put your edge protection in front:** a WAF or DDoS service (AWS WAF and Shield, Cloudflare, Akamai, Azure Front
+  Door) or your firewall. It has to stop large floods before they reach your servers; nothing inside the gateway can.
+- **Don't let AWS WAF block on request bodies.** AI prompts are large and full of code, so body rules (size, SQL,
+  scripts, paths) refuse ordinary prompts. Set them to count, and keep the header, path and per-address rules.
+- **Set `TRUSTED_PROXY_HOPS`** to the number of proxies in front, so the gateway sees each caller's real address.
+
+What the gateway does on its own, on every install:
+- **Per-address limit:** 500 requests a minute (`GLOBAL_RATE_LIMIT`).
+- **Per-key limits:** calls a minute (set when a key is made), and optional daily caps on tokens and estimated
+  spend (API keys page → Daily limit), so a leaked key can't run up a bill slowly.
+- **MCP limits:** calls a minute per person or key on each MCP server, optional calls a day, and optional limits
+  per tool.
+- **Sign-in first:** requests without a valid key or sign-in are refused before any check or AI call.
+- **Size limits:** oversized requests are refused before they're read.
+- **Load shedding:** a copy that's overloaded answers new AI requests with `503` and `Retry-After: 1` instead of
+  slowing down for everyone. Add copies (or turn on autoscaling) to absorb more.
+
 ## Known limits
 
 - **Prompt attacks:** without a Bedrock guardrail (AWS only), the prompt-attack check uses its phrase list alone,

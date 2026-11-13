@@ -6,20 +6,24 @@ const logger = createLogger('gateway:rate');
 export interface RateResult { allowed: boolean; count: number; limit: number; remaining: number; retryAfter: number }
 
 /**
- * Calls per minute, counted in the shared database so every gateway instance sees the same count. One atomic
- * increment per call; the counter expires on its own a few minutes later.
+ * Calls per minute (or per day), counted in the shared database so every gateway instance sees the same count.
+ * One atomic increment per call; the counter expires on its own shortly after its window.
  */
 export class RateCounter {
   private warnedAt = 0;
 
-  async hit(tenantId: string, scope: string, limit: number, now = Date.now()): Promise<RateResult> {
-    const minute = new Date(now).toISOString().slice(0, 16);
-    const retryAfter = 60 - new Date(now).getUTCSeconds();
+  async hit(tenantId: string, scope: string, limit: number, now = Date.now(), window: 'minute' | 'day' = 'minute'): Promise<RateResult> {
+    const d = new Date(now);
+    const day = window === 'day';
+    const bucket = day ? `d#${d.toISOString().slice(0, 10)}` : `m#${d.toISOString().slice(0, 16)}`;
+    const retryAfter = day
+      ? Math.ceil((Date.UTC(d.getUTCFullYear(), d.getUTCMonth(), d.getUTCDate() + 1) - now) / 1000)
+      : 60 - d.getUTCSeconds();
     if (!(limit > 0)) return { allowed: true, count: 0, limit, remaining: 0, retryAfter };
     try {
       const row = await collection<{ tenantId: string; period: string; count?: number }>('metrics').update(
-        { tenantId, period: `ratelimit#${scope}#m#${minute}` },
-        { increment: { count: 1 }, set: { ttl: Math.floor(now / 1000) + 180 } },
+        { tenantId, period: `ratelimit#${scope}#${bucket}` },
+        { increment: { count: 1 }, set: { ttl: Math.floor(now / 1000) + (day ? 2 * 86_400 : 180) } },
       );
       const count = row?.count ?? 0;
       return { allowed: count <= limit, count, limit, remaining: Math.max(0, limit - count), retryAfter };
