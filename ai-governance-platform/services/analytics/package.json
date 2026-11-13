@@ -15,7 +15,7 @@
     "@ai-governance/types": "*",
     "@ai-governance/utils": "*",
     "fastify": "^5.8.4",
-    "zod": "^3.22.0"
+    "zod": "^4.6.7"
   },
   "devDependencies": {
     "@types/jest": "^29.0.0",
