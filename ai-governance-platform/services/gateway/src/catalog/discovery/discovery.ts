@@ -93,6 +93,15 @@ export async function runDiscovery(deps: DiscoveryDeps = {}, force = false): Pro
     else if (outcome === 'classified') result.classified++;
     else result.failed++;
   }
+  if (result.failed > 0) {
+    // Say why in the log too (each candidate keeps its own reason): a model the account can't use fails them all.
+    const reasons = new Map<string, number>();
+    for (const c of await work.candidates()) {
+      if (c.classifyError && c.classifyTriedAt && Date.parse(c.classifyTriedAt) >= t) reasons.set(c.classifyError.slice(0, 200), (reasons.get(c.classifyError.slice(0, 200)) ?? 0) + 1);
+    }
+    const [top] = [...reasons].sort((a, b) => b[1] - a[1]);
+    logger.warn('Catalog classification failed', { failed: result.failed, mostCommonReason: top?.[0], times: top?.[1] });
+  }
   return result;
 }
 
