@@ -1,6 +1,6 @@
 import { FastifyInstance, FastifyRequest } from 'fastify';
 import { z } from 'zod';
-import { CATALOG_VERSION, Category } from '@ai-governance/catalog';
+import { Category, catalogVersion } from '@ai-governance/catalog';
 import { collection } from '@ai-governance/storage';
 import { createLogger } from '@ai-governance/utils';
 import { requireAccess, TENANT_ADMIN, TENANT_READ } from '../auth/guards';
@@ -138,7 +138,7 @@ export async function enforcementRoutes(app: FastifyInstance) {
       store().getSettings<Partial<Record<PathId, PathStateRecord>>>(request.tenantId, 'paths'), findingsStore().list(request.tenantId),
     ]);
     return {
-      catalogVersion: CATALOG_VERSION,
+      catalogVersion: catalogVersion(),
       egressIps: egressIps(),
       categories: FEED_CATEGORIES,
       defaultCategories: DEFAULT_FEED_CATEGORIES,

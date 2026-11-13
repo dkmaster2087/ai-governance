@@ -11,10 +11,11 @@ import { CATEGORIES, CategoryBadge, CategoryGlyph, categoriesOf, categoryStyle, 
 const SCOPES: Array<{ value: Scope; label: string; hint: string; category: KeyCategory }> = [
   { value: 'chat', label: 'Send AI requests', hint: 'For apps and the IDE proxy', category: 'apps' },
   { value: 'models', label: 'List models', hint: 'Lets an app see which models it may use', category: 'apps' },
+  { value: 'guardrails', label: 'Checks for another gateway', hint: 'LiteLLM, Portkey or Kong call Probaline’s checks before and after the model', category: 'apps' },
   { value: 'mcp', label: 'Connect AI agents (MCP)', hint: 'Use the tools on your MCP servers', category: 'agents' },
   { value: 'shadow_ai:ingest', label: 'Browser extension', hint: 'Report visits and read extension settings only', category: 'extension' },
 ];
-const SCOPE_LABEL: Record<string, string> = { chat: 'Send AI requests', models: 'List models', 'shadow_ai:ingest': 'Browser extension', 'reporting:ingest': 'License', mcp: 'Connect AI agents (MCP)' };
+const SCOPE_LABEL: Record<string, string> = { chat: 'Send AI requests', models: 'List models', 'shadow_ai:ingest': 'Browser extension', 'reporting:ingest': 'License', mcp: 'Connect AI agents (MCP)', guardrails: 'Checks for another gateway' };
 
 type Status = 'active' | 'ended';
 const isActive = (k: ApiKeySummary) => k.status === 'active' && !(k.expiresAt && new Date(k.expiresAt) < new Date());

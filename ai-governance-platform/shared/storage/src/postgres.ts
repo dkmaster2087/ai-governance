@@ -278,12 +278,23 @@ export class PostgresStore implements RecordStore {
     }
   }
 
-  /** Delete expired records now. Reads already hide them; this frees the space. */
-  async purgeExpired(): Promise<number> {
+  /**
+   * Delete expired records now. Reads already hide them; this frees the space. Deleted in chunks of `chunk` rows, so
+   * a busy install with millions of expired case files never holds one long delete open against new writes.
+   */
+  async purgeExpired(chunk = 5000): Promise<number> {
     let n = 0;
+    const at = now();
     for (const table of this.expiring) {
-      const r = await this.pool.query(`DELETE FROM ${table} WHERE expires_at IS NOT NULL AND expires_at <= $1`, [now()]);
-      n += r.rowCount ?? 0;
+      for (;;) {
+        const r = await this.pool.query(
+          `DELETE FROM ${table} WHERE ctid IN (SELECT ctid FROM ${table} WHERE expires_at IS NOT NULL AND expires_at <= $1 LIMIT ${Math.max(1, Math.floor(chunk))})`,
+          [at],
+        );
+        const deleted = r.rowCount ?? 0;
+        n += deleted;
+        if (deleted < chunk) break;
+      }
     }
     return n;
   }

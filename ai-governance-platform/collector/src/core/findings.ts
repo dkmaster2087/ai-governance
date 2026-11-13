@@ -1,4 +1,4 @@
-import { CATALOG_VERSION, Category, serviceById } from './catalog';
+import { Category, catalogVersion, serviceById } from './catalog';
 import { Kind, Sighting } from './sightings';
 import type { LaptopMcp } from '../endpoint/mcp';
 import { API_SOURCE_LABELS, ApiCallRow } from '../apis/access-logs';
@@ -376,7 +376,7 @@ export function buildFindings(allRows: Sighting[], from: string, to: string, now
   const findings: Findings = {
     from, to,
     generatedAt: now.toISOString(),
-    catalogVersion: CATALOG_VERSION,
+    catalogVersion: catalogVersion(),
     totals: {
       services: services.length,
       people: [...allWho].filter(isPerson).length,

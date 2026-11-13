@@ -1,4 +1,5 @@
 import { randomBytes } from 'crypto';
+import { batchedCounter } from './batched-counter';
 import { allPages, collection } from '@ai-governance/storage';
 import { AuditLog } from '@ai-governance/types';
 import { createLogger } from '@ai-governance/utils';
@@ -162,6 +163,10 @@ export class AlertingService {
     work().catch((err) => logger.warn('Alert check failed', { error: (err as Error).message }));
   }
 
+  /**
+   * Counted in batches (written once a second). The check runs on each write's result, so the write that takes the
+   * count past the threshold fires the alert: once per window, across every gateway copy.
+   */
   private async count(tenantId: string, kind: Exclude<AlertKind, 'spend'>, n: number) {
     const rules = await this.active(tenantId, kind);
     if (!rules.length) return;
@@ -170,13 +175,11 @@ export class AlertingService {
       const threshold = Math.max(1, rule.config.count ?? 1);
       const windowMs = Math.max(1, rule.config.minutes ?? 60) * 60_000;
       const bucket = Math.floor(now.getTime() / windowMs);
-      const after = (await this.counters().update({ tenantId, period: `alert#${rule.ruleId}#${bucket}` }, {
-        increment: { count: n }, set: { ttl: Math.floor(now.getTime() / 1000) + Math.ceil((2 * windowMs) / 1000) },
-      }))?.count ?? n;
-      // Fires once per window: on the call that reaches the count.
-      if (after - n < threshold && after >= threshold) {
-        await this.fire(rule, this.headline(rule, after), `${describeRule(rule)}: ${after} so far in this window.`);
-      }
+      await batchedCounter().addLater(tenantId, `alert#${rule.ruleId}#${bucket}`, n, Math.ceil((2 * windowMs) / 1000), async (after, added) => {
+        if (after - added < threshold && after >= threshold) {
+          await this.fire(rule, this.headline(rule, after), `${describeRule(rule)}: ${after} so far in this window.`);
+        }
+      });
     }
   }
 
@@ -185,16 +188,15 @@ export class AlertingService {
     if (!rules.length) return;
     const month = this.now().toISOString().slice(0, 7);
     const cents = Math.max(1, Math.round(usd * 100));
-    const after = (await this.counters().update({ tenantId, period: `alertspend#${month}` }, {
-      increment: { count: cents }, set: { ttl: Math.floor(this.now().getTime() / 1000) + 40 * 86_400 },
-    }))?.count ?? cents;
-    for (const rule of rules) {
-      const line = Math.round((rule.config.monthlyBudgetUSD ?? 0) * (rule.config.percent ?? 80));
-      if (line > 0 && after - cents < line && after >= line) {
-        await this.fire(rule, `AI spend passed ${rule.config.percent ?? 80}% of the monthly budget`,
-          `${describeRule(rule)}. Spent so far this month: $${(after / 100).toFixed(2)} (counted since the alert was set up${rule.createdAt.slice(0, 7) === month ? ` on ${rule.createdAt.slice(0, 10)}` : ''}).`);
+    await batchedCounter().addLater(tenantId, `alertspend#${month}`, cents, 40 * 86_400, async (after, added) => {
+      for (const rule of rules) {
+        const line = Math.round((rule.config.monthlyBudgetUSD ?? 0) * (rule.config.percent ?? 80));
+        if (line > 0 && after - added < line && after >= line) {
+          await this.fire(rule, `AI spend passed ${rule.config.percent ?? 80}% of the monthly budget`,
+            `${describeRule(rule)}. Spent so far this month: $${(after / 100).toFixed(2)} (counted since the alert was set up${rule.createdAt.slice(0, 7) === month ? ` on ${rule.createdAt.slice(0, 10)}` : ''}).`);
+        }
       }
-    }
+    });
   }
 
   /** When a spend alert is created mid-month, start its count from what was already spent. */

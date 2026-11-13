@@ -33,6 +33,8 @@ export class StorageStack extends cdk.Stack {
   public readonly logExportTable: dynamodb.Table;
   /** Lock and verify: AI-domain feeds and lock settings. */
   public readonly enforcementTable: dynamodb.Table;
+  /** The AI service catalog's upkeep in Cloud: candidates, reviewed services, advisories, the published edition. */
+  public readonly catalogTable: dynamodb.Table;
   public readonly auditLogsTable: dynamodb.Table;
   public readonly auditLogBucket: s3.Bucket;
   /** The platform's own key: tables, the audit archive, and stored provider keys and API credentials. */
@@ -194,6 +196,7 @@ export class StorageStack extends cdk.Stack {
     this.activityTable = mcpTable('ActivityTable', 'activity', 'eventKey', true);
     this.logExportTable = mcpTable('LogExportTable', 'log-export', 'recordKey', true);
     this.enforcementTable = mcpTable('EnforcementTable', 'enforcement', 'recordKey');
+    this.catalogTable = mcpTable('CatalogTable', 'catalog', 'recordKey');
 
     // Audit logs table (tenantId + requestId) with TTL for retention
     this.auditLogsTable = new dynamodb.Table(this, 'AuditLogsTable', {

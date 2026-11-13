@@ -86,9 +86,9 @@ export const DOCS: DocPage[] = [
     body: (
       <>
         <H2>1. Create an API key</H2>
-        <P>In the dashboard, open <strong>More → API keys</strong> and create a key with the <C>chat</C> permission. Copy it: it’s shown once.</P>
+        <P>In the dashboard, open <strong>Admin (the gear icon) → API keys</strong> and create a key with the <C>chat</C> permission. Copy it: it’s shown once.</P>
         <H2>2. Add a model</H2>
-        <P>Open <strong>More → Models &amp; keys</strong> and add the models your apps use, from Amazon Bedrock or OpenAI. For OpenAI, paste your API key; it’s stored encrypted (AWS Secrets Manager, or your database on a self-hosted install). Bedrock models use the gateway’s AWS role and need no key; any model Bedrock hosts works (Claude, Amazon Nova, Llama, Mistral), as long as it’s enabled for your AWS account in Bedrock. Use the model or inference profile ID Bedrock shows, such as <C>us.amazon.nova-micro-v1:0</C>. To refuse every other model, add an <strong>Approved models</strong> rule.</P>
+        <P>Open <strong>Controls → Models</strong> and add the models your apps use, from Amazon Bedrock or OpenAI. For OpenAI, paste your API key; it’s stored encrypted (AWS Secrets Manager, or your database on a self-hosted install). Bedrock models use the gateway’s AWS role and need no key; any model Bedrock hosts works (Claude, Amazon Nova, Llama, Mistral), as long as it’s enabled for your AWS account in Bedrock. Use the model or inference profile ID Bedrock shows, such as <C>us.amazon.nova-micro-v1:0</C>. To refuse every other model, add an <strong>Approved models</strong> rule.</P>
         <P>On each model you can also set the <strong>longest answer</strong> an app may ask for (larger requests are capped to it, so one request can’t run up the bill) and <strong>which API keys may use it</strong>. Other keys are refused with <C>MODEL_NOT_ALLOWED</C>, and the refusal is recorded in Evidence.</P>
         <H2>3. Point your app at the gateway</H2>
         <P>The gateway speaks the OpenAI chat completions format. Change the base URL and use your Probaline key:</P>
@@ -108,7 +108,7 @@ client = OpenAI(
         <P><C>X-App-Id</C> names the app in the dashboard. <C>X-User-Id</C> says which of your app’s users the request is for; it’s recorded for attribution, not used for authentication.</P>
         <P>Streaming works as with OpenAI: send <C>stream: true</C> and the answer arrives as server-sent events. Personal data in the answer is removed as it streams.</P>
         <Note><strong>Not yet supported:</strong> image or file inputs.</Note>
-        <H2>4. Watch it on the Gateway page</H2>
+        <H2>4. Watch it in Overview → Traffic</H2>
         <P>Requests appear within seconds. Try a prompt containing the word “confidential” with the default rule switched on: it comes back as <C>403 POLICY_VIOLATION</C> and shows up on the Stopped page.</P>
       </>
     ),
@@ -133,6 +133,73 @@ client = OpenAI(
     ),
   },
   {
+    slug: 'other-gateways',
+    title: 'Using another AI gateway',
+    summary: 'Keep LiteLLM, Portkey or Kong for routing; Probaline checks every request and keeps the evidence.',
+    body: (
+      <>
+        <P>If you already run an AI gateway for routing, keys and budgets, keep it. It calls Probaline as a guardrail before the model (the prompt) and after it (the answer). Probaline runs the same checks as on its own endpoint, in the same order, and writes the case file; your gateway still calls the model.</P>
+        <Table head={['Check', 'Prompt', 'Answer']} rows={[
+          ['Your rules', 'Yes. Model rules apply only when your gateway says which model it calls', 'No'],
+          ['Secrets', 'Stopped or removed, as you set on the Rules page', 'Stopped or removed'],
+          ['Personal data', 'Removed', 'Removed'],
+          ['Prompt attacks (beta)', 'Off, flag or stop, as you set', 'No'],
+        ]} />
+        <H2>1. Create a key</H2>
+        <P>In <strong>Admin (the gear icon) → API keys</strong>, create a key with <strong>Checks for another gateway</strong>. Give it the name of the gateway; it appears as the app on case files unless the gateway names its own.</P>
+        <H2>2. Connect your gateway</H2>
+        <P><strong>LiteLLM</strong> (Generic Guardrail API). Add one guardrail for prompts and one for answers:</P>
+        <Code>{`litellm_settings:
+  guardrails:
+    - guardrail_name: probaline-prompt
+      litellm_params:
+        guardrail: generic_guardrail_api
+        mode: pre_call
+        api_base: https://gateway.example.com/v1/guardrails/litellm
+        api_key: os.environ/PROBALINE_KEY
+        unreachable_fallback: fail_closed
+    - guardrail_name: probaline-answer
+      litellm_params:
+        guardrail: generic_guardrail_api
+        mode: post_call
+        api_base: https://gateway.example.com/v1/guardrails/litellm
+        api_key: os.environ/PROBALINE_KEY`}</Code>
+        <P>LiteLLM’s key alias or team becomes the app on the case file, and its end user or key user becomes the person.</P>
+        <P><strong>Portkey</strong> (webhook guardrail). Create a guardrail with a Webhook check pointing at <C>https://gateway.example.com/v1/guardrails/portkey</C>, add the header <C>Authorization: Bearer &lt;key&gt;</C>, turn on <strong>Fail on error</strong>, and set the action to deny. Attach it as both an input and an output guardrail. Pass a person as <C>_user</C> in <C>x-portkey-metadata</C>.</P>
+        <P><strong>Kong</strong> (AI Custom Guardrail plugin, Kong Gateway 3.14 or later with an AI license):</P>
+        <Code>{`- name: ai-custom-guardrail
+  config:
+    guarding_mode: BOTH
+    text_source: concatenate_all_content
+    request:
+      url: https://gateway.example.com/v1/guardrails/kong
+      headers:
+        Authorization: "Bearer <key>"
+        Content-Type: application/json
+      body:
+        input: "$(content)"
+    response:
+      block: "$(resp.block)"
+      block_message: "$(resp.block_message)"`}</Code>
+        <Note>Kong can only allow or stop: it can’t send a cleaned prompt or answer. Anything Probaline would remove (personal data, or a secret when you chose to remove secrets) stops the call instead.</Note>
+        <P><strong>Anything else</strong> that can call an HTTP hook uses <C>POST /v1/guardrails/check</C>:</P>
+        <Code>{`POST /v1/guardrails/check
+Authorization: Bearer <key>
+{ "phase": "prompt", "model": "gpt-4o",
+  "messages": [{ "role": "user", "content": "My SSN is 123-45-6789" }] }
+
+→ { "requestId": "req_…", "action": "modify", "block": false,
+    "messages": [{ "role": "user", "content": "My SSN is [REDACTED]" }] }`}</Code>
+        <P><C>action</C> is <C>allow</C>, <C>modify</C> (use the texts returned) or <C>block</C> (with <C>reason</C> and <C>code</C>). Send <C>"phase": "answer"</C> for the model’s answer; you can send <C>text</C> or <C>texts</C> instead of <C>messages</C>.</P>
+        <H2>What is recorded</H2>
+        <P>Every prompt check writes a case file in Evidence, marked with the gateway it came from. An answer check writes one only when it removes or stops something, so a call isn’t counted twice. Your gateway reports token counts and cost, so they aren’t on these case files.</P>
+        <H2>When a check can’t run</H2>
+        <P>Your fail mode decides. Failing closed (the default), LiteLLM and Portkey get a block and Kong gets <C>block: true</C>, so the call stops even if the gateway is set to let failures through. <C>/v1/guardrails/check</C> answers <C>503</C>. A lapsed license answers <C>403 LICENSE_ENDED</C>.</P>
+        <Note>Calls that go through your own gateway count as going through Probaline only if the gateway calls these checks. Lock direct paths to the models (see <Link to="/docs/locking-ai-traffic" className="underline">Locking AI traffic</Link>) so the gateway is the only way out.</Note>
+      </>
+    ),
+  },
+  {
     slug: 'browser-extension',
     title: 'Browser extension and shadow AI',
     summary: 'See and control AI tools used outside the gateway.',
@@ -141,7 +208,7 @@ client = OpenAI(
         <P>The Probaline extension for Chrome records which AI tools, such as ChatGPT, Claude, Gemini and Perplexity, are opened in your company’s browsers. It blocks only the tools you decide to block, and points people to the ones you approve.</P>
         <P>It records the tool’s domain, the time and whether it was blocked. It never records the page address, what people type or what the tool answers. Repeat visits to the same tool within ten minutes count once.</P>
         <H2>1. Create an extension key</H2>
-        <P>In <strong>More → API keys</strong>, create a key with only the <C>shadow_ai:ingest</C> permission. It can report visits and read the extension’s settings, nothing else.</P>
+        <P>In <strong>Admin (the gear icon) → API keys</strong>, create a key with only the <C>shadow_ai:ingest</C> permission. It can report visits and read the extension’s settings, nothing else.</P>
         <H2>2. Push it with Chrome policy</H2>
         <P>Force-install the extension with Google Admin, Intune or Jamf and set these managed values. Employees can’t change them, and the extension finds your company from the key.</P>
         <Table head={['Key', 'Value']} rows={[
@@ -150,9 +217,9 @@ client = OpenAI(
           [<C>identifyUsers</C>, <><C>true</C> to report the work email each Chrome profile is signed in with. Leave it off and each browser reports as a random ID.</>],
         ]} />
         <H2>3. Decide tool by tool</H2>
-        <P>The Shadow AI page lists each tool with visits, people and the trend. It starts in <strong>Watch only</strong>: nothing is blocked until you decide. <strong>Block</strong> stops a tool in every browser; <strong>Allow</strong> stops recording it and adds it to the approved list. The extension picks up changes within five minutes.</P>
+        <P><strong>AI use → Tools</strong> lists each tool with visits, people and the trend. It starts in <strong>Watch only</strong>: nothing is blocked until you decide. <strong>Block</strong> stops a tool in every browser; <strong>Allow</strong> stops recording it and adds it to the approved list. The extension picks up changes within five minutes.</P>
         <H2>4. Say what people should use instead</H2>
-        <P>When the extension blocks a tool, it shows a page with your message and links to approved tools: your own (an internal assistant or your enterprise ChatGPT workspace, for example) followed by the tools you allowed. Set them under <strong>When the extension blocks a tool</strong> on the Shadow AI page.</P>
+        <P>When the extension blocks a tool, it shows a page with your message and links to approved tools: your own (an internal assistant or your enterprise ChatGPT workspace, for example) followed by the tools you allowed. Set them under <strong>When the extension blocks a tool</strong> in AI use → Tools.</P>
         <P>Only browsers with the extension are counted. Visits are kept for 30 days.</P>
       </>
     ),
@@ -218,7 +285,7 @@ client = OpenAI(
       <>
         <P>Check 3 removes emails, phone numbers, Social Security numbers and payment card numbers from every prompt, replacing them with placeholders, then sends it on. Card numbers are verified with a checksum so order numbers and timestamps are left alone.</P>
         <P>To <strong>stop</strong> prompts with personal data instead of cleaning them, add a Personal data rule.</P>
-        <P>Each cleaned request is counted on the Gateway page and marked “Cleaned” in Evidence.</P>
+        <P>Each cleaned request is counted in Overview → Traffic and marked “Cleaned” in Evidence.</P>
       </>
     ),
   },
@@ -410,7 +477,7 @@ node collector/dist/cli.js report --out ./results --company "Acme"
         <H2>Findings files</H2>
         <P>After each collector run, upload <C>reports/findings-&lt;day&gt;.json</C>. Probaline keeps the share per path, the services in use and who still goes direct (no log lines; people stay as codes) for 400 days, up to 100 files. The latest is used to preview each lock: who it would stop before you apply it.</P>
         <H2>Firewalls, web gateways and DNS: the AI-domain feed</H2>
-        <P>A feed is a list of AI domains from the Probaline catalog, by kind (model APIs, chat apps, coding assistants, cloud AI endpoints, AI in work apps), minus the tools you allowed on the Shadow AI page. Your firewall fetches it by URL and blocks it for everyone except the gateway’s outbound addresses.</P>
+        <P>A feed is a list of AI domains from the Probaline catalog, by kind (model APIs, chat apps, coding assistants, cloud AI endpoints, AI in work apps), minus the tools you allowed in AI use → Tools. Your firewall fetches it by URL and blocks it for everyone except the gateway’s outbound addresses.</P>
         <Table head={['Format', 'For', 'Rule']} rows={[
           ['Domain list', 'Palo Alto Networks External Dynamic List, FortiGate external threat feed, Check Point', 'Block for all sources; allow the gateway’s addresses above it'],
           ['Zscaler', 'A custom URL category (JSON for the ZIA API)', 'URL filtering rule: block, except the gateway’s location'],
@@ -479,7 +546,7 @@ node collector/dist/cli.js report --out ./results --company "Acme"
 # then /mcp → Authenticate`}</Code>
         <P>They sign in with their company account, then see a Probaline page asking them to allow the agent. They get only the tools their groups allow.</P>
         <H2>Your own agents, with a key</H2>
-        <P>Create an API key with <strong>Connect AI agents (MCP)</strong> in <strong>More → API keys</strong>, and send it as <C>Authorization: Bearer …</C>. Keys don’t get tools limited to groups.</P>
+        <P>Create an API key with <strong>Connect AI agents (MCP)</strong> in <strong>Admin (the gear icon) → API keys</strong>, and send it as <C>Authorization: Bearer …</C>. Keys don’t get tools limited to groups.</P>
         <H2>Approvals</H2>
         <P>When an agent calls a tool that needs approval, Probaline creates a request for that exact call and holds the call for up to the server’s wait time (45 seconds by default). Approvers see who asked, the tool and what it will send on the <strong>Approvals</strong> page, and approve or refuse with a reason. If nobody decides in time, the agent is told to ask again once it’s approved. An approval runs the call once. Name approvers by email on each server (they can be plain users, who see only the Approvals page), or leave it to your admins; nobody approves their own request. A Slack or Teams webhook can announce new requests (a summary only, never the arguments).</P>
         <H2>APIs inside your network</H2>
@@ -541,6 +608,8 @@ node collector/dist/cli.js report --out ./results --company "Acme"
           [<C>POST /v1/chat/completions</C>, 'OpenAI-compatible chat completion'],
           [<C>GET /v1/models</C>, 'Models your company allows'],
           [<C>ANY /v1/proxy/:provider/*</C>, 'Proxy mode (needs X-Probaline-Key)'],
+          [<C>POST /v1/guardrails/check</C>, 'Probaline’s checks for another gateway: prompt or answer (key with the guardrails permission)'],
+          [<C>POST /v1/guardrails/litellm · /portkey · /kong</C>, 'The same checks in LiteLLM’s, Portkey’s and Kong’s guardrail formats'],
           [<C>POST /mcp/:company/:server</C>, 'An MCP server (Streamable HTTP, JSON-RPC); a signed-in person’s token or a key with the mcp permission'],
           [<C>/oauth/:company/…</C>, 'Sign-in for MCP clients: register, authorize, token, revoke (OAuth 2.1 with PKCE)'],
           [<C>GET /.well-known/jwks.json</C>, 'The key that checks X-Probaline-Identity and Probaline’s sign-in tokens'],
@@ -640,7 +709,11 @@ npx cdk deploy --all --context stage=prod \\
           [<C>GATEWAY_EGRESS_IPS</C>, 'Your gateway’s outbound addresses, comma separated, for the “block except from the gateway” rules'],
           [<C>SECRET_STORE</C>, <><C>aws</C> (default, Secrets Manager) or <C>database</C>: provider keys and credentials encrypted in the database</>],
           [<C>SECRETS_ENCRYPTION_KEY</C>, <>With <C>SECRET_STORE=database</C>: 32 random bytes, base64 (<C>openssl rand -base64 32</C>). Keep it apart from your database backups</>],
+          [<C>CATALOG_UPDATES</C>, <><C>auto</C> (default): download Probaline’s signed AI service catalog every hour; <C>off</C>: don’t (upload the file in Admin → Settings instead)</>],
+          [<C>CATALOG_URL</C>, <>Where to download it, e.g. your own mirror (default <C>https://probaline.com/api/public/catalog/v1/latest.json</C>). Behind a proxy, set <C>HTTPS_PROXY</C></>],
+          [<C>CATALOG_TRUSTED_KEYS</C>, 'Optional PEM public keys, for a mirror that signs its own additions; Probaline’s keys are always trusted'],
         ]} />
+        <P>The catalog download is the only connection an install makes to Probaline. It sends nothing: no license key, install or company name, counts or user data, only a plain user agent. The file is signed, and an install applies it only if it’s newer than the one in use.</P>
         <P>With <C>SECRET_STORE=database</C> a PostgreSQL deployment needs no AWS services at all. To change the encryption key, set the new one and keep the old as <C>SECRETS_ENCRYPTION_KEY_OLD</C> until secrets have been saved again. Back up the database and the object store together; the restore runbook (<C>docs/RESTORE-RUNBOOK.md</C>) covers both deployments.</P>
         <H2>From GitHub</H2>
         <P>The <strong>Deploy</strong> workflow runs only when started by hand: Actions → Deploy → Run workflow, then choose the stage, or tear one down. A push never deploys. It creates the image repositories, pushes images tagged with the commit, deploys the stacks, then builds and uploads the three sites with the addresses the stacks report. It signs in to AWS with a role (OIDC) and needs the repository secrets <C>AWS_DEPLOY_ROLE_ARN</C> and <C>AWS_ACCOUNT_ID</C>. On the <C>prod</C> environment set the variables <C>GATEWAY_URL</C> and <C>CERTIFICATE_ARN</C> (and optionally the site domains and <C>CLOUDFRONT_CERTIFICATE_ARN</C>), and add required reviewers.</P>

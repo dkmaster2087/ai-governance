@@ -67,6 +67,7 @@ async function buildTestApp(opts: { devAuth?: boolean; withUserTokens?: boolean 
     forwardedAuth: request.headers.authorization,
   }));
   app.post('/v1/reporting/ingest', async () => ({ reachedHandler: true }));
+  app.post('/v1/guardrails/check', echo);
   // MCP, OAuth and connector routes check credentials themselves when the plugin leaves them.
   const who = async (request: any) => ({ principal: request.principal?.kind ?? null });
   app.post('/mcp/:tenantId/:serverId', who);
@@ -83,6 +84,14 @@ describe('gateway auth', () => {
   let app: FastifyInstance;
   beforeAll(async () => { app = await buildTestApp(); });
   afterAll(async () => { await app.close(); });
+
+  it('accepts a key sent as x-api-key on guardrail routes only (LiteLLM sends it that way)', async () => {
+    const guard = await app.inject({ method: 'POST', url: '/v1/guardrails/check', headers: { 'x-api-key': ACME_KEY } });
+    expect(guard.statusCode).toBe(200);
+    expect(guard.json()).toMatchObject({ tenantId: 'tenant_acme', kind: 'api_key' });
+    const chat = await app.inject({ method: 'POST', url: '/v1/chat/completions', headers: { 'x-api-key': ACME_KEY } });
+    expect(chat.statusCode).toBe(401);
+  });
 
   describe('API keys', () => {
     it('rejects requests with no credentials', async () => {

@@ -9,9 +9,11 @@ import { HowItWorksPage } from '../pages/HowItWorksPage';
 const at = (path: string) => render(<MemoryRouter initialEntries={[path]}><App /></MemoryRouter>);
 
 describe('website', () => {
-  it('leads with finding AI use, then controlling it, and asks for an assessment', () => {
+  it('leads with compliance and audit, then the phases, and asks for an assessment', () => {
     at('/');
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Find every AI request your company makes');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Prove how your company uses AI');
+    expect(screen.getByRole('heading', { name: 'Every AI decision, on the record.' })).toBeInTheDocument();
+    for (const gw of ['LiteLLM', 'Portkey', 'Kong AI Gateway']) expect(screen.getByRole('heading', { name: gw })).toBeInTheDocument();
     expect(screen.getAllByText(/Book an (AI usage )?assessment/).length).toBeGreaterThan(1);
     for (const phase of ['Inspect', 'Protect', 'Enforce and prove']) expect(screen.getAllByRole('heading', { name: phase }).length).toBeGreaterThan(0);
   });
@@ -25,8 +27,15 @@ describe('website', () => {
 
   it('keeps the technical docs off the sales site', () => {
     at('/docs/quick-start');
-    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Find every AI request');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('Prove how your company uses AI');
     expect(screen.queryByRole('link', { name: 'Docs' })).toBeNull();
+  });
+
+  it('has a compliance and audit page with honest control status', () => {
+    at('/compliance');
+    expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent('The evidence for how your company uses AI');
+    for (const state of ['Enforced by a rule', 'Built into Probaline', 'Needs your action', 'Not covered yet']) expect(screen.getByText(state)).toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: 'Compliance' }).length).toBeGreaterThan(0);
   });
 
   it('sends the old product page to the gateway page', () => {

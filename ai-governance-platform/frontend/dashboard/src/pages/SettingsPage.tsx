@@ -5,6 +5,8 @@ import { useAuth } from '../lib/auth';
 import { fetchMyTenant, LegalHold, setLegalHold } from '../lib/tenant-api';
 import { Button, Panel, SectionLabel } from '../components/kit/primitives';
 import { errorMessage } from '../lib/rules-api';
+import { AUTH_MODE } from '../lib/auth-mode';
+import { CatalogPanel } from '../components/CatalogPanel';
 
 const gatewayUrl = import.meta.env.VITE_GATEWAY_PUBLIC_URL || `${window.location.origin}/api`;
 
@@ -97,6 +99,9 @@ export function SettingsPage() {
           Send decisions, admin activity and sign-ins to Splunk, Datadog, Elastic or any OpenTelemetry or HTTPS collector from <Link to="/log-export" className="font-semibold text-ink">Log export</Link>.
         </p>
       </Panel>
+
+      {/* The catalog serves the whole install: the platform admin manages it in Cloud, company admins on their own install. */}
+      <CatalogPanel canManage={user?.role === 'platform_admin' || (AUTH_MODE === 'install' && user?.role === 'tenant_admin')} />
 
       <Panel className="px-7 py-5">
         <SectionLabel className="mb-1">Browser extension</SectionLabel>

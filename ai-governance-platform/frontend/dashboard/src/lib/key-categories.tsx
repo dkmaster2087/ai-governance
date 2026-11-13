@@ -8,7 +8,7 @@ import type { ApiKeySummary } from './api-keys-api';
 export type KeyCategory = 'apps' | 'agents' | 'extension';
 
 export const CATEGORIES: Array<{ id: KeyCategory; label: string; short: string; hint: string; scopes: string[] }> = [
-  { id: 'apps', label: 'Apps & IDEs', short: 'Apps & IDEs', hint: 'Send AI requests through the gateway, or list models', scopes: ['chat', 'models'] },
+  { id: 'apps', label: 'Apps & IDEs', short: 'Apps & IDEs', hint: 'Send AI requests through the gateway, list models, or check them for another gateway', scopes: ['chat', 'models', 'guardrails'] },
   { id: 'agents', label: 'AI agents (MCP)', short: 'AI agents', hint: 'Use the tools on your MCP servers', scopes: ['mcp'] },
   { id: 'extension', label: 'Browser extension', short: 'Extension', hint: 'Report visits to AI tools and read extension settings', scopes: ['shadow_ai:ingest'] },
 ];

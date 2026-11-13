@@ -27,11 +27,52 @@ to let requests through instead; those are flagged in their evidence record.
   masked as it streams, and the case file is written when the stream ends (also if the app disconnects).
 - **IDEs (beta):** the corporate proxy sends provider calls to `/v1/proxy/{openai|anthropic|cohere|mistral}/…`
   with an `X-Probaline-Key` header; the developer's own provider key passes through untouched.
+- **Other AI gateways (beta):** a company that already runs LiteLLM, Portkey or Kong keeps it for routing and calls
+  Probaline as a guardrail before the model and after it: `POST /v1/guardrails/litellm` (LiteLLM's Generic Guardrail
+  API), `/v1/guardrails/portkey` (webhook guardrail), `/v1/guardrails/kong` (AI Custom Guardrail), or
+  `/v1/guardrails/check` for anything else, with an API key that has the `guardrails` permission. Same checks, order
+  and fail mode as the app endpoint; cleaned prompts and answers go back to the gateway, which calls the model. Model
+  rules apply only when the gateway says which model it calls. Kong can only allow or stop, so anything Probaline would
+  remove stops the call there. Every prompt check writes a case file marked with the gateway; an answer check writes
+  one only when it removes or stops something. A check that can't run, failing closed, answers with a block in each
+  gateway's format. Not yet tried against a running LiteLLM, Portkey or Kong.
 - **Browsers (beta):** the Shadow AI Guard extension, deployed through Chrome policy (`gatewayUrl`, `apiKey`,
   optional `identifyUsers`), records which AI tools are opened (domain only, once per tool per ten minutes),
   blocks the ones the tenant blocked, and shows a block page with the tenant's message and approved tools.
 
+## The AI service catalog
+
+The list of AI services Probaline recognises (Shadow AI, reports, the browser extension and the firewall AI-domain
+feeds) is built in and kept current: every hour the gateway downloads Probaline's signed catalog, checks the
+signature, and applies it if it's newer, so new services reach an install without upgrading it. Nothing about the
+install is sent with the download. **Admin (gear) → Settings → AI service catalog** shows the catalog in use, where it came from
+and the last check, with **Check now** and **Upload catalog file** (for sites without internet access); the
+platform admin manages it in Cloud, company admins on their own install. `CATALOG_UPDATES=off` stops downloads,
+`CATALOG_URL` points at a mirror. New services are watched, not blocked, unless the company blocks all unapproved
+tools.
+
+In Cloud, the platform admin keeps the catalog current on **AI catalog**: every ten minutes Probaline reads public
+sources of new AI services (models.dev, OpenRouter's providers, Hacker News launches), Claude on Amazon Bedrock
+suggests what each new domain is, and a person approves, rejects or adds advisories, then publishes. Nothing is
+published without that review.
+
 ## Dashboard
+
+The menu has four sections, each with its pages as tabs, and set-up pages behind the gear icon. Every page keeps
+its address, so older links still work.
+
+| Section | Pages (tabs) |
+|---|---|
+| Overview | Traffic (`/gateway`), Spend (`/cost`) |
+| AI use | Tools (`/shadow-ai`), Paths & locks (`/enforcement`) |
+| Controls | Rules, Models, MCP servers (with approvals, connectors and sign-in), Alerts |
+| Audit | Case files (`/evidence`), Stopped, Compliance, Activity, Log export |
+| Admin (gear) | Users, API keys, License, Settings |
+
+Auditors see Overview and Audit. Requests waiting for approval show at the top of every page. Platform admins see
+Platform, Customers (Tenants, Licenses), Usage, AI catalog and Health, with Settings behind the gear.
+
+The pages:
 
 | Page | Shows |
 |---|---|
@@ -140,7 +181,7 @@ A company sends its records to its own tools from **Log export** in the dashboar
 | User | Use AI through approved apps; no dashboard |
 | Platform admin | Manage tenants and licenses across companies |
 
-API key permissions: `chat`, `models`, `shadow_ai:ingest`, `mcp`. On-prem license keys (`reporting:ingest`) are issued
+API key permissions: `chat`, `models`, `shadow_ai:ingest`, `mcp`, `guardrails`. On-prem license keys (`reporting:ingest`) are issued
 by platform admins only.
 
 ## Licenses

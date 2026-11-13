@@ -1,7 +1,9 @@
 import { NormalizedAIRequest, PolicyEvaluationResult, PolicyEvidence, PolicyRule } from '@ai-governance/types';
 import { collection } from '@ai-governance/storage';
+import { rateCounter } from '../../services/rate-counter';
 import { createLogger } from '@ai-governance/utils';
 import { PolicyRepository } from '../repositories/policy.repository';
+import { policiesForRequests } from '../policy-cache';
 import { compileTenantPattern } from './pattern-safety';
 import { buildEvidence, RuleMatch } from './evidence';
 import { findPhi, findPii } from './detectors';
@@ -16,7 +18,7 @@ export class PolicyEvaluator {
   private modelCache = new Map<string, { models: Set<string>; until: number }>();
 
   async evaluate(request: NormalizedAIRequest): Promise<PolicyEvaluationResult> {
-    const policies = await this.repo.getPoliciesForTenant(request.tenantId);
+    const policies = await policiesForRequests.get(request.tenantId, () => this.repo.getPoliciesForTenant(request.tenantId));
     const triggeredRules: string[] = [];
     let riskScore = 0;
     let evidence: PolicyEvidence | undefined;
@@ -59,27 +61,20 @@ export class PolicyEvaluator {
     return models;
   }
 
-  /** Count this request against the company's per-minute and per-day limits; shared by every engine instance. */
+  /** Count this request against the company's per-minute and per-day limits; shared by every gateway copy. */
   private async overLimit(rule: PolicyRule, tenantId: string): Promise<RuleMatch | null> {
     const perMinute = Number(rule.config.requestsPerMinute) || 0;
     const perDay = Number(rule.config.requestsPerDay) || 0;
     if (!perMinute && !perDay) return null;
-    const now = new Date();
-    const counters = collection<{ tenantId: string; period: string; count?: number }>('metrics');
-    const bump = async (period: string, ttlSeconds: number) => (await counters.update({ tenantId, period }, {
-      increment: { count: 1 }, set: { ttl: Math.floor(now.getTime() / 1000) + ttlSeconds },
-    }))?.count ?? 0;
-    try {
-      const [minute, day] = await Promise.all([
-        perMinute ? bump(`ratelimit#${rule.ruleId}#m#${now.toISOString().slice(0, 16)}`, 180) : 0,
-        perDay ? bump(`ratelimit#${rule.ruleId}#d#${now.toISOString().slice(0, 10)}`, 2 * 86_400) : 0,
-      ]);
-      if (perMinute && minute > perMinute) return { kind: 'field', field: 'requests this minute', value: `${minute} (limit ${perMinute})` };
-      if (perDay && day > perDay) return { kind: 'field', field: 'requests today', value: `${day} (limit ${perDay})` };
-    } catch (err) {
-      // A counter that can't be read never stops traffic on its own.
-      logger.warn('Rate limit counters unavailable', { tenantId, error: (err as Error).message });
-    }
+    const now = new Date().toISOString();
+    // Counted locally and written once a second while far from the limit, exactly when close (see RateCounter).
+    // If the counters can't be reached, the rule doesn't stop traffic on its own.
+    const [minute, day] = await Promise.all([
+      perMinute ? rateCounter().count(tenantId, `ratelimit#${rule.ruleId}#m#${now.slice(0, 16)}`, perMinute, 180) : null,
+      perDay ? rateCounter().count(tenantId, `ratelimit#${rule.ruleId}#d#${now.slice(0, 10)}`, perDay, 2 * 86_400) : null,
+    ]);
+    if (minute && !minute.allowed) return { kind: 'field', field: 'requests this minute', value: `${minute.count} (limit ${perMinute})` };
+    if (day && !day.allowed) return { kind: 'field', field: 'requests today', value: `${day.count} (limit ${perDay})` };
     return null;
   }
 
@@ -98,6 +93,8 @@ export class PolicyEvaluator {
       case 'model_restriction': {
         // Tool calls through MCP servers aren't model traffic: model rules don't apply to them.
         if (isToolCall) return null;
+        // Another gateway that didn't say which model it's calling can't be judged against a model list.
+        if (request.metadata?.modelUnknown === 'true') return null;
         if (rule.config.onlyConfiguredModels) {
           const models = await this.configuredModels(request.tenantId);
           // A company that hasn't added any model yet can't be judged against an empty list.

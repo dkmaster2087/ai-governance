@@ -105,6 +105,55 @@ The catalog is versioned and shipped with the collector, so it works offline. Th
 the chat apps and model APIs from it (`services/gateway/src/services/ai-tools.ts`), so the browser extension
 watches the same domains the report names. The report and the Shadow AI page say which version they used.
 
+### Keeping the catalog current (built)
+
+New AI services appear every week, so the catalog is also published as signed data that every install applies
+without a new version of Probaline:
+
+- **Published:** Cloud's gateway (`CATALOG_PUBLISHER=on`) signs the catalog (ECDSA P-256 / SHA-256, with the
+  stage's KMS key `alias/<prefix>-catalog-signing-<stage>`) as `{ format: "probaline.catalog/1", kid, payload,
+  signature }` and serves it at `/public/catalog/v1/latest.json` (on the website: `/api/public/…`), cacheable for five
+  minutes with an ETag. A new edition is published when the platform admin presses **Publish**, and on the first
+  start of a version whose built-in list is newer. `scripts/catalog-sign.mjs` signs one by hand (a company's mirror).
+- **Applied:** each gateway downloads it every hour (`services/gateway/src/catalog`), verifies the signature
+  against keys compiled into the image (plus any in `CATALOG_TRUSTED_KEYS`, for a company's own mirror), and applies
+  it only if it's newer than the one in use: a replayed old file can't remove services. The last good one is kept
+  in the database for every copy and for reports; without one, the built-in list is used.
+- **Nothing is sent:** no license key, install or company name, counts or user data (see HYBRID.md). An admin can
+  check now or upload a catalog file on **Admin (gear) → Settings** (the platform admin in Cloud, company admins on their own
+  install); `CATALOG_UPDATES=off` stops downloads, `CATALOG_URL` points at a mirror.
+- **New services are watched, never blocked,** unless the company chose to block all unapproved tools or
+  subscribed its firewalls to that category's AI-domain feed. A catalog can also carry advisories about services
+  (a change in data terms, a breach), shown on Settings.
+
+Before a stage publishes, add the public half of its catalog key to
+`services/gateway/src/catalog/trusted-keys.ts` (`node scripts/catalog-sign.mjs --kms <key> --public-key`).
+
+### Finding new AI services (built, Cloud only)
+
+`services/gateway/src/catalog/discovery`. Nothing reaches the catalog without a person.
+
+1. **Sources** (`sources.ts`), read every ten minutes by one gateway copy when due (`CATALOG_DISCOVERY=on`):
+   models.dev's provider list (hourly), OpenRouter's providers (every six hours), Hacker News "Show HN" launches
+   about AI, LLMs, agents, GPT or copilots (hourly). Each gives host names; each becomes a domain to review (the
+   registrable domain, or the whole host on shared hosting such as `*.vercel.app`). Domains already in the catalog,
+   already queued or already decided are skipped. The platform admin can also add a domain by hand.
+2. **Classifier** (`classifier.ts`): reads the home page (public, https, internal addresses refused, 400 KB) and asks
+   Claude on Amazon Bedrock (`anthropic.claude-opus-5-5`, low effort, structured JSON; Claude Opus 4.8 if a request
+   is refused; `CATALOG_CLASSIFIER_MODEL` changes it, `CATALOG_CLASSIFIER=off` turns it off) whether it's an AI
+   service, which kind, by whom, whether its vendor offers business data terms, and its domains. The page is
+   treated as untrusted data, and domains are kept only if they belong to the candidate, so a page can't steer
+   the catalog toward someone else's site. Twenty candidates a run at most (`CATALOG_CLASSIFY_PER_RUN`); a failed
+   one is retried a day later. A confident "not AI" is set aside as dismissed, still visible.
+3. **Review** (platform admin → **AI catalog**): candidates with the suggestion, where they were found, and
+   Approve (as a new service, prefilled, or as more domains for one already in the catalog), Reject, Classify
+   again, Back to review. Approved services, changes and advisories are checked exactly as installs check them.
+4. **Publish**: one button; the page says what isn't published yet. Installs pick it up within the hour.
+
+Not yet: certificate-transparency logs (new sites before launch; needs a streaming service), the MCP Registry (MCP
+servers aren't a catalog category yet), browser-extension stores, and watching vendors' terms for changes to turn
+into advisories automatically.
+
 ## Sources, in build order
 
 | # | Source | What it shows | Where the collector runs |
@@ -185,7 +234,8 @@ assessment.
 ## Open questions
 
 - **Name and price.** A free time-boxed assessment, or a paid one credited against the first year?
-- **Catalog upkeep.** New AI services appear weekly. Who reviews additions, and how often do collectors update?
+- **Catalog upkeep.** Installs now update hourly from the signed catalog; finding and reviewing new services is the
+  open part. The standalone collector still uses the catalog it was built with.
 - **Mapping DNS to people.** DNS logs show device addresses. Mapping them to users needs DHCP or directory
   logs; offer it as an option, off by default.
 - **Air-gapped sites.** The local mode already works offline; catalog updates would be delivered as files.

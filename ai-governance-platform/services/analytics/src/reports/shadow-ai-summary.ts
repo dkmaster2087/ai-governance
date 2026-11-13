@@ -1,4 +1,4 @@
-import { CATALOG_VERSION, toolById, toolForDomain } from '@ai-governance/types';
+import { catalogVersion, toolById, toolForDomain } from '@ai-governance/types';
 import { ShadowAiPolicy } from './tenant';
 
 export interface ShadowEvent {
@@ -94,7 +94,7 @@ export function summarizeShadowAi(
     to: range.to,
     mode: policy.mode,
     retentionDays: SHADOW_RETENTION_DAYS,
-    catalogVersion: CATALOG_VERSION,
+    catalogVersion: catalogVersion(),
     totals: { people: byPerson.size, visits: inRange.length, blockedVisits: inRange.filter((e) => e.blocked).length },
     tools,
     people,

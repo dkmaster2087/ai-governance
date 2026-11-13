@@ -37,7 +37,7 @@ interface ServicesStackProps extends cdk.StackProps {
     versions: dynamodb.Table; approvals: dynamodb.Table; oauth: dynamodb.Table; connectors: dynamodb.Table;
   };
   /** Admin activity and log export (gateway only). */
-  logTables?: { activity: dynamodb.Table; logExport: dynamodb.Table; enforcement?: dynamodb.Table };
+  logTables?: { activity: dynamodb.Table; logExport: dynamodb.Table; enforcement?: dynamodb.Table; catalog?: dynamodb.Table };
   /** The gateway's outbound addresses (the NAT gateways), for the Enforcement page's "allow only the gateway" rules. */
   egressAddresses?: string[];
   auditLogsTable: dynamodb.Table;
@@ -189,6 +189,17 @@ export class ServicesStack extends cdk.Stack {
       alias: `alias/${prefix}-license-signing-${stage}`,
       removalPolicy: cdk.RemovalPolicy.RETAIN,
     });
+    // Signs the AI service catalog every install downloads: the Cloud gateway publishes it (Catalog page) and serves it
+    // at /public/catalog/v1/latest.json. Installs check it against the public half compiled into the image
+    // (services/gateway/src/catalog/trusted-keys.ts). Kept on delete so catalogs it signed stay valid.
+    const catalogSigningKey = new kms.Key(this, 'CatalogSigningKey', {
+      description: `Probaline ${stage}: signs the AI service catalog installs download`,
+      keySpec: kms.KeySpec.ECC_NIST_P256,
+      keyUsage: kms.KeyUsage.SIGN_VERIFY,
+      alias: `alias/${prefix}-catalog-signing-${stage}`,
+      removalPolicy: cdk.RemovalPolicy.RETAIN,
+    });
+    new cdk.CfnOutput(this, 'CatalogSigningKeyArn', { value: catalogSigningKey.keyArn });
 
     // --- Gateway Service (public-facing) ---
     this.gatewayService = this.createService({
@@ -229,6 +240,14 @@ export class ServicesStack extends cdk.Stack {
         ...(dashboardDomain ? { DASHBOARD_URL: `https://${dashboardDomain}` } : {}),
         ...(props.logTables ? { ACTIVITY_TABLE: props.logTables.activity.tableName, LOG_EXPORT_TABLE: props.logTables.logExport.tableName } : {}),
         ...(props.logTables?.enforcement ? { ENFORCEMENT_TABLE: props.logTables.enforcement.tableName } : {}),
+        // Cloud publishes the AI service catalog and looks for new AI services (Claude on Amazon Bedrock classifies them).
+        ...(props.logTables?.catalog ? {
+          CATALOG_TABLE: props.logTables.catalog.tableName,
+          CATALOG_PUBLISHER: 'on',
+          CATALOG_DISCOVERY: this.node.tryGetContext('catalogDiscovery') === 'false' ? 'off' : 'on',
+          CATALOG_SIGNING_KMS_KEY_ID: catalogSigningKey.keyId,
+          ...(this.node.tryGetContext('catalogClassifierModel') ? { CATALOG_CLASSIFIER_MODEL: this.node.tryGetContext('catalogClassifierModel') } : {}),
+        } : {}),
         ...(props.egressAddresses?.length ? { GATEWAY_EGRESS_IPS: cdk.Fn.join(',', props.egressAddresses) } : {}),
         AUDIT_LOGS_TABLE: auditLogsTable.tableName,
         ANALYTICS_URL: internalUrl('analytics', 3003),
@@ -304,6 +323,15 @@ export class ServicesStack extends cdk.Stack {
         resources: ['*'],
       })
     );
+    // The Cloud gateway signs the AI service catalog it publishes, and asks Claude on Amazon Bedrock about candidates.
+    this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: ['kms:Sign', 'kms:GetPublicKey'],
+      resources: [catalogSigningKey.keyArn],
+    }));
+    this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
+      actions: ['bedrock-mantle:CreateInference'],
+      resources: ['*'],
+    }));
     // Only the gateway may sign license files (platform admins issue them from the Licenses page).
     this.gatewayService.taskDefinition.taskRole.addToPrincipalPolicy(new iam.PolicyStatement({
       actions: ['kms:Sign', 'kms:GetPublicKey'],
@@ -323,6 +351,7 @@ export class ServicesStack extends cdk.Stack {
     if (!certificateArn && stage === 'prod') {
       throw new Error('Production needs a TLS certificate: deploy with -c certificateArn=arn:aws:acm:...');
     }
+    let gatewayTargetGroup: elbv2.ApplicationTargetGroup;
     const gatewayTarget = {
       port: 3000,
       protocol: elbv2.ApplicationProtocol.HTTP,
@@ -336,14 +365,14 @@ export class ServicesStack extends cdk.Stack {
         certificates: [elbv2.ListenerCertificate.fromArn(certificateArn)],
         sslPolicy: elbv2.SslPolicy.RECOMMENDED_TLS,
       });
-      listener.addTargets('GatewayTarget', gatewayTarget);
+      gatewayTargetGroup = listener.addTargets('GatewayTarget', gatewayTarget);
       this.loadBalancer.addListener('HttpRedirect', {
         port: 80,
         defaultAction: elbv2.ListenerAction.redirect({ protocol: 'HTTPS', port: '443', permanent: true }),
       });
     } else {
       const listener = this.loadBalancer.addListener('HttpListener', { port: 80, open: true });
-      listener.addTargets('GatewayTarget', gatewayTarget);
+      gatewayTargetGroup = listener.addTargets('GatewayTarget', gatewayTarget);
     }
 
     // Every service scales with load. Production keeps at least two copies of each, in different zones.
@@ -355,6 +384,16 @@ export class ServicesStack extends cdk.Stack {
       const scaling = svc.autoScaleTaskCount({ minCapacity: prod ? 2 : 1, maxCapacity: max });
       scaling.scaleOnCpuUtilization(`${id}Cpu`, { targetUtilizationPercent: 60, scaleOutCooldown: cdk.Duration.seconds(60), scaleInCooldown: cdk.Duration.seconds(300) });
       scaling.scaleOnMemoryUtilization(`${id}Memory`, { targetUtilizationPercent: 75 });
+      // The gateway also scales on traffic: AI answers mostly wait on the provider, so CPU rises late.
+      // context gatewayRequestsPerTarget is requests a minute per copy (default 6000, about 100 a second).
+      if (id === 'Gateway') {
+        scaling.scaleOnRequestCount('GatewayRequests', {
+          targetGroup: gatewayTargetGroup!,
+          requestsPerTarget: Number(this.node.tryGetContext('gatewayRequestsPerTarget')) || 6000,
+          scaleOutCooldown: cdk.Duration.seconds(60),
+          scaleInCooldown: cdk.Duration.seconds(300),
+        });
+      }
     }
 
     new cdk.CfnOutput(this, 'LoadBalancerDns', { value: this.loadBalancer.loadBalancerDnsName });

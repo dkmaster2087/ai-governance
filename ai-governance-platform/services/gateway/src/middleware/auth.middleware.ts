@@ -36,6 +36,10 @@ const PUBLIC_PREFIXES = ['/health', '/public/',
 /** MCP addresses accept a Probaline API key here, or a sign-in token the MCP route checks itself. */
 const MCP_PREFIX = '/mcp/';
 const PROXY_PREFIX = '/v1/proxy/';
+/** How often a key's "last used" time is written. */
+const TOUCH_EVERY_MS = 60_000;
+/** Other gateways' guardrail hooks: LiteLLM sends its guardrail key as x-api-key. */
+const GUARDRAILS_PREFIX = '/v1/guardrails/';
 
 /** Claims we read from a verified Cognito ID token. */
 export interface UserTokenClaims {
@@ -104,6 +108,8 @@ export function forgetApiKey(keyId: string): void {
 export function createAuthPlugin(deps: AuthDeps) {
   const servesDashboard = installSignIn();
   const keyCache: KeyCache = new Map();
+  /** When each key's last-used time was last written by this copy. */
+  const lastTouched = new Map<string, number>();
   keyCaches.add(keyCache);
 
   async function resolveApiKey(token: string): Promise<ApiKey | null> {
@@ -130,7 +136,9 @@ export function createAuthPlugin(deps: AuthDeps) {
       // In proxy mode the client's Authorization header carries its own provider key and is forwarded
       // untouched, so the Probaline credential travels in x-probaline-key (injected by the corporate proxy).
       const isProxyRoute = request.url.startsWith(PROXY_PREFIX);
-      const authHeader = isProxyRoute ? header(request, 'x-probaline-key') : header(request, 'authorization');
+      const authHeader = isProxyRoute
+        ? header(request, 'x-probaline-key')
+        : header(request, 'authorization') ?? (request.url.startsWith(GUARDRAILS_PREFIX) ? header(request, 'x-api-key') : undefined);
       const isMcpRoute = request.url.startsWith(MCP_PREFIX);
       // No credentials, or a token from Probaline's own sign-in: the MCP route answers (and says where to sign in).
       if (isMcpRoute && (!authHeader || looksLikeJwt(authHeader.replace(/^Bearer /, '').trim()))) return;
@@ -230,7 +238,13 @@ export function createAuthPlugin(deps: AuthDeps) {
       request.userId = userId;
       request.appId = appId;
 
-      deps.keys.touchLastUsed(apiKey.tenantId, apiKey.keyId).catch(() => {});
+      // "Last used" is shown to the minute; one write per key per minute per copy instead of one per call.
+      const now = Date.now();
+      if (now - (lastTouched.get(apiKey.keyId) ?? 0) >= TOUCH_EVERY_MS) {
+        lastTouched.set(apiKey.keyId, now);
+        if (lastTouched.size > 50_000) lastTouched.delete(lastTouched.keys().next().value as string);
+        deps.keys.touchLastUsed(apiKey.tenantId, apiKey.keyId).catch(() => {});
+      }
     });
 
     // Suspended tenants lose access (platform admins keep it, so they can reactivate).

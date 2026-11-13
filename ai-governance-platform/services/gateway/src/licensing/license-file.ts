@@ -92,7 +92,8 @@ export class KmsLicenseSigner implements LicenseSigner {
     return kidOf(createPublicKey(this.publicKeyPem));
   }
   async sign(data: Buffer) {
-    const out = await this.client.send(new SignCommand({ KeyId: this.keyId, Message: data, MessageType: 'RAW', SigningAlgorithm: 'ECDSA_SHA_256' }));
+    // KMS signs at most 4 KB of raw data; sign the SHA-256 digest instead (the same ECDSA_SHA_256 signature).
+    const out = await this.client.send(new SignCommand({ KeyId: this.keyId, Message: createHash('sha256').update(data).digest(), MessageType: 'DIGEST', SigningAlgorithm: 'ECDSA_SHA_256' }));
     return Buffer.from(out.Signature!);
   }
 }

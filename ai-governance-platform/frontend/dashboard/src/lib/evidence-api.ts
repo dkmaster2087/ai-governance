@@ -21,6 +21,8 @@ export interface EvidenceListItem {
   removed?: { secrets?: true; personalData?: true };
   /** Sent, but flagged as a possible prompt attack (Beta). */
   flagged?: true;
+  /** Checked for another AI gateway that called the model itself. */
+  via?: { gateway: string; phase: 'prompt' | 'answer' };
 }
 
 

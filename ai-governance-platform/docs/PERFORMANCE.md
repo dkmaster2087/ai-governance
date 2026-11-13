@@ -41,6 +41,39 @@ rate requests queue: p50 is about 65 ms and p95 about 120 ms. Production runs at
 on CPU (see `services-stack.ts`), so capacity grows with copies; the shared database's counters (rate limits,
 alerts) are one write per request and weren't the limit here.
 
+## After the request-path changes (2026-11-12)
+
+Same machine and test as above, run against a gateway of its own on a laptop that was also running another full
+local stack (load average around 15 on 8 cores), so these numbers are conservative. 20-at-once runs were 10 seconds
+per scenario, so each test key stays under its 10,000 calls a minute.
+
+| | Before | After |
+|---|---|---|
+| Time added, one request at a time (p50 / p95) | 8.4 / 11.7 ms | 3.1 / 9.2 ms |
+| Clean prompts a second, 20 at once | 232 | 377–695 (three runs) |
+| Prompts with personal data a second, 20 at once | 224 | 446–656 |
+| Stopped prompts a second, 20 at once | 281 | 726–784 |
+| MCP tool calls a second, 20 at once | 220 | 373–589 |
+| p50 at 20 at once (clean prompts) | 81 ms | 26–46 ms |
+
+What changed on the request path:
+
+| Before, per AI request | Now |
+|---|---|
+| Company rules read from the database | Cached per gateway copy for 15 s (`HOT_CACHE_TTL_MS`); a change on this copy applies at once |
+| Model settings read three times | Cached the same way (one read per company per 15 s) |
+| API key "last used" written | At most once a minute per key per copy |
+| Rate-limit counters written (per key, per company rule, per MCP caller) | Added up per copy and written once a second (`COUNTER_FLUSH_MS`); limits of 100 or less, and the last 10% of any limit, are still counted exactly on every call; calls already refused aren't written again |
+| Alert and spend counters written (off the request path) | Written once a second; the write that crosses a threshold fires the alert, so each alert still fires once across all copies |
+| Case file written to the database **and** one object per request to S3 | Database record still written before the answer (it's the evidence); the archive copy is batched into one gzipped JSON Lines file per company and day every 2 s (`ARCHIVE_FLUSH_MS`), retried on failure, and written on shutdown. If too much is waiting, requests wait for the archive rather than records being dropped |
+
+Under load, a copy whose CPU is saturated (event loop more than 250 ms late, `SHED_LAG_MS`) or with 5,000 AI
+requests already open (`SHED_MAX_OPEN`) answers new AI requests with `503 BUSY` and `Retry-After: 1` instead of
+slowing everyone; dashboards and health checks stay up. In AWS the gateway now also scales on requests per copy
+(6,000 a minute by default, CDK context `gatewayRequestsPerTarget`), not only CPU.
+
+PostgreSQL installs delete expired records in chunks of 5,000, so a large cleanup never holds one long delete open.
+
 ## What to measure next
 
 - The same runs against a deployed stage with the compiled images, on Fargate's CPU sizes, before the first

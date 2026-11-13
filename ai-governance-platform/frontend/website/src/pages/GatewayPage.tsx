@@ -36,6 +36,11 @@ const WAYS_IN: Array<{ title: string; status: 'Available' | 'Beta'; points: stri
     points: ['Pushed by your IT team; settings locked', 'Records the tool’s domain only, never what people type', 'Watch-only until you decide'],
   },
   {
+    title: 'Your own AI gateway',
+    status: 'Beta',
+    points: ['LiteLLM, Portkey or Kong call Probaline’s checks', 'Cleaned prompts and answers go back to your gateway', 'The same case file, marked with the gateway it came from'],
+  },
+  {
     title: 'AI agents (MCP)',
     status: 'Available',
     points: ['People sign in with their company account', 'Changes wait for a person’s approval', 'Every call checked and kept as evidence'],
@@ -54,7 +59,7 @@ export function GatewayPage() {
 
       <section aria-labelledby="ways-in" className="py-16 border-t border-line">
         <Eyebrow className="mb-3">Ways in</Eyebrow>
-        <h2 id="ways-in" className="m-0 text-[32px] leading-[1.12] font-bold tracking-[-0.02em] max-w-[760px]">Four ways in. Nobody works differently.</h2>
+        <h2 id="ways-in" className="m-0 text-[32px] leading-[1.12] font-bold tracking-[-0.02em] max-w-[760px]">Five ways in. Nobody works differently.</h2>
         <div className="grid gap-5 mt-10" style={{ gridTemplateColumns: 'repeat(auto-fit, minmax(min(270px, 100%), 1fr))' }}>
           {WAYS_IN.map((w) => (
             <Panel key={w.title} className="p-6 flex flex-col gap-3">

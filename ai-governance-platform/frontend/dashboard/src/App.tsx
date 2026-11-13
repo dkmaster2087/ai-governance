@@ -28,6 +28,7 @@ import { CostPage } from './pages/CostPage';
 import { LicensesPage } from './pages/LicensesPage';
 import { AnalyticsPage } from './pages/AnalyticsPage';
 import { PlatformHealthPage } from './pages/PlatformHealthPage';
+import { CatalogReviewPage } from './pages/CatalogReviewPage';
 
 import { TenantDetailPage } from './pages/TenantDetailPage';
 import { TenantLicensePage } from './pages/TenantLicensePage';
@@ -100,6 +101,7 @@ export default function App() {
             <Route path="/analytics" element={<AnalyticsPage />} />
             <Route path="/cost" element={<Navigate to="/analytics" replace />} />
             <Route path="/health" element={<PlatformHealthPage />} />
+            <Route path="/catalog" element={<CatalogReviewPage />} />
             <Route path="/settings" element={<SettingsPage />} />
             <Route path="*" element={<Navigate to="/overview" replace />} />
           </Routes>

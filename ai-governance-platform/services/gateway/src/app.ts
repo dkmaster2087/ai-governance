@@ -40,6 +40,13 @@ import { activityRoutes } from './routes/activity.routes';
 import { logExportRoutes } from './routes/log-export.routes';
 import { enforcementRoutes } from './routes/enforcement.routes';
 import { feedRoutes } from './routes/feeds.routes';
+import { guardrailsRoutes } from './routes/guardrails.routes';
+import { catalogRoutes } from './routes/catalog.routes';
+import { catalogAdminRoutes } from './routes/catalog-admin.routes';
+import { isAiTraffic, loadShedding } from './middleware/load-shedding';
+import { archiveBatcher } from './services/archive-batcher';
+import { batchedCounter } from './services/batched-counter';
+import { rateCounter } from './services/rate-counter';
 
 export async function buildApp() {
   const securityConfig = getSecurityConfig();
@@ -76,10 +83,16 @@ export async function buildApp() {
   // Error handler: set before any routes so every plugin inherits it.
   app.setErrorHandler(errorHandler);
 
+  // An overloaded copy refuses new AI requests at once (503 BUSY, retry in a second) instead of slowing them all.
+  await app.register(loadShedding, {});
+  // Counters and archive copies are written in batches; write what's pending when this copy stops.
+  app.addHook('onClose', async () => {
+    await Promise.allSettled([archiveBatcher().flush(), rateCounter().flush(), batchedCounter().flush()]);
+  });
+
   // End-to-end time of AI requests and tool calls, for the latency alarm.
   app.addHook('onResponse', async (request, reply) => {
-    const path = request.url.split('?')[0];
-    if (request.method === 'POST' && (path === '/v1/chat/completions' || path.startsWith('/v1/proxy/') || path.startsWith('/mcp/'))) {
+    if (isAiTraffic(request.method, request.url.split('?')[0])) {
       opsMetrics.time(OPS.REQUEST_LATENCY, reply.elapsedTime);
     }
   });
@@ -108,6 +121,8 @@ export async function buildApp() {
   await app.register(shadowAIRoutes, { prefix: '/v1' });
   await app.register(costRoutes, { prefix: '/v1' });
   await app.register(proxyRoutes, { prefix: '/v1' });
+  // Probaline's checks called by another AI gateway (LiteLLM, Portkey, Kong, any HTTP guardrail hook).
+  await app.register(guardrailsRoutes, { prefix: '/v1' });
   await app.register(apiKeyRoutes, { prefix: '/v1' });
   await app.register(alertRoutes, { prefix: '/v1' });
   await app.register(gatewayRoutes, { prefix: '/v1' });
@@ -119,6 +134,9 @@ export async function buildApp() {
   await app.register(activityRoutes, { prefix: '/v1' });
   await app.register(logExportRoutes, { prefix: '/v1' });
   await app.register(enforcementRoutes, { prefix: '/v1' });
+  await app.register(catalogRoutes, { prefix: '/v1' });
+  // Cloud only (CATALOG_PUBLISHER=on): the catalog's review queue and the signed file installs download.
+  await app.register(catalogAdminRoutes);
   // MCP servers: admin API under /v1/mcp/…, and the address agents connect to at /mcp/<tenant>/<server>.
   await app.register(mcpRoutes);
   await app.register(mcpOauthRoutes);

@@ -44,8 +44,10 @@ describe('per-key rate limits', () => {
     for (let i = 0; i < 3; i++) await r.hit('t', 'key#x', 3, t);
     expect((await r.hit('t', 'key#x', 3, t)).allowed).toBe(false);
     expect((await r.hit('t', 'key#x', 3, t + 60_000)).allowed).toBe(true);
+    // A key already known to be over is refused without another write; one the counters can't count isn't stopped.
     setRecords({ } as never);
-    expect((await r.hit('t', 'key#x', 1, t)).allowed).toBe(true);
+    expect((await r.hit('t', 'key#x', 3, t)).allowed).toBe(false);
+    expect((await r.hit('t', 'key#y', 1, t)).allowed).toBe(true);
   });
 });
 

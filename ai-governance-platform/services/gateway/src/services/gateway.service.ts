@@ -48,7 +48,7 @@ export class GatewayService {
     logger.info('Processing AI request', { requestId, tenantId: input.tenantId, model: input.model });
 
     // The company's settings for this model: which keys may use it, and the longest answer allowed.
-    const model = await this.models.findByModelId(input.tenantId, input.model);
+    const model = (await this.models.forRequests(input.tenantId)).find((c) => c.modelId === input.model) ?? null;
     const limit = model?.maxTokensPerRequest;
     const maxTokens = limit ? Math.min(input.maxTokens ?? limit, limit) : input.maxTokens;
 

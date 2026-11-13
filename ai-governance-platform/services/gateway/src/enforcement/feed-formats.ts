@@ -1,4 +1,4 @@
-import { CATALOG, CATALOG_VERSION, Category, serviceById } from '@ai-governance/catalog';
+import { CATALOG, Category, catalogVersion, serviceById } from '@ai-governance/catalog';
 
 /**
  * The AI-domain feed: catalog domains a firewall, web gateway or DNS server fetches and blocks, with the rule
@@ -49,7 +49,7 @@ export interface FeedMeta {
 
 const comment = (prefix: string, meta: FeedMeta, count: number) => [
   `${prefix} Probaline AI-domain feed: ${meta.name.replace(/[\r\n]/g, ' ')}`,
-  `${prefix} ${count} domains, catalog ${CATALOG_VERSION}, generated ${meta.generatedAt}`,
+  `${prefix} ${count} domains, catalog ${catalogVersion()}, generated ${meta.generatedAt}`,
 ];
 
 /** The feed in one format: body and content type. */
@@ -85,7 +85,7 @@ export function renderFeed(format: FeedFormat, entries: FeedEntry[], meta: FeedM
       return {
         body: JSON.stringify({
           configuredName: `Probaline: ${meta.name}`.slice(0, 64),
-          description: `Probaline AI-domain feed, catalog ${CATALOG_VERSION}, generated ${meta.generatedAt}`,
+          description: `Probaline AI-domain feed, catalog ${catalogVersion()}, generated ${meta.generatedAt}`,
           superCategory: 'USER_DEFINED',
           urls: entries.map((e) => `.${e.domain}`),
         }, null, 2) + '\n',

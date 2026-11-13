@@ -23,7 +23,7 @@ describe('ServicesStack', () => {
       apiKeysTable: storage.apiKeysTable, alertsTable: storage.alertsTable, shadowAiTable: storage.shadowAiTable,
       auditLogsTable: storage.auditLogsTable, modelsTable: storage.modelsTable, complianceTable: storage.complianceTable,
       tenantsTable: storage.tenantsTable, usersTable: storage.usersTable,
-      logTables: { activity: storage.activityTable, logExport: storage.logExportTable, enforcement: storage.enforcementTable },
+      logTables: { activity: storage.activityTable, logExport: storage.logExportTable, enforcement: storage.enforcementTable, catalog: storage.catalogTable },
       egressAddresses: network.natAddresses,
     });
     template = Template.fromStack(stack);
@@ -90,6 +90,27 @@ describe('ServicesStack', () => {
     expect(roles).toEqual({ GatewayContainer: 'gateway', AnalyticsContainer: 'reports' });
   });
 
+  it('has a separate KMS key for the AI service catalog, kept on delete, that only the gateway signs with', () => {
+    const keys = Object.entries(template.findResources('AWS::KMS::Key')).filter(([, r]: any) => r.Properties.KeyUsage === 'SIGN_VERIFY');
+    expect(keys).toHaveLength(2);
+    const catalogKey = keys.find(([, r]: any) => /AI service catalog/.test(r.Properties.Description))!;
+    expect((catalogKey[1] as any).DeletionPolicy).toBe('Retain');
+    template.hasResourceProperties('AWS::KMS::Alias', { AliasName: 'alias/ai-gov-catalog-signing-test' });
+    const policies = [...Object.entries(template.findResources('AWS::IAM::Policy')), ...Object.entries(template.findResources('AWS::IAM::ManagedPolicy'))] as Array<[string, any]>;
+    const withKey = policies.filter(([, p]) => JSON.stringify(p.Properties.PolicyDocument).includes(catalogKey[0]));
+    expect(withKey).toHaveLength(1);
+    expect(JSON.stringify(withKey[0][1].Properties.Roles)).toContain('GatewayTask');
+  });
+
+  it('makes the Cloud gateway the catalog publisher, with discovery on', () => {
+    const gateway = (Object.values(template.findResources('AWS::ECS::TaskDefinition')) as any[])
+      .map((d) => d.Properties.ContainerDefinitions[0]).find((c) => c.Name === 'GatewayContainer');
+    const env = Object.fromEntries(gateway.Environment.map((e: any) => [e.Name, e.Value]));
+    expect(env).toMatchObject({ CATALOG_PUBLISHER: 'on', CATALOG_DISCOVERY: 'on' });
+    expect(env.CATALOG_TABLE).toBeDefined();
+    expect(env.CATALOG_SIGNING_KMS_KEY_ID).toBeDefined();
+  });
+
   it('signs license files with a KMS key only the gateway may use, and keeps it on delete', () => {
     template.hasResourceProperties('AWS::KMS::Key', { KeySpec: 'ECC_NIST_P256', KeyUsage: 'SIGN_VERIFY' });
     const key = Object.entries(template.findResources('AWS::KMS::Key')).find(([, r]: any) => r.Properties.KeyUsage === 'SIGN_VERIFY')!;
@@ -136,9 +157,15 @@ describe('ServicesStack', () => {
     expect(JSON.stringify(template.findResources('AWS::IAM::Policy'))).toContain('ses:SendEmail');
   });
 
-  it('scales every service on CPU and memory, never drops capacity during a deploy, and has no shell access', () => {
+  it('scales every service on CPU and memory, the gateway also on requests, never drops capacity during a deploy, and has no shell access', () => {
     template.resourceCountIs('AWS::ApplicationAutoScaling::ScalableTarget', 2);
-    template.resourceCountIs('AWS::ApplicationAutoScaling::ScalingPolicy', 4);
+    template.resourceCountIs('AWS::ApplicationAutoScaling::ScalingPolicy', 5);
+    template.hasResourceProperties('AWS::ApplicationAutoScaling::ScalingPolicy', {
+      TargetTrackingScalingPolicyConfiguration: Match.objectLike({
+        PredefinedMetricSpecification: Match.objectLike({ PredefinedMetricType: 'ALBRequestCountPerTarget' }),
+        TargetValue: 6000,
+      }),
+    });
     for (const s of Object.values(template.findResources('AWS::ECS::Service')) as any[]) {
       expect(s.Properties.DeploymentConfiguration).toMatchObject({ MinimumHealthyPercent: 100, MaximumPercent: 200 });
       expect(s.Properties.EnableExecuteCommand).toBe(false);

@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import { useQuery } from '@tanstack/react-query';
 import { fetchLicenseStatus, statusMessage } from '../../lib/license-api';
+import { listApprovals } from '../../lib/mcp-api';
 import { Link, NavLink, useLocation, useNavigate } from 'react-router-dom';
 import clsx from 'clsx';
 import { PlumbMark } from '../kit/PlumbMark';
@@ -11,56 +12,71 @@ interface NavItem {
   href: string;
 }
 
-interface RoleNav {
-  primary: NavItem[];
-  more: NavItem[];
+/** A menu section: one link in the bar, and a row of tabs for its pages when it has more than one. */
+interface Section {
+  label: string;
+  tabs: NavItem[];
 }
 
-// Direction I navigation.
-const NAV: Record<Exclude<UserRole, 'tenant_user'>, RoleNav> = {
+interface RoleNav {
+  sections: Section[];
+  /** Set-up pages, behind the gear icon. */
+  admin: NavItem[];
+}
+
+/**
+ * Five sections for a company admin (what's happening, where AI is used, what's allowed, the proof, set-up),
+ * instead of seventeen menu items. Every page keeps its address, so links in emails, docs and bookmarks still work.
+ */
+export const NAV: Record<UserRole, RoleNav> = {
   tenant_admin: {
-    primary: [
-      { label: 'Gateway', href: '/gateway' },
-      { label: 'Stopped', href: '/stopped' },
-      { label: 'Shadow AI', href: '/shadow-ai' },
-      { label: 'Rules', href: '/rules' },
-      { label: 'MCP servers', href: '/mcp' },
-      { label: 'Evidence', href: '/evidence' },
+    sections: [
+      { label: 'Overview', tabs: [{ label: 'Traffic', href: '/gateway' }, { label: 'Spend', href: '/cost' }] },
+      { label: 'AI use', tabs: [{ label: 'Tools', href: '/shadow-ai' }, { label: 'Paths & locks', href: '/enforcement' }] },
+      {
+        label: 'Controls',
+        tabs: [{ label: 'Rules', href: '/rules' }, { label: 'Models', href: '/models' }, { label: 'MCP servers', href: '/mcp' }, { label: 'Alerts', href: '/alerts' }],
+      },
+      {
+        label: 'Audit',
+        tabs: [
+          { label: 'Case files', href: '/evidence' }, { label: 'Stopped', href: '/stopped' }, { label: 'Compliance', href: '/compliance' },
+          { label: 'Activity', href: '/activity' }, { label: 'Log export', href: '/log-export' },
+        ],
+      },
     ],
-    more: [
-      { label: 'Enforcement', href: '/enforcement' },
-      { label: 'API keys', href: '/keys' },
-      { label: 'Models & keys', href: '/models' },
-      { label: 'Spend', href: '/cost' },
-      { label: 'Alerts', href: '/alerts' },
-      { label: 'Compliance', href: '/compliance' },
-      { label: 'Users', href: '/users' },
-      { label: 'Activity', href: '/activity' },
-      { label: 'Log export', href: '/log-export' },
-      { label: 'License', href: '/license' },
-      { label: 'Settings', href: '/settings' },
-    ],
+    admin: [{ label: 'Users', href: '/users' }, { label: 'API keys', href: '/keys' }, { label: 'License', href: '/license' }, { label: 'Settings', href: '/settings' }],
   },
   tenant_auditor: {
-    primary: [
-      { label: 'Gateway', href: '/gateway' },
-      { label: 'Stopped', href: '/stopped' },
-      { label: 'Evidence', href: '/evidence' },
-      { label: 'Approvals', href: '/mcp/approvals' },
+    sections: [
+      { label: 'Overview', tabs: [{ label: 'Traffic', href: '/gateway' }] },
+      { label: 'Audit', tabs: [{ label: 'Case files', href: '/evidence' }, { label: 'Stopped', href: '/stopped' }, { label: 'Activity', href: '/activity' }] },
     ],
-    more: [{ label: 'Activity', href: '/activity' }],
+    admin: [],
   },
   platform_admin: {
-    primary: [
-      { label: 'Platform', href: '/overview' },
-      { label: 'Tenants', href: '/tenants' },
-      { label: 'Licenses', href: '/licenses' },
-      { label: 'Usage', href: '/analytics' },
-      { label: 'Health', href: '/health' },
+    sections: [
+      { label: 'Platform', tabs: [{ label: 'Platform', href: '/overview' }] },
+      { label: 'Customers', tabs: [{ label: 'Tenants', href: '/tenants' }, { label: 'Licenses', href: '/licenses' }] },
+      { label: 'Usage', tabs: [{ label: 'Usage', href: '/analytics' }] },
+      { label: 'AI catalog', tabs: [{ label: 'Review', href: '/catalog' }] },
+      { label: 'Health', tabs: [{ label: 'Health', href: '/health' }] },
     ],
-    more: [{ label: 'Settings', href: '/settings' }],
+    admin: [{ label: 'Settings', href: '/settings' }],
   },
+  // Plain users only reach the dashboard to approve agents' requests.
+  tenant_user: { sections: [{ label: 'Approvals', tabs: [{ label: 'Approvals', href: '/mcp/approvals' }] }], admin: [] },
 };
+
+/** The page a path belongs to: the longest matching address wins (`/mcp/approvals` is under `/mcp`). */
+export function findPage(nav: RoleNav, path: string): { section: Section | null; tab: NavItem } | null {
+  const candidates = [
+    ...nav.sections.flatMap((section) => section.tabs.map((tab) => ({ section: section as Section | null, tab }))),
+    ...nav.admin.map((tab) => ({ section: null, tab })),
+  ];
+  const hits = candidates.filter(({ tab }) => path === tab.href || path.startsWith(tab.href + '/'));
+  return hits.sort((a, b) => b.tab.href.length - a.tab.href.length)[0] ?? null;
+}
 
 /** These pages render their own headline instead of the plain page title. */
 const REDESIGNED = new Set(['/gateway', '/stopped', '/shadow-ai', '/rules', '/evidence', '/keys', '/mcp', '/activity', '/log-export', '/enforcement']);
@@ -103,27 +119,42 @@ function LicenseBanner({ canEnterKey }: { canEnterKey: boolean }) {
   );
 }
 
+/** Agents' requests waiting for a person, on every page, so they're answered quickly. Nothing shows when none wait. */
+function ApprovalsWaiting() {
+  const { data } = useQuery({ queryKey: ['mcp-approvals'], queryFn: listApprovals, staleTime: 15_000, refetchInterval: 30_000, retry: false });
+  const waiting = (data ?? []).filter((a) => a.status === 'pending').length;
+  if (!waiting) return null;
+  return (
+    <Link to="/mcp/approvals" className="flex items-center gap-2 min-h-[36px] px-3 rounded-lg bg-[#FFF7E0] border border-[#E9D18A] text-ink font-semibold no-underline whitespace-nowrap hover:bg-[#FCEFC7]">
+      <span className="min-w-[20px] h-5 px-1.5 rounded-full bg-ink text-white text-xs flex items-center justify-center">{waiting}</span>
+      {waiting === 1 ? 'approval waiting' : 'approvals waiting'}
+    </Link>
+  );
+}
+
 export function Shell({ children }: { children: React.ReactNode }) {
   const { user, logout } = useAuth();
   const navigate = useNavigate();
   const location = useLocation();
-  const moreRef = useRef<HTMLDetailsElement>(null);
+  const adminRef = useRef<HTMLDetailsElement>(null);
   const accountRef = useRef<HTMLDetailsElement>(null);
 
-  // Plain users only reach the dashboard to approve agents' requests.
-  const nav = user && user.role !== 'tenant_user' ? NAV[user.role] : { primary: [{ label: 'Approvals', href: '/mcp/approvals' }], more: [] };
-  const all = [...nav.primary, ...nav.more];
-  const current = all.find((n) => location.pathname === n.href || location.pathname.startsWith(n.href + '/'));
-  const moreActive = !!current && nav.more.includes(current);
+  const nav = NAV[user?.role ?? 'tenant_user'];
+  const page = findPage(nav, location.pathname);
+  const current = page?.tab;
+  const adminActive = !!page && page.section === null;
+  // Tabs under the bar: the current section's pages, or the set-up pages while on one of them.
+  const tabs = adminActive ? nav.admin : page?.section && page.section.tabs.length > 1 ? page.section.tabs : [];
+  const tabsLabel = adminActive ? 'Admin' : page?.section?.label;
   const closeMenus = () => {
-    moreRef.current?.removeAttribute('open');
+    adminRef.current?.removeAttribute('open');
     accountRef.current?.removeAttribute('open');
   };
   const handleLogout = () => { closeMenus(); logout(); navigate('/login'); };
 
   // Menus close on a click or tap anywhere else, on Escape, and when the page changes.
   useEffect(() => {
-    const menus = () => [moreRef.current, accountRef.current].filter((m): m is HTMLDetailsElement => !!m);
+    const menus = () => [adminRef.current, accountRef.current].filter((m): m is HTMLDetailsElement => !!m);
     const onPointer = (e: PointerEvent) => {
       for (const m of menus()) if (m.open && !m.contains(e.target as Node)) m.removeAttribute('open');
     };
@@ -146,17 +177,33 @@ export function Shell({ children }: { children: React.ReactNode }) {
       <header className="sticky top-0 z-30 flex flex-wrap items-center gap-x-8 gap-y-2 px-5 sm:px-10 min-h-[64px] bg-white border-b border-line">
         <Logo to={user?.role === 'platform_admin' ? '/overview' : user?.role === 'tenant_user' ? '/mcp/approvals' : '/gateway'} />
         <nav aria-label="Main" className="flex flex-wrap items-center gap-x-6 gap-y-1">
-          {nav.primary.map((n) => (
-            <NavLink key={n.href} to={n.href} className={linkClass}>{n.label}</NavLink>
+          {nav.sections.map((sec) => (
+            <Link
+              key={sec.label}
+              to={sec.tabs[0].href}
+              className={linkClass({ isActive: page?.section === sec })}
+              aria-current={page?.section === sec ? 'page' : undefined}
+            >
+              {sec.label}
+            </Link>
           ))}
-          {nav.more.length > 0 && (
-            <details ref={moreRef} className="relative">
-              <summary className={clsx('flex items-center min-h-[44px] cursor-pointer list-none', moreActive ? 'font-semibold text-ink' : 'text-ink-muted hover:text-ink')}>
-                {moreActive ? current?.label : 'More'}
-                <svg className="ml-1" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true"><path d="M6 9l6 6 6-6" /></svg>
+        </nav>
+
+        <div className="ml-auto flex items-center gap-4">
+          {user && user.role !== 'platform_admin' && <ApprovalsWaiting />}
+          {nav.admin.length > 0 && (
+            <details ref={adminRef} className="relative">
+              <summary
+                aria-label="Admin"
+                className={clsx('flex items-center justify-center min-h-[44px] min-w-[44px] cursor-pointer list-none rounded-lg', adminActive ? 'text-ink bg-ink-tint' : 'text-ink-muted hover:text-ink')}
+              >
+                <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+                  <circle cx="12" cy="12" r="3" />
+                  <path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 1 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 1 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 1 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 1 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 1 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 1 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 1 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 1 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z" />
+                </svg>
               </summary>
-              <div className="absolute left-0 top-full z-20 mt-1 min-w-[200px] bg-white border border-line rounded-xl py-1.5 shadow-[0_8px_24px_rgba(20,33,61,0.08)]">
-                {nav.more.map((n) => (
+              <div className="absolute right-0 top-full z-20 mt-1 min-w-[200px] bg-white border border-line rounded-xl py-1.5 shadow-[0_8px_24px_rgba(20,33,61,0.08)]">
+                {nav.admin.map((n) => (
                   <NavLink
                     key={n.href}
                     to={n.href}
@@ -169,9 +216,7 @@ export function Shell({ children }: { children: React.ReactNode }) {
               </div>
             </details>
           )}
-        </nav>
-
-        <details ref={accountRef} className="relative ml-auto">
+        <details ref={accountRef} className="relative">
           <summary className="flex items-center gap-2 min-h-[44px] cursor-pointer list-none text-ink-muted hover:text-ink">
             <span>{user?.tenantName}</span>
             <span aria-hidden="true" className="w-8 h-8 rounded-full bg-ink-tint text-ink font-semibold flex items-center justify-center text-xs">
@@ -189,8 +234,23 @@ export function Shell({ children }: { children: React.ReactNode }) {
             </button>
           </div>
         </details>
+        </div>
       </header>
 
+      {tabs.length > 0 && (
+        <nav aria-label={`${tabsLabel} pages`} className="px-5 sm:px-10 bg-white border-b border-line flex flex-wrap gap-x-6 overflow-x-auto">
+          {tabs.map((t) => (
+            <Link
+              key={t.href}
+              to={t.href}
+              className={clsx('flex items-center min-h-[44px] no-underline whitespace-nowrap', current === t ? 'font-semibold text-ink shadow-[inset_0_-2px_0_#14213D]' : 'text-ink-muted hover:text-ink')}
+              aria-current={current === t ? 'page' : undefined}
+            >
+              {t.label}
+            </Link>
+          ))}
+        </nav>
+      )}
       {user && user.role !== 'platform_admin' && <LicenseBanner canEnterKey={user.role === 'tenant_admin'} />}
       <main className="px-5 sm:px-10 pt-8 pb-14">
         {!REDESIGNED.has(location.pathname) && !location.pathname.startsWith("/tenants/") && !location.pathname.startsWith("/mcp/") && current && (

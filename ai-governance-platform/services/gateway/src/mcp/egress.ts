@@ -66,6 +66,11 @@ export function callBackend(o: {
   url: URL; method: string; headers: Record<string, string>; body?: string | Buffer; timeoutMs?: number; maxBytes: number; contentType?: string;
   /** Override the MCP setting for private addresses (log export has its own switch). */
   allowPrivate?: boolean;
+  /**
+   * Follow up to this many redirects (GET only, https only), each checked like the first address. Off by default:
+   * company APIs are called at their registered address only.
+   */
+  redirects?: number;
 }): Promise<BackendResponse> {
   const started = Date.now();
   const lib = o.url.protocol === 'https:' ? https : http;
@@ -79,6 +84,13 @@ export function callBackend(o: {
       const status = res.statusCode ?? 0;
       if (status >= 300 && status < 400) {
         res.resume();
+        const location = res.headers.location;
+        if (o.redirects && o.redirects > 0 && location && o.method === 'GET') {
+          let next: URL;
+          try { next = new URL(location, o.url); } catch { return reject(new EgressError('The redirect address isn\'t valid', 'BACKEND_REDIRECT')); }
+          if (next.protocol !== 'https:') return reject(new EgressError('A redirect left https', 'BACKEND_REDIRECT'));
+          return resolve(callBackend({ ...o, url: next, redirects: o.redirects - 1 }));
+        }
         return reject(new EgressError(`The API answered with a redirect (${status}); redirects aren't followed`, 'BACKEND_REDIRECT'));
       }
       const chunks: Buffer[] = [];

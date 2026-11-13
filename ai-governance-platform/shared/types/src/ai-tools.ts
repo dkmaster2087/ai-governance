@@ -1,6 +1,6 @@
 // Shared by the gateway and analytics. Built from the AI catalog (@ai-governance/catalog), the one list of AI
 // services the collector, the gateway and the browser extension all use.
-import { AiService, CATALOG, CATALOG_VERSION, Category, serviceById, serviceForDomain } from '@ai-governance/catalog';
+import { AiService, CATALOG, CATALOG_VERSION, Category, catalogVersion, onCatalogChange, serviceById, serviceForDomain } from '@ai-governance/catalog';
 
 /** AI tools reached outside the gateway, so raw domains from the browser extension group into named tools. */
 export interface AiTool {
@@ -11,7 +11,7 @@ export interface AiTool {
   url?: string;
 }
 
-export { CATALOG_VERSION };
+export { CATALOG_VERSION, catalogVersion };
 
 /**
  * The part of the shared catalog the extension watches: chat apps and model APIs, which people reach in a
@@ -21,8 +21,16 @@ const BROWSER_CATEGORIES: Category[] = ['chat', 'model_api'];
 
 const toTool = (s: AiService): AiTool => ({ id: s.id, name: s.name, domains: s.domains, ...(s.url ? { url: s.url } : {}) });
 
-export const AI_TOOLS: AiTool[] = CATALOG.filter((s) => BROWSER_CATEGORIES.includes(s.category) && s.domains.length > 0).map(toTool);
-const watched = new Set(AI_TOOLS.map((t) => t.id));
+/** The watched tools. The same array for the life of the process; rebuilt in place when a newer catalog is applied. */
+export const AI_TOOLS: AiTool[] = [];
+const watched = new Set<string>();
+function build() {
+  AI_TOOLS.splice(0, AI_TOOLS.length, ...CATALOG.filter((s) => BROWSER_CATEGORIES.includes(s.category) && s.domains.length > 0).map(toTool));
+  watched.clear();
+  for (const t of AI_TOOLS) watched.add(t.id);
+}
+build();
+onCatalogChange(build);
 
 const UNKNOWN_PREFIX = 'domain:';
 

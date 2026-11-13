@@ -17,11 +17,11 @@ export const PHASES = [
   {
     n: 2,
     name: 'Protect',
-    title: 'Route AI traffic through a gateway you control.',
-    body: 'Apps, developers’ IDEs and browsers reach AI through Probaline. Every request is checked before it leaves: confidential material and secrets are stopped, personal data is removed, and each decision is kept as evidence.',
-    points: ['One address change per app', 'Stops, masks and records in real time', 'Streaming answers supported'],
+    title: 'Check every AI request, through our gateway or yours.',
+    body: 'Apps, developers’ IDEs, browsers and agents reach AI through Probaline, or through the LiteLLM, Portkey or Kong gateway you already run, which calls Probaline’s checks. Confidential material and secrets are stopped, personal data is removed, and each decision is kept as evidence.',
+    points: ['One address change per app, or a guardrail in your gateway', 'Stops, masks and records in real time', 'Streaming answers supported'],
     to: '/gateway',
-    link: 'What the gateway does',
+    link: 'What the checks do',
     status: 'Available' as const,
   },
   {
