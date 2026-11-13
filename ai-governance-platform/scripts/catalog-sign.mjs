@@ -48,7 +48,8 @@ async function signer() {
   if (pub.KeySpec !== 'ECC_NIST_P256') throw new Error(`Key ${kmsKey} is ${pub.KeySpec}, not ECC_NIST_P256`);
   return {
     spki: Buffer.from(pub.PublicKey),
-    sign: async (bytes) => Buffer.from((await kms.send(new SignCommand({ KeyId: kmsKey, Message: bytes, MessageType: 'RAW', SigningAlgorithm: 'ECDSA_SHA_256' }))).Signature),
+    // KMS signs at most 4 KB of raw data; sign the SHA-256 digest instead (the same ECDSA_SHA_256 signature).
+    sign: async (bytes) => Buffer.from((await kms.send(new SignCommand({ KeyId: kmsKey, Message: createHash('sha256').update(bytes).digest(), MessageType: 'DIGEST', SigningAlgorithm: 'ECDSA_SHA_256' }))).Signature),
   };
 }
 

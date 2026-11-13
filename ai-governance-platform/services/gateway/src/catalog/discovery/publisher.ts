@@ -1,5 +1,5 @@
 import fs from 'fs';
-import { createPrivateKey, createPublicKey, KeyObject, sign as signRaw } from 'crypto';
+import { createHash, createPrivateKey, createPublicKey, KeyObject, sign as signRaw } from 'crypto';
 import { KMSClient, GetPublicKeyCommand, SignCommand } from '@aws-sdk/client-kms';
 import { AiServiceData, BUILT_IN_SEQUENCE, CatalogData, builtInCatalogData, servicesFromData } from '@ai-governance/catalog';
 import { createLogger } from '@ai-governance/utils';
@@ -33,7 +33,8 @@ class KmsSigner implements CatalogSigner {
   async kid() { return kidOf(await this.key()); }
   async publicKeyPem() { return (await this.key()).export({ format: 'pem', type: 'spki' }) as string; }
   async sign(bytes: Buffer) {
-    const res = await this.kms.send(new SignCommand({ KeyId: this.keyId, Message: bytes, MessageType: 'RAW', SigningAlgorithm: 'ECDSA_SHA_256' }));
+    // KMS signs at most 4 KB of raw data; sign the SHA-256 digest instead (the same ECDSA_SHA_256 signature).
+    const res = await this.kms.send(new SignCommand({ KeyId: this.keyId, Message: createHash('sha256').update(bytes).digest(), MessageType: 'DIGEST', SigningAlgorithm: 'ECDSA_SHA_256' }));
     return Buffer.from(res.Signature!);
   }
 }
