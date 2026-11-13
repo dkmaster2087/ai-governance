@@ -14,7 +14,7 @@
   },
   "dependencies": {
     "@ai-governance/catalog": "file:../shared/catalog",
-    "@aws-sdk/client-s3": "^3.0.0",
+    "@aws-sdk/client-s3": "^3.1165.0",
     "@azure/identity": "^4.14.1",
     "@azure/storage-blob": "^12.34.0",
     "@google-cloud/storage": "^7.22.0"
