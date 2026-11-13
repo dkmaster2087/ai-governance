@@ -11,7 +11,7 @@
 # The runtime image. Bytecode runs only on the Node that compiled it, so it's compiled in this same image.
 ARG RUNTIME=gcr.io/distroless/nodejs24-debian13:nonroot
 
-FROM node:24-trixie-slim AS bundle
+FROM node:25-trixie-slim AS bundle
 ARG TARGET=probaline
 WORKDIR /repo
 COPY package.json package-lock.json ./
@@ -37,7 +37,7 @@ RUN npm run build -w shared/catalog -w shared/types -w shared/utils -w shared/st
 
 # The dashboard, built for a customer-run install: the gateway serving it signs people in (VITE_AUTH_MODE=install).
 # Cloud serves its own build from CloudFront; there, this copy is never used.
-FROM node:24-trixie-slim AS dashboard
+FROM node:25-trixie-slim AS dashboard
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY frontend/dashboard/package.json frontend/dashboard/
