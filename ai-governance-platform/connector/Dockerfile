@@ -6,7 +6,7 @@
 # no node_modules, no shell, not root.
 ARG RUNTIME=gcr.io/distroless/nodejs24-debian13:nonroot
 
-FROM node:24-trixie-slim AS bundle
+FROM node:25-trixie-slim AS bundle
 WORKDIR /repo
 COPY package.json package-lock.json ./
 COPY connector/package.json connector/
